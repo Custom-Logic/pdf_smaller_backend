@@ -1,8 +1,8 @@
 from flask import Blueprint, request, send_file, jsonify
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from app.compression import CompressionService
-from app.utils.security_utils import validate_file
+from compression import CompressionService
+from utils.security_utils import validate_file
 import os
 import logging
 
