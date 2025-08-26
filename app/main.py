@@ -2,8 +2,8 @@ import os
 import logging
 from flask import Flask
 from flask_cors import CORS
-from app.routes import compression_bp
-from app.utils.logging_utils import setup_logging
+from .routes import compression_bp
+from .utils.logging_utils import setup_logging
 
 def create_app():
     """Application factory function"""
