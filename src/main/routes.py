@@ -9,11 +9,11 @@ import os
 import logging
 
 from src.utils import validate_file
-
+from flask_cors import CORS
 logger = logging.getLogger(__name__)
 
 compression_bp = Blueprint('compression', __name__)
-
+CORS(compression_bp, resources={r"/compress": {"origins": ["https://www.pdfsmaller.site"]}})
 # Initialize rate limiter
 limiter = Limiter(
     key_func=get_remote_address,
