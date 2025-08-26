@@ -3,7 +3,7 @@ import subprocess
 import tempfile
 import logging
 from pathlib import Path
-from app.utils.file_utils import secure_filename, cleanup_old_files
+from utils.file_utils import secure_filename, cleanup_old_files
 
 logger = logging.getLogger(__name__)
 
