@@ -40,8 +40,14 @@ def compress_pdf():
     
     # Get compression parameters
     compression_level = request.form.get('compressionLevel', 'medium')
-    image_quality = int(request.form.get('imageQuality', 80))
-    
+    # Safely parse image quality
+    try:
+        image_quality = int(request.form.get('imageQuality', 80))
+    except (ValueError, TypeError):
+        image_quality = 80  # fallback to default
+    # image_quality = int(request.form.get('imageQuality', 80))
+    image_quality = max(10, min(image_quality, 100))
+
     try:
         # Process the file
         output_path = compression_service.process_upload(
