@@ -8,7 +8,7 @@ services:
     environment:
       - UPLOAD_FOLDER=/tmp/pdf_uploads
       - LOG_LEVEL=INFO
-      - ALLOWED_ORIGINS=https://yourdomain.com,http://localhost:3000
+      - ALLOWED_ORIGINS=https://pdfsmaller.site,http://localhost:3000
     volumes:
       - pdf_uploads:/tmp/pdf_uploads
     restart: unless-stopped
