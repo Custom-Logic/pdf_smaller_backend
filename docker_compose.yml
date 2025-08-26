@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  pdf-compression:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - UPLOAD_FOLDER=/tmp/pdf_uploads
+      - LOG_LEVEL=INFO
+      - ALLOWED_ORIGINS=https://yourdomain.com,http://localhost:3000
+    volumes:
+      - pdf_uploads:/tmp/pdf_uploads
+    restart: unless-stopped
+
+volumes:
+  pdf_uploads:
