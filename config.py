@@ -20,7 +20,7 @@ class Config:
     
     # Security
     ALLOWED_EXTENSIONS = {'pdf'}
-    ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,https://yourdomain.com').split(',')
+    ALLOWED_ORIGINS = os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,https://pdfsmaller.site').split(',')
     
     # Rate limiting
     RATE_LIMIT_STORAGE_URL = os.environ.get('REDIS_URL', 'memory://')
