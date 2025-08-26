@@ -3,7 +3,7 @@ from datetime import timedelta
 
 class Config:
     # Basic settings
-    SECRET_KEY = os.environ.get('SECRET_KEY', 'your-secret-key-change-in-production')
+    SECRET_KEY = os.environ.get('SECRET_KEY', '7NwLQnT2GgY5jY8hxv-Qz8FUPQw8okUkHh1R0pFzFTOZrfyHWhpHm4kgAH5p3Er')
     MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100MB max file size
     
     # File handling

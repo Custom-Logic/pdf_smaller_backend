@@ -1,10 +1,14 @@
+import subprocess
+
 from flask import Blueprint, request, send_file, jsonify
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from compression import CompressionService
-from utils.security_utils import validate_file
+from src.main.compression import CompressionService
+
 import os
 import logging
+
+from src.utils import validate_file
 
 logger = logging.getLogger(__name__)
 
