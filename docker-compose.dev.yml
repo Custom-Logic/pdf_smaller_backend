@@ -1,0 +1,141 @@
+version: '3.8'
+
+services:
+  # Development PDF compression application
+  pdf-compression-dev:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    environment:
+      # Flask configuration
+      - FLASK_ENV=development
+      - SECRET_KEY=development-secret-key-not-for-production
+      - JWT_SECRET_KEY=development-jwt-secret-key
+      
+      # Database configuration (SQLite for development)
+      - DATABASE_URL=sqlite:///pdf_smaller_dev.db
+      
+      # File handling
+      - UPLOAD_FOLDER=/app/uploads/dev
+      - MAX_FILE_SIZE=52428800  # 50MB
+      - MAX_FILE_AGE_HOURS=1
+      
+      # Logging
+      - LOG_LEVEL=DEBUG
+      - LOG_FILE=/app/logs/app_dev.log
+      
+      # Security and CORS (relaxed for development)
+      - ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,http://localhost:8080
+      
+      # Redis and rate limiting
+      - REDIS_URL=redis://redis-dev:6379/0
+      - RATE_LIMIT_STORAGE_URL=redis://redis-dev:6379/0
+      - RATE_LIMIT_DEFAULT=1000 per hour  # More permissive for development
+      
+      # Celery configuration
+      - CELERY_BROKER_URL=redis://redis-dev:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-dev:6379/0
+      
+      # Stripe configuration (test keys)
+      - STRIPE_SECRET_KEY=sk_test_fake_key_for_development
+      - STRIPE_WEBHOOK_SECRET=whsec_fake_webhook_secret_for_dev
+      
+      # Health checks
+      - HEALTH_CHECK_ENABLED=true
+      - METRICS_ENABLED=true
+      
+    volumes:
+      - ./:/app  # Mount source code for hot reloading
+      - pdf_uploads_dev:/app/uploads/dev
+      - app_logs_dev:/app/logs
+      - ./pdf_smaller_dev.db:/app/pdf_smaller_dev.db  # SQLite database file
+    depends_on:
+      - redis-dev
+    restart: unless-stopped
+    command: flask run --host=0.0.0.0 --port=5000 --debug
+
+  # Redis for development
+  redis-dev:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"  # Different port to avoid conflicts
+    volumes:
+      - redis_data_dev:/data
+    command: redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+
+  # Celery worker for development
+  celery_worker_dev:
+    build: .
+    command: celery -A celery_worker.celery worker --loglevel=debug --concurrency=1 --queues=compression,cleanup
+    environment:
+      # Flask configuration
+      - FLASK_ENV=development
+      - SECRET_KEY=development-secret-key-not-for-production
+      
+      # Database configuration
+      - DATABASE_URL=sqlite:///pdf_smaller_dev.db
+      
+      # File handling
+      - UPLOAD_FOLDER=/app/uploads/dev
+      - MAX_FILE_SIZE=52428800
+      - MAX_FILE_AGE_HOURS=1
+      
+      # Logging
+      - LOG_LEVEL=DEBUG
+      - LOG_FILE=/app/logs/celery_dev.log
+      
+      # Celery configuration
+      - CELERY_BROKER_URL=redis://redis-dev:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-dev:6379/0
+      
+    volumes:
+      - ./:/app
+      - pdf_uploads_dev:/app/uploads/dev
+      - app_logs_dev:/app/logs
+      - ./pdf_smaller_dev.db:/app/pdf_smaller_dev.db
+    depends_on:
+      - redis-dev
+    restart: unless-stopped
+
+  # Celery beat scheduler for development
+  celery_beat_dev:
+    build: .
+    command: celery -A celery_worker.celery beat --loglevel=debug
+    environment:
+      # Flask configuration
+      - FLASK_ENV=development
+      - SECRET_KEY=development-secret-key-not-for-production
+      
+      # Database configuration
+      - DATABASE_URL=sqlite:///pdf_smaller_dev.db
+      
+      # Logging
+      - LOG_LEVEL=DEBUG
+      - LOG_FILE=/app/logs/celery-beat_dev.log
+      
+      # Celery configuration
+      - CELERY_BROKER_URL=redis://redis-dev:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis-dev:6379/0
+      
+    volumes:
+      - ./:/app
+      - app_logs_dev:/app/logs
+      - ./pdf_smaller_dev.db:/app/pdf_smaller_dev.db
+    depends_on:
+      - redis-dev
+    restart: unless-stopped
+
+volumes:
+  pdf_uploads_dev:
+    driver: local
+  redis_data_dev:
+    driver: local
+  app_logs_dev:
+    driver: local
+
+networks:
+  default:
+    name: pdf_smaller_dev_network

@@ -1,9 +1,29 @@
-from src.main import create_app
-from flask_cors import CORS
+import os
+import logging
+from src.main.main import create_app
+from src.config.config import ConfigValidationError
 
-
-app = create_app()
-CORS(app, resources={r"/api/*": {"origins": ["https://www.pdfsmaller.site"]}})
+# Create application instance
+try:
+    # Get configuration environment from environment variable
+    config_name = os.environ.get('FLASK_ENV', 'development')
+    app = create_app(config_name=config_name)
+    
+    # Log successful startup
+    app.logger.info(f"PDF Smaller application started successfully in {config_name} mode")
+    
+except ConfigValidationError as e:
+    logging.error(f"Configuration validation failed: {e}")
+    raise
+except Exception as e:
+    logging.error(f"Application startup failed: {e}")
+    raise
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    # Development server (not for production)
+    debug_mode = app.config.get('DEBUG', False)
+    app.run(
+        host='0.0.0.0', 
+        port=int(os.environ.get('PORT', 5000)), 
+        debug=debug_mode
+    )

@@ -1,17 +1,184 @@
 version: '3.8'
 
 services:
+  # Main PDF compression application
   pdf-compression:
     build: .
     ports:
       - "5000:5000"
     environment:
-      - UPLOAD_FOLDER=/tmp/pdf_uploads
+      # Flask configuration
+      - FLASK_ENV=production
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-jwt-secret-key}
+      
+      # Database configuration
+      - DATABASE_URL=postgresql://pdf_user:pdf_password@postgres:5432/pdf_smaller
+      
+      # File handling
+      - UPLOAD_FOLDER=/app/uploads
+      - MAX_FILE_SIZE=104857600  # 100MB
+      - MAX_FILE_AGE_HOURS=2
+      
+      # Logging
       - LOG_LEVEL=INFO
-      - ALLOWED_ORIGINS=https://pdfsmaller.site,http://localhost:3000
+      - LOG_FILE=/app/logs/app.log
+      
+      # Security and CORS
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://pdfsmaller.site,http://localhost:3000}
+      
+      # Redis and rate limiting
+      - REDIS_URL=redis://redis:6379/0
+      - RATE_LIMIT_STORAGE_URL=redis://redis:6379/0
+      
+      # Celery configuration
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      
+      # Stripe configuration (set these in production)
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
+      
+      # Health checks
+      - HEALTH_CHECK_ENABLED=true
+      - METRICS_ENABLED=false
+      
     volumes:
-      - pdf_uploads:/tmp/pdf_uploads
+      - pdf_uploads:/app/uploads
+      - app_logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL database
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=pdf_smaller
+      - POSTGRES_USER=pdf_user
+      - POSTGRES_PASSWORD=pdf_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pdf_user -d pdf_smaller"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis for caching and task queue
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Celery worker for background tasks
+  celery_worker:
+    build: .
+    command: celery -A celery_worker.celery worker --loglevel=info --concurrency=2 --queues=compression,cleanup
+    environment:
+      # Flask configuration
+      - FLASK_ENV=production
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      
+      # Database configuration
+      - DATABASE_URL=postgresql://pdf_user:pdf_password@postgres:5432/pdf_smaller
+      
+      # File handling
+      - UPLOAD_FOLDER=/app/uploads
+      - MAX_FILE_SIZE=104857600
+      - MAX_FILE_AGE_HOURS=2
+      
+      # Logging
+      - LOG_LEVEL=INFO
+      - LOG_FILE=/app/logs/celery.log
+      
+      # Celery configuration
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      
+    volumes:
+      - pdf_uploads:/app/uploads
+      - app_logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "celery", "-A", "celery_worker.celery", "inspect", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery beat scheduler
+  celery_beat:
+    build: .
+    command: celery -A celery_worker.celery beat --loglevel=info
+    environment:
+      # Flask configuration
+      - FLASK_ENV=production
+      - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
+      
+      # Database configuration
+      - DATABASE_URL=postgresql://pdf_user:pdf_password@postgres:5432/pdf_smaller
+      
+      # Logging
+      - LOG_LEVEL=INFO
+      - LOG_FILE=/app/logs/celery-beat.log
+      
+      # Celery configuration
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      
+    volumes:
+      - app_logs:/app/logs
+    depends_on:
+      - postgres
+      - redis
+    restart: unless-stopped
+
+  # Nginx reverse proxy (optional, for production)
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro  # SSL certificates
+    depends_on:
+      - pdf-compression
+    restart: unless-stopped
+    profiles:
+      - production  # Only start with --profile production
 
 volumes:
   pdf_uploads:
+    driver: local
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  app_logs:
+    driver: local
+
+networks:
+  default:
+    name: pdf_smaller_network

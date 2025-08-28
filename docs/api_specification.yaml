@@ -1,0 +1,1447 @@
+openapi: 3.0.3
+info:
+  title: PDF Smaller API
+  description: |
+    A comprehensive PDF compression service with user authentication, subscription management, 
+    and bulk processing capabilities. This API provides endpoints for compressing PDF files, 
+    managing user accounts, handling subscriptions, and processing multiple files in bulk.
+    
+    ## Features
+    - Single and bulk PDF compression
+    - User authentication with JWT tokens
+    - Subscription management with Stripe integration
+    - Usage tracking and rate limiting
+    - File management and automatic cleanup
+    - Comprehensive error handling and logging
+    
+    ## Authentication
+    Most endpoints require authentication using JWT tokens. Include the token in the Authorization header:
+    ```
+    Authorization: Bearer <your_jwt_token>
+    ```
+    
+    ## Rate Limiting
+    API endpoints are rate-limited based on user tier:
+    - Anonymous users: 10 requests per minute
+    - Free users: 20 requests per minute  
+    - Premium users: 100 requests per minute
+    - Pro users: 500 requests per minute
+    
+    ## Error Handling
+    All errors follow a consistent format with error codes, messages, and request IDs for tracking.
+    
+  version: 1.0.0
+  contact:
+    name: PDF Smaller Support
+    email: support@pdfsmaller.site
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.pdfsmaller.site
+    description: Production server
+  - url: https://staging-api.pdfsmaller.site
+    description: Staging server
+  - url: http://localhost:5000
+    description: Development server
+
+paths:
+  # Authentication Endpoints
+  /api/auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register a new user account
+      description: Create a new user account with email, password, and name
+      operationId: registerUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegistration'
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: User already exists
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Authenticate user and get tokens
+      description: Login with email and password to receive JWT tokens
+      operationId: loginUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserLogin'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh access token
+      description: Get a new access token using a valid refresh token
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRefresh'
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/auth/profile:
+    get:
+      tags:
+        - Authentication
+      summary: Get user profile
+      description: Retrieve the authenticated user's profile information
+      operationId: getUserProfile
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    
+    put:
+      tags:
+        - Authentication
+      summary: Update user profile
+      description: Update the authenticated user's profile information
+      operationId: updateUserProfile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserProfileUpdate'
+      responses:
+        '200':
+          description: Profile updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/auth/change-password:
+    post:
+      tags:
+        - Authentication
+      summary: Change user password
+      description: Change the authenticated user's password
+      operationId: changePassword
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChange'
+      responses:
+        '200':
+          description: Password changed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # Compression Endpoints
+  /api/compress:
+    post:
+      tags:
+        - Compression
+      summary: Compress a single PDF file
+      description: |
+        Compress a single PDF file with specified compression settings.
+        Authentication is optional - anonymous users have limited access.
+      operationId: compressPDF
+      security:
+        - BearerAuth: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CompressionRequest'
+      responses:
+        '200':
+          description: PDF compressed successfully
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              description: Attachment filename
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: Usage limit exceeded or insufficient permissions
+        '413':
+          description: File too large
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/compress/info:
+    post:
+      tags:
+        - Compression
+      summary: Get PDF file information
+      description: Extract metadata and information from a PDF file
+      operationId: getPDFInfo
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: PDF file to analyze
+              required:
+                - file
+      responses:
+        '200':
+          description: PDF information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PDFInfo'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/compress/jobs:
+    get:
+      tags:
+        - Compression
+      summary: Get user's compression job history
+      description: Retrieve a list of the user's compression jobs
+      operationId: getCompressionJobs
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of jobs to return (1-50)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+      responses:
+        '200':
+          description: Jobs retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/compress/jobs/{jobId}:
+    get:
+      tags:
+        - Compression
+      summary: Get specific compression job details
+      description: Retrieve details for a specific compression job
+      operationId: getCompressionJob
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          description: Compression job ID
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Job details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompressionJob'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/compress/usage:
+    get:
+      tags:
+        - Compression
+      summary: Get user's usage statistics
+      description: Retrieve current usage statistics and limits for the user
+      operationId: getUsageInfo
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Usage information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # Bulk Compression Endpoints
+  /api/compress/bulk:
+    post:
+      tags:
+        - Bulk Compression
+      summary: Start bulk PDF compression
+      description: |
+        Upload multiple PDF files for bulk compression. 
+        Requires premium subscription or higher.
+      operationId: bulkCompress
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkCompressionRequest'
+      responses:
+        '201':
+          description: Bulk compression job created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkJobResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Premium subscription required
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/compress/bulk/jobs/{jobId}/status:
+    get:
+      tags:
+        - Bulk Compression
+      summary: Get bulk compression job status
+      description: Check the status and progress of a bulk compression job
+      operationId: getBulkJobStatus
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          description: Bulk compression job ID
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Job status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkJobStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/compress/bulk/jobs/{jobId}/download:
+    get:
+      tags:
+        - Bulk Compression
+      summary: Download bulk compression results
+      description: Download the ZIP archive containing all compressed files
+      operationId: downloadBulkResult
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          description: Bulk compression job ID
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: ZIP archive with compressed files
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              description: Attachment filename
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/compress/bulk/jobs:
+    get:
+      tags:
+        - Bulk Compression
+      summary: Get user's bulk compression jobs
+      description: Retrieve a list of the user's bulk compression jobs
+      operationId: getBulkJobs
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          description: Maximum number of jobs to return (1-50)
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 10
+      responses:
+        '200':
+          description: Bulk jobs retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkJobList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # Subscription Endpoints
+  /api/subscriptions:
+    get:
+      tags:
+        - Subscriptions
+      summary: Get user's subscription information
+      description: Retrieve current subscription details and usage statistics
+      operationId: getSubscriptionInfo
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Subscription information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No subscription found
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/subscriptions/plans:
+    get:
+      tags:
+        - Subscriptions
+      summary: Get available subscription plans
+      description: Retrieve all available subscription plans and their features
+      operationId: getAvailablePlans
+      responses:
+        '200':
+          description: Plans retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlanList'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/subscriptions/create:
+    post:
+      tags:
+        - Subscriptions
+      summary: Create a new subscription
+      description: Create a new subscription with Stripe payment processing
+      operationId: createSubscription
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriptionCreate'
+      responses:
+        '201':
+          description: Subscription created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionCreateResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: User already has a subscription
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/subscriptions/cancel:
+    post:
+      tags:
+        - Subscriptions
+      summary: Cancel user's subscription
+      description: Cancel the user's active subscription
+      operationId: cancelSubscription
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Subscription canceled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionCancelResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: No active subscription found
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/subscriptions/usage:
+    get:
+      tags:
+        - Subscriptions
+      summary: Get detailed usage statistics
+      description: Retrieve detailed usage statistics and permissions for the user
+      operationId: getUsageStatistics
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Usage statistics retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DetailedUsageInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/subscriptions/webhook:
+    post:
+      tags:
+        - Subscriptions
+      summary: Stripe webhook endpoint
+      description: Handle Stripe webhook events for subscription updates
+      operationId: stripeWebhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Stripe webhook payload
+      responses:
+        '200':
+          description: Webhook processed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from login endpoint
+
+  schemas:
+    # Authentication Schemas
+    UserRegistration:
+      type: object
+      required:
+        - email
+        - password
+        - name
+      properties:
+        email:
+          type: string
+          format: email
+          description: User's email address
+          example: "user@example.com"
+        password:
+          type: string
+          minLength: 8
+          description: User's password (minimum 8 characters)
+          example: "SecurePass123!"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: User's full name
+          example: "John Doe"
+
+    UserLogin:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+          description: User's email address
+          example: "user@example.com"
+        password:
+          type: string
+          description: User's password
+          example: "SecurePass123!"
+
+    TokenRefresh:
+      type: object
+      required:
+        - refresh_token
+      properties:
+        refresh_token:
+          type: string
+          description: Valid refresh token
+          example: "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+
+    AuthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "User registered successfully"
+        user:
+          $ref: '#/components/schemas/User'
+        tokens:
+          $ref: '#/components/schemas/Tokens'
+
+    TokenResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Token refreshed successfully"
+        tokens:
+          $ref: '#/components/schemas/Tokens'
+
+    Tokens:
+      type: object
+      properties:
+        access_token:
+          type: string
+          description: JWT access token
+          example: "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+        refresh_token:
+          type: string
+          description: JWT refresh token
+          example: "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+        expires_in:
+          type: integer
+          description: Access token expiration time in seconds
+          example: 900
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: User ID
+          example: 1
+        email:
+          type: string
+          format: email
+          description: User's email address
+          example: "user@example.com"
+        name:
+          type: string
+          description: User's full name
+          example: "John Doe"
+        created_at:
+          type: string
+          format: date-time
+          description: Account creation timestamp
+          example: "2024-01-15T10:30:00Z"
+        is_active:
+          type: boolean
+          description: Whether the account is active
+          example: true
+
+    UserProfile:
+      allOf:
+        - $ref: '#/components/schemas/User'
+        - type: object
+          properties:
+            subscription:
+              $ref: '#/components/schemas/Subscription'
+            usage_stats:
+              $ref: '#/components/schemas/UsageStats'
+
+    UserProfileUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+          description: Updated full name
+          example: "Jane Doe"
+        email:
+          type: string
+          format: email
+          description: Updated email address
+          example: "jane@example.com"
+
+    PasswordChange:
+      type: object
+      required:
+        - current_password
+        - new_password
+      properties:
+        current_password:
+          type: string
+          description: Current password
+          example: "CurrentPass123!"
+        new_password:
+          type: string
+          minLength: 8
+          description: New password (minimum 8 characters)
+          example: "NewPass456!"
+
+    # Compression Schemas
+    CompressionRequest:
+      type: object
+      required:
+        - file
+      properties:
+        file:
+          type: string
+          format: binary
+          description: PDF file to compress
+        compressionLevel:
+          type: string
+          enum: [low, medium, high, maximum]
+          default: medium
+          description: Compression level
+          example: "medium"
+        imageQuality:
+          type: integer
+          minimum: 10
+          maximum: 100
+          default: 80
+          description: Image quality percentage
+          example: 80
+
+    PDFInfo:
+      type: object
+      properties:
+        Title:
+          type: string
+          description: PDF title
+          example: "Sample Document"
+        Author:
+          type: string
+          description: PDF author
+          example: "John Doe"
+        Creator:
+          type: string
+          description: PDF creator application
+          example: "Microsoft Word"
+        Producer:
+          type: string
+          description: PDF producer
+          example: "Microsoft: Print To PDF"
+        CreationDate:
+          type: string
+          description: PDF creation date
+          example: "Mon Jan 15 10:30:00 2024"
+        ModDate:
+          type: string
+          description: PDF modification date
+          example: "Mon Jan 15 10:30:00 2024"
+        Pages:
+          type: string
+          description: Number of pages
+          example: "5"
+        "File size":
+          type: string
+          description: File size
+          example: "1024 bytes"
+
+    CompressionJob:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Job ID
+          example: 123
+        user_id:
+          type: integer
+          description: User ID who created the job
+          example: 1
+        job_type:
+          type: string
+          enum: [single, bulk]
+          description: Type of compression job
+          example: "single"
+        status:
+          type: string
+          enum: [pending, processing, completed, failed]
+          description: Current job status
+          example: "completed"
+        settings:
+          type: object
+          description: Compression settings used
+          properties:
+            compression_level:
+              type: string
+              example: "medium"
+            image_quality:
+              type: integer
+              example: 80
+        file_count:
+          type: integer
+          description: Number of files in the job
+          example: 1
+        completed_count:
+          type: integer
+          description: Number of completed files
+          example: 1
+        original_size_bytes:
+          type: integer
+          description: Total original file size in bytes
+          example: 1048576
+        compressed_size_bytes:
+          type: integer
+          description: Total compressed file size in bytes
+          example: 524288
+        compression_ratio:
+          type: number
+          format: float
+          description: Compression ratio (0.0 to 1.0)
+          example: 0.5
+        created_at:
+          type: string
+          format: date-time
+          description: Job creation timestamp
+          example: "2024-01-15T10:30:00Z"
+        completed_at:
+          type: string
+          format: date-time
+          description: Job completion timestamp
+          example: "2024-01-15T10:35:00Z"
+
+    JobList:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompressionJob'
+        total:
+          type: integer
+          description: Total number of jobs returned
+          example: 5
+
+    UsageInfo:
+      type: object
+      properties:
+        usage:
+          $ref: '#/components/schemas/UsageStats'
+        permissions:
+          $ref: '#/components/schemas/Permissions'
+        can_compress:
+          type: boolean
+          description: Whether user can perform compression
+          example: true
+
+    UsageStats:
+      type: object
+      properties:
+        compressions_today:
+          type: integer
+          description: Number of compressions performed today
+          example: 5
+        compressions_this_month:
+          type: integer
+          description: Number of compressions performed this month
+          example: 45
+        daily_limit:
+          type: integer
+          description: Daily compression limit
+          example: 100
+        monthly_limit:
+          type: integer
+          description: Monthly compression limit
+          example: 1000
+        files_processed_today:
+          type: integer
+          description: Number of files processed today
+          example: 8
+        total_size_compressed_mb:
+          type: number
+          format: float
+          description: Total size compressed in MB
+          example: 156.7
+
+    Permissions:
+      type: object
+      properties:
+        can_compress:
+          type: boolean
+          description: Can perform single file compression
+          example: true
+        can_bulk_compress:
+          type: boolean
+          description: Can perform bulk compression
+          example: true
+        can_use_api:
+          type: boolean
+          description: Can use API endpoints
+          example: true
+        max_file_size_mb:
+          type: integer
+          description: Maximum file size in MB
+          example: 100
+        max_bulk_files:
+          type: integer
+          description: Maximum files in bulk operation
+          example: 20
+        plan_name:
+          type: string
+          description: Current subscription plan
+          example: "premium"
+
+    # Bulk Compression Schemas
+    BulkCompressionRequest:
+      type: object
+      required:
+        - files
+      properties:
+        files:
+          type: array
+          items:
+            type: string
+            format: binary
+          description: Array of PDF files to compress
+        compressionLevel:
+          type: string
+          enum: [low, medium, high, maximum]
+          default: medium
+          description: Compression level for all files
+          example: "medium"
+        imageQuality:
+          type: integer
+          minimum: 10
+          maximum: 100
+          default: 80
+          description: Image quality percentage for all files
+          example: 80
+
+    BulkJobResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        job_id:
+          type: integer
+          description: Created job ID
+          example: 456
+        task_id:
+          type: string
+          description: Celery task ID for tracking
+          example: "task_789abc"
+        file_count:
+          type: integer
+          description: Number of files queued for processing
+          example: 5
+        total_size_mb:
+          type: number
+          format: float
+          description: Total size of uploaded files in MB
+          example: 25.6
+        status:
+          type: string
+          description: Initial job status
+          example: "queued"
+        message:
+          type: string
+          description: Success message
+          example: "Bulk compression job created with 5 files"
+
+    BulkJobStatus:
+      type: object
+      properties:
+        job_id:
+          type: integer
+          description: Job ID
+          example: 456
+        status:
+          type: string
+          enum: [queued, processing, completed, failed]
+          description: Current job status
+          example: "processing"
+        job_type:
+          type: string
+          description: Type of job
+          example: "bulk"
+        file_count:
+          type: integer
+          description: Total number of files
+          example: 5
+        completed_count:
+          type: integer
+          description: Number of completed files
+          example: 3
+        progress_percentage:
+          type: number
+          format: float
+          description: Completion percentage (0.0 to 100.0)
+          example: 60.0
+        created_at:
+          type: string
+          format: date-time
+          description: Job creation timestamp
+          example: "2024-01-15T10:30:00Z"
+        started_at:
+          type: string
+          format: date-time
+          description: Job start timestamp
+          example: "2024-01-15T10:31:00Z"
+        completed_at:
+          type: string
+          format: date-time
+          description: Job completion timestamp (if completed)
+          example: "2024-01-15T10:35:00Z"
+        is_completed:
+          type: boolean
+          description: Whether the job is completed
+          example: false
+        is_successful:
+          type: boolean
+          description: Whether the job completed successfully
+          example: false
+        error_message:
+          type: string
+          description: Error message if job failed
+          example: null
+        original_size_bytes:
+          type: integer
+          description: Total original file size (if completed)
+          example: 5242880
+        compressed_size_bytes:
+          type: integer
+          description: Total compressed file size (if completed)
+          example: 2621440
+        compression_ratio:
+          type: number
+          format: float
+          description: Overall compression ratio (if completed)
+          example: 0.5
+        result_available:
+          type: boolean
+          description: Whether result file is available for download
+          example: false
+
+    BulkJobList:
+      type: object
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/BulkJobStatus'
+        total:
+          type: integer
+          description: Total number of jobs returned
+          example: 3
+
+    # Subscription Schemas
+    Subscription:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Subscription ID
+          example: 789
+        user_id:
+          type: integer
+          description: User ID
+          example: 1
+        plan_id:
+          type: integer
+          description: Plan ID
+          example: 2
+        plan_name:
+          type: string
+          description: Plan name
+          example: "premium"
+        stripe_subscription_id:
+          type: string
+          description: Stripe subscription ID
+          example: "sub_1234567890"
+        status:
+          type: string
+          enum: [active, canceled, past_due, unpaid]
+          description: Subscription status
+          example: "active"
+        current_period_start:
+          type: string
+          format: date-time
+          description: Current billing period start
+          example: "2024-01-01T00:00:00Z"
+        current_period_end:
+          type: string
+          format: date-time
+          description: Current billing period end
+          example: "2024-02-01T00:00:00Z"
+        created_at:
+          type: string
+          format: date-time
+          description: Subscription creation timestamp
+          example: "2024-01-01T00:00:00Z"
+
+    Plan:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: Plan ID
+          example: 2
+        name:
+          type: string
+          description: Plan name
+          example: "premium"
+        display_name:
+          type: string
+          description: Display name for the plan
+          example: "Premium Plan"
+        description:
+          type: string
+          description: Plan description
+          example: "Advanced compression with bulk processing"
+        price_monthly:
+          type: number
+          format: float
+          description: Monthly price in USD
+          example: 9.99
+        price_yearly:
+          type: number
+          format: float
+          description: Yearly price in USD
+          example: 99.99
+        features:
+          type: object
+          description: Plan features and limits
+          properties:
+            daily_compressions:
+              type: integer
+              example: 500
+            bulk_processing:
+              type: boolean
+              example: true
+            max_file_size_mb:
+              type: integer
+              example: 100
+            max_bulk_files:
+              type: integer
+              example: 20
+            api_access:
+              type: boolean
+              example: true
+            priority_processing:
+              type: boolean
+              example: true
+
+    SubscriptionInfo:
+      type: object
+      properties:
+        subscription:
+          $ref: '#/components/schemas/Subscription'
+        usage:
+          $ref: '#/components/schemas/UsageStats'
+        status:
+          type: object
+          description: Subscription validation status
+          properties:
+            valid:
+              type: boolean
+              example: true
+            permissions:
+              $ref: '#/components/schemas/Permissions'
+
+    PlanList:
+      type: object
+      properties:
+        plans:
+          type: array
+          items:
+            $ref: '#/components/schemas/Plan'
+
+    SubscriptionCreate:
+      type: object
+      required:
+        - plan_id
+        - payment_method_id
+      properties:
+        plan_id:
+          type: integer
+          description: ID of the plan to subscribe to
+          example: 2
+        payment_method_id:
+          type: string
+          description: Stripe payment method ID
+          example: "pm_1234567890"
+        billing_cycle:
+          type: string
+          enum: [monthly, yearly]
+          default: monthly
+          description: Billing cycle preference
+          example: "monthly"
+
+    SubscriptionCreateResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Subscription created successfully"
+        subscription:
+          $ref: '#/components/schemas/Subscription'
+        client_secret:
+          type: string
+          description: Stripe client secret for payment confirmation
+          example: "pi_1234567890_secret_abc"
+        subscription_id:
+          type: string
+          description: Stripe subscription ID
+          example: "sub_1234567890"
+
+    SubscriptionCancelResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          example: "Subscription canceled successfully"
+        canceled_at:
+          type: string
+          format: date-time
+          description: Cancellation timestamp
+          example: "2024-01-15T10:30:00Z"
+        current_period_end:
+          type: string
+          format: date-time
+          description: End of current billing period
+          example: "2024-02-01T00:00:00Z"
+
+    DetailedUsageInfo:
+      type: object
+      properties:
+        usage:
+          $ref: '#/components/schemas/UsageStats'
+        permissions:
+          $ref: '#/components/schemas/Permissions'
+
+    # Common Response Schemas
+    SuccessResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: "Operation completed successfully"
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              description: Error code identifier
+              example: "VALIDATION_ERROR"
+            message:
+              type: string
+              description: Human-readable error message
+              example: "Invalid input provided"
+            details:
+              type: object
+              description: Additional error details
+              example: {}
+        timestamp:
+          type: string
+          format: date-time
+          description: Error timestamp
+          example: "2024-01-15T10:30:00Z"
+        request_id:
+          type: string
+          description: Unique request identifier for tracking
+          example: "req_123456789"
+
+  responses:
+    BadRequest:
+      description: Bad request - invalid input or missing required fields
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Unauthorized:
+      description: Unauthorized - authentication required or invalid token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Forbidden:
+      description: Forbidden - insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    RateLimitExceeded:
+      description: Rate limit exceeded
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+      headers:
+        Retry-After:
+          description: Number of seconds to wait before retrying
+          schema:
+            type: integer
+
+    InternalServerError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+tags:
+  - name: Authentication
+    description: User authentication and account management
+  - name: Compression
+    description: Single PDF file compression operations
+  - name: Bulk Compression
+    description: Multiple PDF file compression operations
+  - name: Subscriptions
+    description: Subscription and plan management
