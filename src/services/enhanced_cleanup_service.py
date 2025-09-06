@@ -16,10 +16,10 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 
-from src.models import CompressionJob, User, Subscription, Plan
+from src.models import CompressionJob
 from src.models.base import db
-from src.services.file_manager import FileManager, FileManagerError
-from src.services.subscription_service import SubscriptionService
+from src.services.file_manager import FileManager
+
 from src.config import Config
 
 logger = logging.getLogger(__name__)
@@ -28,19 +28,11 @@ logger = logging.getLogger(__name__)
 class EnhancedCleanupService:
     """Enhanced cleanup service with FileManager integration and quota management"""
     
-    # Storage quota limits by user tier (in MB)
-    STORAGE_QUOTAS = {
-        'free': 100,      # 100MB for free users
-        'premium': 1000,  # 1GB for premium users
-        'pro': 5000       # 5GB for pro users
-    }
+    # Default storage quota (in MB)
+    DEFAULT_STORAGE_QUOTA = 1000  # 1GB default
     
-    # File retention periods by user tier (in hours)
-    RETENTION_PERIODS = {
-        'free': 24,       # 1 day for free users
-        'premium': 168,   # 7 days for premium users
-        'pro': 720        # 30 days for pro users
-    }
+    # Default file retention period (in hours)
+    DEFAULT_RETENTION_PERIOD = 168  # 7 days default
     
     # Cleanup policies
     TEMP_FILE_MAX_AGE_HOURS = 1
@@ -114,7 +106,7 @@ class EnhancedCleanupService:
     
     def cleanup_expired_jobs(self) -> Dict[str, Any]:
         """
-        Clean up expired compression jobs based on user tier retention policies
+        Clean up expired compression jobs based on default retention period
         
         Returns:
             Dictionary with cleanup statistics
@@ -127,8 +119,8 @@ class EnhancedCleanupService:
         }
         
         try:
-            # Get expired jobs by user tier
-            expired_jobs = self._get_expired_jobs_by_tier()
+            # Get expired jobs
+            expired_jobs = self._get_expired_jobs()
             
             for job in expired_jobs:
                 try:
@@ -284,7 +276,7 @@ class EnhancedCleanupService:
     
     def enforce_storage_quotas(self) -> Dict[str, Any]:
         """
-        Enforce storage quotas for users based on their subscription tier
+        Enforce storage quotas based on default quota
         
         Returns:
             Dictionary with quota enforcement statistics
@@ -298,7 +290,7 @@ class EnhancedCleanupService:
         }
         
         try:
-            # Get all users with active subscriptions
+            # Get all users
             users = User.query.all()
             
             for user in users:
@@ -306,9 +298,8 @@ class EnhancedCleanupService:
                     # Get user's storage usage
                     usage = self.file_manager.get_user_storage_usage(user.id)
                     
-                    # Get user's quota based on subscription tier
-                    user_tier = self._get_user_tier(user.id)
-                    quota_mb = self.STORAGE_QUOTAS.get(user_tier, self.STORAGE_QUOTAS['free'])
+                    # Use default quota for all users
+                    quota_mb = self.DEFAULT_STORAGE_QUOTA
                     
                     if usage['total_size_mb'] > quota_mb:
                         cleanup_stats['quota_violations'] += 1
@@ -317,7 +308,7 @@ class EnhancedCleanupService:
                         space_freed = self._cleanup_user_files_to_quota(user.id, quota_mb)
                         cleanup_stats['space_freed_mb'] += space_freed
                         
-                        logger.info(f"Enforced quota for user {user.id}: freed {space_freed:.2f}MB")
+                        logger.info(f"Enforced default quota for user {user.id}: freed {space_freed:.2f}MB")
                     
                     cleanup_stats['users_processed'] += 1
                     
@@ -445,45 +436,24 @@ class EnhancedCleanupService:
             logger.error(f"Error getting cleanup statistics: {str(e)}")
             return {'error': str(e)}
     
-    def _get_expired_jobs_by_tier(self) -> List[CompressionJob]:
-        """Get expired jobs based on user tier retention policies"""
+    def _get_expired_jobs(self) -> List[CompressionJob]:
+        """Get expired jobs based on default retention period"""
         expired_jobs = []
         
         try:
-            for tier, retention_hours in self.RETENTION_PERIODS.items():
-                cutoff_time = datetime.utcnow() - timedelta(hours=retention_hours)
-                
-                # Query jobs for users with this tier
-                if tier == 'free':
-                    # Users without active subscription
-                    jobs = db.session.query(CompressionJob)\
-                        .join(User)\
-                        .outerjoin(Subscription)\
-                        .filter(
-                            CompressionJob.created_at < cutoff_time,
-                            db.or_(
-                                Subscription.id.is_(None),
-                                Subscription.status != 'active'
-                            )
-                        ).all()
-                else:
-                    # Users with active subscription of this tier
-                    jobs = db.session.query(CompressionJob)\
-                        .join(User)\
-                        .join(Subscription)\
-                        .join(Plan)\
-                        .filter(
-                            CompressionJob.created_at < cutoff_time,
-                            Subscription.status == 'active',
-                            Plan.name == tier
-                        ).all()
-                
-                expired_jobs.extend(jobs)
+            # Use default retention period for all jobs
+            cutoff_time = datetime.utcnow() - timedelta(hours=self.DEFAULT_RETENTION_PERIOD)
             
+            # Get expired jobs
+            expired_jobs = CompressionJob.query.filter(
+                CompressionJob.created_at < cutoff_time
+            ).all()
+            
+            logger.debug(f"Found {len(expired_jobs)} expired jobs")
             return expired_jobs
             
         except Exception as e:
-            logger.error(f"Error getting expired jobs by tier: {str(e)}")
+            logger.error(f"Error getting expired jobs: {str(e)}")
             return []
     
     def _cleanup_job_files_secure(self, job: CompressionJob) -> float:
@@ -511,8 +481,8 @@ class EnhancedCleanupService:
                 try:
                     file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
                     
-                    # Use FileManager for secure deletion
-                    if self.file_manager.delete_file(file_path, job.user_id):
+                    # Use FileManager for secure deletion without user_id reference
+                    if self.file_manager.delete_file(file_path):
                         space_freed_mb += file_size_mb
                         logger.debug(f"Deleted job file: {file_path}")
                     

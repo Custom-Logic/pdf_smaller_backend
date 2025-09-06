@@ -138,9 +138,7 @@ class BaseConfig:
         if len(cls.SECRET_KEY) < 32:
             errors.append("SECRET_KEY should be at least 32 characters long")
         
-        # Validate JWT settings
-        if not cls.JWT_SECRET_KEY:
-            errors.append("JWT_SECRET_KEY must be set")
+        # JWT validation removed as user authentication is not needed
         
         # Validate database URL
         if not cls.SQLALCHEMY_DATABASE_URI:
