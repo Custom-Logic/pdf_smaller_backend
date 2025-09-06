@@ -4,7 +4,7 @@ from flask import Flask, jsonify
 from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
 
-from src.routes import auth_bp, compression_bp, subscription_bp, admin_bp
+from src.routes import auth_bp, compression_bp, subscription_bp, admin_bp, extended_features_bp
 from src.utils import setup_logging
 from src.utils.scheduler import start_background_scheduler
 from src.utils.rate_limiter import create_rate_limiter, RateLimitMiddleware
@@ -185,12 +185,13 @@ def register_blueprints(app):
         (auth_bp, '/api/auth'),
         (compression_bp, '/api'),
         (subscription_bp, '/api/subscriptions'),
-        (admin_bp, '/api/admin')
+        (admin_bp, '/api/admin'),
+		(extended_features_bp, '/api')
     ]
     
     for blueprint, url_prefix in blueprints:
         try:
-            app.register_blueprint(blueprint, url_prefix=url_prefix)
+            app.register_blueprint(blueprint)
             app.logger.info(f"Registered blueprint: {blueprint.name} at {url_prefix}")
         except Exception as e:
             app.logger.error(f"Failed to register blueprint {blueprint.name}: {e}")

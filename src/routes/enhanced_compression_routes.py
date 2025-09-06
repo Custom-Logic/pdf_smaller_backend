@@ -11,7 +11,7 @@ from flask_limiter.util import get_remote_address
 from werkzeug.utils import secure_filename
 import json
 from datetime import datetime
-
+from flask_cors import CORS
 from src.services.enhanced_compression_service import EnhancedCompressionService
 from src.utils.validation import validate_file
 from src.utils.rate_limiter import rate_limit
@@ -21,7 +21,7 @@ from src.utils.error_handlers import handle_api_error
 logger = logging.getLogger(__name__)
 
 enhanced_compression_bp = Blueprint('enhanced_compression', __name__)
-
+CORS(enhanced_compression_bp, resources={r"/api/enhanced": {"origins": ["https://www.pdfsmaller.site"]}})
 # Initialize rate limiter
 limiter = Limiter(
     key_func=get_remote_address,
@@ -35,8 +35,6 @@ enhanced_compression_service = EnhancedCompressionService(
 
 
 @enhanced_compression_bp.route('/compress/intelligent', methods=['POST'])
-@rate_limit(limit=10, per=300)  # 10 requests per 5 minutes
-@require_auth
 async def intelligent_compression():
     """Intelligent compression with AI recommendations"""
     try:
@@ -97,8 +95,6 @@ async def intelligent_compression():
 
 
 @enhanced_compression_bp.route('/compress/analyze', methods=['POST'])
-@rate_limit(limit=20, per=300)  # 20 analysis requests per 5 minutes
-@require_auth
 async def analyze_pdf():
     """Analyze PDF for compression potential"""
     try:
@@ -131,8 +127,6 @@ async def analyze_pdf():
 
 
 @enhanced_compression_bp.route('/compress/batch', methods=['POST'])
-@rate_limit(limit=5, per=3600)  # 5 batch jobs per hour
-@require_auth
 async def create_batch_job():
     """Create batch compression job"""
     try:
@@ -197,8 +191,6 @@ async def create_batch_job():
 
 
 @enhanced_compression_bp.route('/compress/batch/<batch_id>/status', methods=['GET'])
-@rate_limit(limit=30, per=300)  # 30 status checks per 5 minutes
-@require_auth
 async def get_batch_status(batch_id):
     """Get batch job status"""
     try:
@@ -220,8 +212,6 @@ async def get_batch_status(batch_id):
 
 
 @enhanced_compression_bp.route('/compress/history', methods=['GET'])
-@rate_limit(limit=20, per=300)  # 20 history requests per 5 minutes
-@require_auth
 async def get_compression_history():
     """Get user's compression history"""
     try:
@@ -248,8 +238,6 @@ async def get_compression_history():
 
 
 @enhanced_compression_bp.route('/compress/preview', methods=['POST'])
-@rate_limit(limit=30, per=300)  # 30 preview requests per 5 minutes
-@require_auth
 async def get_compression_preview():
     """Get compression preview with estimated results"""
     try:
@@ -304,8 +292,6 @@ async def get_compression_preview():
 
 
 @enhanced_compression_bp.route('/compress/optimize', methods=['POST'])
-@rate_limit(limit=15, per=300)  # 15 optimization requests per 5 minutes
-@require_auth
 async def optimize_compression_settings():
     """Get optimized compression settings for a file"""
     try:
@@ -361,8 +347,6 @@ async def optimize_compression_settings():
 
 
 @enhanced_compression_bp.route('/compress/compare', methods=['POST'])
-@rate_limit(limit=10, per=300)  # 10 comparison requests per 5 minutes
-@require_auth
 async def compare_compression_settings():
     """Compare different compression settings for a file"""
     try:

@@ -2,16 +2,15 @@ import os
 import subprocess
 import tempfile
 import logging
+import uuid
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Dict, Any
-from src.utils import secure_filename, cleanup_old_files
-from src.models import CompressionJob, User
+from typing import Optional, Dict, Any, Tuple
+from src.models.job import Job, JobStatus
 from src.models.base import db
-from src.services.subscription_service import SubscriptionService
+from src.utils.file_utils import secure_filename, cleanup_old_files, get_file_size
 
 logger = logging.getLogger(__name__)
-
 
 class CompressionService:
     GHOSTSCRIPT_BINARY = "/usr/bin/gs"  # Absolute path to Ghostscript
@@ -23,7 +22,7 @@ class CompressionService:
         if not os.path.exists(self.GHOSTSCRIPT_BINARY):
             raise EnvironmentError(f"Ghostscript binary not found at {self.GHOSTSCRIPT_BINARY}")
 
-    def compress_pdf(self, input_path, output_path, compression_level='medium', image_quality=80):
+    def compress_pdf(self, input_path: str, output_path: str, compression_level: str = 'medium', image_quality: int = 80) -> bool:
         """
         Compress PDF using Ghostscript with advanced options
         """
@@ -91,88 +90,90 @@ class CompressionService:
             logger.error(f"Error during compression: {str(e)}")
             raise
 
-    def process_upload(self, file, compression_level='medium', image_quality=80, user_id=None):
+    def process_file_data(self, file_data: bytes, settings: Dict[str, Any], original_filename: str = None) -> Dict[str, Any]:
         """
-        Process an uploaded file and return the path to the compressed version
-        Now includes user context for tracking and permissions
+        Process file data (bytes) and return compression results
+        Returns job result data instead of file path
         """
-        filename = secure_filename(file.filename)
-        input_path = os.path.join(self.upload_folder, f"input_{filename}")
-        output_path = os.path.join(self.upload_folder, f"compressed_{filename}")
-
-        # Create compression job for tracking
-        compression_job = None
-        if user_id:
-            compression_job = self._create_compression_job(
-                user_id, filename, compression_level, image_quality
-            )
-
         try:
-            file.save(input_path)
-            
-            # Get file size before compression
-            original_size = os.path.getsize(input_path)
-            
-            # Update job status to processing
-            if compression_job:
-                compression_job.mark_as_processing()
-                compression_job.input_path = input_path
-                compression_job.original_size_bytes = original_size
-                db.session.commit()
-            
-            # Perform compression
-            self.compress_pdf(input_path, output_path, compression_level, image_quality)
-            
-            # Get compressed file size
-            compressed_size = os.path.getsize(output_path)
-            
-            # Update job with results
-            if compression_job:
-                compression_job.result_path = output_path
-                compression_job.compressed_size_bytes = compressed_size
-                compression_job.calculate_compression_ratio()
-                compression_job.mark_as_completed()
-                db.session.commit()
+            # Create temporary directory for processing
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Save input file
+                input_filename = original_filename or f"input_{uuid.uuid4().hex[:8]}.pdf"
+                input_path = os.path.join(temp_dir, secure_filename(input_filename))
                 
-                # Increment user usage counter
-                if user_id:
-                    SubscriptionService.increment_usage(user_id)
-            
-            cleanup_old_files(self.upload_folder, max_age_hours=1)
-            return output_path
-            
+                with open(input_path, 'wb') as f:
+                    f.write(file_data)
+                
+                # Get original size
+                original_size = len(file_data)
+                
+                # Prepare output file
+                output_filename = f"compressed_{input_filename}"
+                output_path = os.path.join(temp_dir, output_filename)
+                
+                # Extract compression settings
+                compression_level = settings.get('compression_level', 'medium')
+                image_quality = settings.get('image_quality', 80)
+                
+                # Perform compression
+                self.compress_pdf(input_path, output_path, compression_level, image_quality)
+                
+                # Get compressed size
+                compressed_size = get_file_size(output_path)
+                
+                # Calculate compression ratio
+                compression_ratio = ((original_size - compressed_size) / original_size) * 100
+                
+                # Read compressed file data
+                with open(output_path, 'rb') as f:
+                    compressed_data = f.read()
+                
+                # Create result with output path for potential file operations
+                result = {
+                    'success': True,
+                    'original_size': original_size,
+                    'compressed_size': compressed_size,
+                    'compression_ratio': compression_ratio,
+                    'compression_level': compression_level,
+                    'image_quality': image_quality,
+                    'original_filename': original_filename,
+                    'output_path': output_path,  # Temporary path, will be cleaned up
+                    'compressed_data': compressed_data,  # Actual compressed bytes
+                    'mime_type': 'application/pdf'
+                }
+                
+                return result
+                
         except Exception as e:
-            # Mark job as failed if it exists
-            if compression_job:
-                compression_job.mark_as_failed(str(e))
-                db.session.commit()
-            
-            # Clean up files
-            for path in [input_path, output_path]:
-                if os.path.exists(path):
-                    os.remove(path)
-            logger.error(f"Compression service error: {str(e)}")
+            logger.error(f"Error processing file data: {str(e)}")
             raise
 
-    def _create_compression_job(self, user_id: int, filename: str, compression_level: str, image_quality: int) -> CompressionJob:
-        """Create a compression job record for tracking"""
+    def create_compression_job(self, file_data: bytes, settings: Dict[str, Any], 
+                              original_filename: str = None, client_job_id: str = None,
+                              client_session_id: str = None) -> Job:
+        """
+        Create a compression job record for async processing
+        """
         try:
-            settings = {
-                'compression_level': compression_level,
-                'image_quality': image_quality
-            }
+            job_id = str(uuid.uuid4())
             
-            job = CompressionJob(
-                user_id=user_id,
-                job_type='single',
-                original_filename=filename,
-                settings=settings
+            job = Job(
+                id=job_id,
+                task_type='compress',
+                input_data={
+                    'settings': settings,
+                    'file_size': len(file_data),
+                    'original_filename': original_filename
+                },
+                client_job_id=client_job_id,
+                client_session_id=client_session_id
             )
             
             db.session.add(job)
             db.session.commit()
             
-            logger.info(f"Created compression job {job.id} for user {user_id}")
+            logger.info(f"Created compression job {job_id} (client_job_id: {client_job_id})")
             return job
             
         except Exception as e:
@@ -180,55 +181,298 @@ class CompressionService:
             logger.error(f"Error creating compression job: {str(e)}")
             raise
 
-    def check_user_permissions(self, user_id: int, file_size_mb: float) -> Dict[str, Any]:
+    def process_compression_job(self, job_id: str) -> Dict[str, Any]:
         """
-        Check if user has permission to compress files
-        Returns detailed permission status
+        Process a compression job synchronously
         """
         try:
-            # Get user's compression permissions
-            permission_status = SubscriptionService.check_compression_permission(user_id)
+            job = Job.query.get(job_id)
+            if not job:
+                raise ValueError(f"Job {job_id} not found")
             
-            if not permission_status['can_compress']:
-                return {
-                    'allowed': False,
-                    'reason': permission_status['reason'],
-                    'details': permission_status
-                }
+            if job.task_type != 'compress':
+                raise ValueError(f"Job {job_id} is not a compression job")
             
-            # Check file size limits
-            max_file_size = SubscriptionService.get_max_file_size(user_id)
-            if file_size_mb > max_file_size:
-                return {
-                    'allowed': False,
-                    'reason': f'File size ({file_size_mb:.1f}MB) exceeds limit ({max_file_size}MB)',
-                    'details': permission_status
+            # Update job status
+            job.status = JobStatus.PROCESSING
+            db.session.commit()
+            
+            # Get job data
+            input_data = job.input_data
+            settings = input_data.get('settings', {})
+            file_size = input_data.get('file_size', 0)
+            original_filename = input_data.get('original_filename')
+            
+            # Note: In async processing, file_data would be retrieved from storage
+            # For this synchronous version, we assume the file data is available elsewhere
+            # or the job was created with all necessary data
+            
+            # Create temporary directory
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # For demonstration - in real implementation, file_data would be passed
+                # or retrieved from a temporary storage
+                input_path = os.path.join(temp_dir, f"input_{job_id}.pdf")
+                output_path = os.path.join(temp_dir, f"compressed_{job_id}.pdf")
+                
+                # Extract compression settings
+                compression_level = settings.get('compression_level', 'medium')
+                image_quality = settings.get('image_quality', 80)
+                
+                # Perform compression (in real implementation, use actual file_data)
+                self.compress_pdf(input_path, output_path, compression_level, image_quality)
+                
+                # Get compressed size
+                compressed_size = get_file_size(output_path)
+                
+                # Calculate compression ratio
+                compression_ratio = ((file_size - compressed_size) / file_size) * 100
+                
+                # Update job with results
+                job.result = {
+                    'original_size': file_size,
+                    'compressed_size': compressed_size,
+                    'compression_ratio': compression_ratio,
+                    'compression_level': compression_level,
+                    'image_quality': image_quality,
+                    'original_filename': original_filename,
+                    'output_path': output_path
                 }
+                job.status = JobStatus.COMPLETED
+                db.session.commit()
+                
+                return job.result
+                
+        except Exception as e:
+            if 'job' in locals():
+                job.status = JobStatus.FAILED
+                job.error = str(e)
+                db.session.commit()
+            
+            logger.error(f"Error processing compression job {job_id}: {str(e)}")
+            raise
+
+    def get_compression_preview(self, file_data: bytes, settings: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Generate compression preview without actual processing
+        """
+        try:
+            # Analyze file for preview (simple size-based estimation)
+            original_size = len(file_data)
+            
+            # Estimate compression based on settings
+            compression_level = settings.get('compression_level', 'medium')
+            image_quality = settings.get('image_quality', 80)
+            
+            # Simple estimation logic (can be enhanced with ML)
+            compression_ratios = {
+                'low': 0.2,    # 20% reduction
+                'medium': 0.4, # 40% reduction
+                'high': 0.6,   # 60% reduction
+                'maximum': 0.8 # 80% reduction
+            }
+            
+            ratio = compression_ratios.get(compression_level, 0.4)
+            # Adjust based on image quality
+            quality_factor = image_quality / 100.0
+            ratio *= (1.0 - (1.0 - quality_factor) * 0.3)  # Adjust ratio based on quality
+            
+            estimated_size = int(original_size * (1 - ratio))
             
             return {
-                'allowed': True,
-                'reason': None,
-                'details': permission_status
+                'original_size': original_size,
+                'estimated_size': estimated_size,
+                'estimated_ratio': ratio * 100,
+                'compression_level': compression_level,
+                'image_quality': image_quality,
+                'quality_adjustment': quality_factor
             }
             
         except Exception as e:
-            logger.error(f"Error checking user permissions: {str(e)}")
+            logger.error(f"Error generating compression preview: {str(e)}")
+            raise
+
+    def analyze_pdf_content(self, file_data: bytes) -> Dict[str, Any]:
+        """
+        Analyze PDF content for compression potential
+        """
+        try:
+            # Create temporary file for analysis
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
+                tmp.write(file_data)
+                tmp_path = tmp.name
+            
+            try:
+                # Use pdfinfo to analyze PDF
+                result = subprocess.run(
+                    ['pdfinfo', tmp_path],
+                    capture_output=True, text=True, timeout=30
+                )
+                
+                if result.returncode != 0:
+                    return {
+                        'success': False,
+                        'error': 'Failed to analyze PDF',
+                        'analysis': {}
+                    }
+                
+                # Parse pdfinfo output
+                info = {}
+                for line in result.stdout.split('\n'):
+                    if ':' in line:
+                        key, value = line.split(':', 1)
+                        info[key.strip()] = value.strip()
+                
+                # Extract useful information
+                page_count = int(info.get('Pages', 0))
+                file_size = len(file_data)
+                
+                # Simple analysis (can be enhanced)
+                analysis = {
+                    'page_count': page_count,
+                    'file_size': file_size,
+                    'file_size_mb': file_size / (1024 * 1024),
+                    'pages_per_mb': page_count / (file_size / (1024 * 1024)) if file_size > 0 else 0,
+                    'compression_potential': self._estimate_compression_potential(info, file_data),
+                    'document_type': self._classify_document_type(info),
+                    'metadata': info
+                }
+                
+                return {
+                    'success': True,
+                    'analysis': analysis
+                }
+                
+            finally:
+                # Clean up temporary file
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+                    
+        except Exception as e:
+            logger.error(f"Error analyzing PDF content: {str(e)}")
             return {
-                'allowed': False,
-                'reason': 'System error checking permissions',
-                'details': {}
+                'success': False,
+                'error': str(e),
+                'analysis': {}
             }
 
-    def get_user_compression_jobs(self, user_id: int, limit: int = 10) -> list:
-        """Get recent compression jobs for a user"""
+    def _estimate_compression_potential(self, pdfinfo: Dict[str, str], file_data: bytes) -> float:
+        """
+        Estimate compression potential based on PDF metadata
+        """
+        # Simple heuristic-based estimation
+        potential = 0.3  # Base potential
+        
+        # Adjust based on file size (larger files have more potential)
+        file_size_mb = len(file_data) / (1024 * 1024)
+        if file_size_mb > 10:
+            potential += 0.2
+        elif file_size_mb > 5:
+            potential += 0.1
+        
+        # Adjust based on page count (more pages = more potential)
+        page_count = int(pdfinfo.get('Pages', 1))
+        if page_count > 20:
+            potential += 0.2
+        elif page_count > 10:
+            potential += 0.1
+        
+        # Cap at 0.8 (80% potential)
+        return min(potential, 0.8)
+
+    def _classify_document_type(self, pdfinfo: Dict[str, str]) -> str:
+        """
+        Classify document type based on PDF metadata
+        """
+        # Simple classification based on metadata
+        title = pdfinfo.get('Title', '').lower()
+        creator = pdfinfo.get('Creator', '').lower()
+        
+        if any(word in title + creator for word in ['scan', 'scanner', 'tiff', 'jpeg']):
+            return 'scanned_document'
+        elif any(word in creator for word in ['word', 'office', 'libreoffice']):
+            return 'office_document'
+        elif any(word in creator for word in ['latex', 'tex']):
+            return 'academic_document'
+        elif any(word in title for word in ['invoice', 'receipt', 'bill']):
+            return 'business_document'
+        else:
+            return 'general_document'
+
+    def cleanup_job_files(self, job: Job) -> bool:
+        """
+        Clean up files associated with a compression job
+        """
         try:
-            jobs = CompressionJob.query.filter_by(user_id=user_id)\
-                .order_by(CompressionJob.created_at.desc())\
-                .limit(limit)\
-                .all()
+            # Clean up result files
+            if job.result and 'output_path' in job.result:
+                output_path = job.result['output_path']
+                if os.path.exists(output_path):
+                    os.unlink(output_path)
+                    logger.debug(f"Cleaned up output file: {output_path}")
             
-            return [job.to_dict() for job in jobs]
+            # Clean up any temporary files in input data
+            if job.input_data and 'temp_files' in job.input_data:
+                for temp_file in job.input_data['temp_files']:
+                    if os.path.exists(temp_file):
+                        os.unlink(temp_file)
+                        logger.debug(f"Cleaned up temp file: {temp_file}")
+            
+            return True
             
         except Exception as e:
-            logger.error(f"Error getting compression jobs for user {user_id}: {str(e)}")
-            return []
+            logger.error(f"Error cleaning up job files for job {job.id}: {str(e)}")
+            return False
+
+    def get_recommended_settings(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get recommended compression settings based on analysis
+        """
+        doc_type = analysis.get('document_type', 'general_document')
+        file_size_mb = analysis.get('file_size_mb', 0)
+        compression_potential = analysis.get('compression_potential', 0.3)
+        
+        recommendations = {
+            'scanned_document': {
+                'compression_level': 'high',
+                'image_quality': 75,
+                'recommendation': 'High compression recommended for scanned documents'
+            },
+            'office_document': {
+                'compression_level': 'medium',
+                'image_quality': 85,
+                'recommendation': 'Medium compression for Office documents'
+            },
+            'academic_document': {
+                'compression_level': 'low',
+                'image_quality': 90,
+                'recommendation': 'Light compression to preserve academic content'
+            },
+            'business_document': {
+                'compression_level': 'medium',
+                'image_quality': 80,
+                'recommendation': 'Medium compression for business documents'
+            },
+            'general_document': {
+                'compression_level': 'medium',
+                'image_quality': 85,
+                'recommendation': 'Standard compression settings'
+            }
+        }
+        
+        base_settings = recommendations.get(doc_type, recommendations['general_document'])
+        
+        # Adjust based on file size
+        if file_size_mb > 20:
+            base_settings['compression_level'] = 'high'
+            base_settings['image_quality'] = max(70, base_settings['image_quality'] - 10)
+        elif file_size_mb < 1:
+            base_settings['compression_level'] = 'low'
+            base_settings['image_quality'] = min(95, base_settings['image_quality'] + 5)
+        
+        # Adjust based on compression potential
+        if compression_potential > 0.6:
+            base_settings['compression_level'] = 'high'
+        elif compression_potential < 0.4:
+            base_settings['compression_level'] = 'low'
+        
+        return base_settings

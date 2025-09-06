@@ -21,10 +21,10 @@ def make_celery(app=None):
     
     # Create Celery instance
     celery = Celery(
-        'pdf_compression_tasks',
+        'pdf_tools_tasks',
         broker=config.CELERY_BROKER_URL,
         backend=config.CELERY_RESULT_BACKEND,
-        include=['src.tasks.compression_tasks']
+        include=['src.tasks.tasks']
     )
     
     # Configure Celery
@@ -38,8 +38,20 @@ def make_celery(app=None):
         
         # Task routing
         task_routes={
-            'src.tasks.compression_tasks.process_bulk_compression': {'queue': 'compression'},
-            'src.tasks.compression_tasks.cleanup_expired_jobs': {'queue': 'cleanup'},
+            'src.tasks.process_bulk_compression': {'queue': 'compression'},
+            'src.tasks.cleanup_expired_jobs': {'queue': 'cleanup'},
+            'src.tasks.process_compression': {'queue': 'compression'},
+            'tasks.compress_task': {'queue': 'compression'},
+            'tasks.bulk_compress_task': {'queue': 'compression'},
+            'tasks.convert_pdf_task': {'queue': 'conversion'},
+            'tasks.conversion_preview_task': {'queue': 'conversion'},
+            'tasks.ocr_process_task': {'queue': 'ocr'},
+            'tasks.ocr_preview_task': {'queue': 'ocr'},
+            'tasks.ai_summarize_task': {'queue': 'ai'},
+            'tasks.ai_translate_task': {'queue': 'ai'},
+            'tasks.extract_text_task': {'queue': 'ai'},
+            'tasks.cleanup_expired_jobs': {'queue': 'cleanup'},
+            'tasks.get_task_status': {'queue': 'default'}
         },
         
         # Worker settings
@@ -61,7 +73,7 @@ def make_celery(app=None):
         # Beat schedule for periodic tasks
         beat_schedule={
             'cleanup-expired-jobs': {
-                'task': 'src.tasks.compression_tasks.cleanup_expired_jobs',
+                'task': 'tasks.cleanup_expired_jobs',
                 'schedule': 3600.0,  # Run every hour
                 'options': {'queue': 'cleanup'}
             },

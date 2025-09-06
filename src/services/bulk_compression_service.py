@@ -1,6 +1,8 @@
 """
-Bulk compression service for handling multiple PDF files
+Bulk compression service - Job-Oriented Architecture
+Handles multiple file compression without user awareness
 """
+
 import os
 import uuid
 import zipfile
@@ -11,72 +13,48 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 from werkzeug.datastructures import FileStorage
 
-from src.models import CompressionJob, User
+from src.models.job import Job, JobStatus
 from src.models.base import db
 from src.services.compression_service import CompressionService
-from src.services.subscription_service import SubscriptionService
 from src.utils.file_utils import (
     secure_filename, ensure_directory_exists, get_file_size,
     validate_file_type, get_unique_filename, delete_file_safely
 )
 
-
 logger = logging.getLogger(__name__)
 
-
 class BulkCompressionService:
-    """Service for handling bulk PDF compression operations"""
+    """Service for handling bulk PDF compression operations - Job-Oriented"""
     
-    MAX_FILES_FREE = 1  # Free users can only process single files
-    MAX_FILES_PREMIUM = 50  # Premium users can process up to 50 files
-    MAX_FILES_PRO = 100  # Pro users can process up to 100 files
-    
-    ALLOWED_EXTENSIONS = {'pdf'}
+    # Configuration constants
+    MAX_FILES = 100  # Maximum files per bulk job
     MAX_FILE_SIZE_MB = 50  # Maximum individual file size
-    
+    MAX_TOTAL_SIZE_MB = 1000  # Maximum total size per bulk job
+    ALLOWED_EXTENSIONS = {'pdf'}
+
     def __init__(self, upload_folder: str):
         self.upload_folder = upload_folder
         self.compression_service = CompressionService(upload_folder)
         ensure_directory_exists(upload_folder)
     
-    def validate_bulk_request(self, user_id: int, files: List[FileStorage]) -> Dict[str, Any]:
+    def validate_bulk_request(self, files: List[FileStorage]) -> Dict[str, Any]:
         """
-        Validate a bulk compression request
+        Validate a bulk compression request (user-agnostic)
         
         Args:
-            user_id: ID of the user making the request
             files: List of uploaded files
             
         Returns:
             Dictionary with validation results
         """
         try:
-            # Get user subscription info
-            subscription = SubscriptionService.get_user_subscription(user_id)
-            if subscription and subscription.is_active():
-                user_tier = subscription.plan.name
-            else:
-                user_tier = 'free'
-            
-            # Check if user can perform bulk operations
-            if user_tier == 'free':
-                return {
-                    'valid': False,
-                    'error': 'Bulk compression requires a premium subscription',
-                    'error_code': 'PREMIUM_REQUIRED',
-                    'max_files': self.MAX_FILES_FREE
-                }
-            
-            # Determine file limits based on user tier
-            max_files = self._get_max_files_for_tier(user_tier)
-            
             # Validate file count
-            if len(files) > max_files:
+            if len(files) > self.MAX_FILES:
                 return {
                     'valid': False,
-                    'error': f'Too many files. Maximum allowed: {max_files}',
+                    'error': f'Too many files. Maximum allowed: {self.MAX_FILES}',
                     'error_code': 'TOO_MANY_FILES',
-                    'max_files': max_files
+                    'max_files': self.MAX_FILES
                 }
             
             if len(files) == 0:
@@ -98,23 +76,12 @@ class BulkCompressionService:
                     total_size_mb += file_validation['size_mb']
             
             # Check total size limits
-            max_total_size = self._get_max_total_size_for_tier(user_tier)
-            if total_size_mb > max_total_size:
+            if total_size_mb > self.MAX_TOTAL_SIZE_MB:
                 validation_errors.append({
                     'valid': False,
-                    'error': f'Total file size ({total_size_mb:.1f}MB) exceeds limit ({max_total_size}MB)',
+                    'error': f'Total file size ({total_size_mb:.1f}MB) exceeds limit ({self.MAX_TOTAL_SIZE_MB}MB)',
                     'error_code': 'TOTAL_SIZE_EXCEEDED'
                 })
-            
-            # Check user's remaining quota
-            usage_check = SubscriptionService.check_compression_permission(user_id)
-            if not usage_check['can_compress']:
-                return {
-                    'valid': False,
-                    'error': usage_check['reason'],
-                    'error_code': 'QUOTA_EXCEEDED',
-                    'usage_info': usage_check
-                }
             
             if validation_errors:
                 return {
@@ -129,8 +96,7 @@ class BulkCompressionService:
                 'valid': True,
                 'file_count': len(files),
                 'total_size_mb': total_size_mb,
-                'user_tier': user_tier,
-                'max_files': max_files
+                'max_files': self.MAX_FILES
             }
             
         except Exception as e:
@@ -218,193 +184,113 @@ class BulkCompressionService:
                 'index': index
             }
     
-    def create_bulk_job(self, user_id: int, files: List[FileStorage], 
-                       compression_settings: Dict[str, Any]) -> CompressionJob:
+    def create_bulk_job(self, file_data_list: List[bytes], filenames: List[str], 
+                       compression_settings: Dict[str, Any], client_job_id: str = None,
+                       client_session_id: str = None) -> Job:
         """
-        Create a bulk compression job
+        Create a bulk compression job (user-agnostic)
         
         Args:
-            user_id: ID of the user
-            files: List of uploaded files
+            file_data_list: List of file data as bytes
+            filenames: List of original filenames
             compression_settings: Compression settings to apply
+            client_job_id: Client-provided job ID for tracking
+            client_session_id: Client-provided session ID
             
         Returns:
-            Created CompressionJob instance
+            Created Job instance
         """
         try:
             # Generate unique job identifier
             job_id = str(uuid.uuid4())
             
-            # Create job record
-            job = CompressionJob(
-                user_id=user_id,
-                job_type='bulk',
-                original_filename=f"bulk_job_{len(files)}_files",
-                settings=compression_settings
-            )
-            job.file_count = len(files)
-            
-            db.session.add(job)
-            db.session.flush()  # Get the job ID
-            
             # Create job directory
-            job_dir = os.path.join(self.upload_folder, f"bulk_job_{job.id}")
+            job_dir = os.path.join(self.upload_folder, f"bulk_job_{job_id}")
             ensure_directory_exists(job_dir)
             
             # Save uploaded files
             input_files = []
             total_size = 0
             
-            for i, file in enumerate(files):
-                secure_name = secure_filename(file.filename)
+            for i, (file_data, filename) in enumerate(zip(file_data_list, filenames)):
+                secure_name = secure_filename(filename)
                 unique_name = get_unique_filename(job_dir, f"input_{i:03d}_{secure_name}")
                 file_path = os.path.join(job_dir, unique_name)
                 
-                file.save(file_path)
+                # Write file data to disk
+                with open(file_path, 'wb') as f:
+                    f.write(file_data)
+                
                 file_size = get_file_size(file_path)
                 total_size += file_size
                 
                 input_files.append({
-                    'original_name': file.filename,
+                    'original_name': filename,
                     'saved_name': unique_name,
                     'path': file_path,
                     'size': file_size
                 })
             
-            # Update job with file information
-            job.input_path = job_dir
-            job.original_size_bytes = total_size
+            # Create job record
+            job = Job(
+                id=job_id,
+                task_type='bulk_compress',
+                input_data={
+                    'compression_settings': compression_settings,
+                    'file_count': len(file_data_list),
+                    'total_size': total_size,
+                    'input_files': input_files,
+                    'job_directory': job_dir
+                },
+                client_job_id=client_job_id,
+                client_session_id=client_session_id
+            )
             
-            # Store file list in job settings
-            job_settings = job.get_settings()
-            job_settings['input_files'] = input_files
-            job_settings['job_directory'] = job_dir
-            job.set_settings(job_settings)
-            
+            db.session.add(job)
             db.session.commit()
             
-            logger.info(f"Created bulk compression job {job.id} with {len(files)} files for user {user_id}")
+            logger.info(f"Created bulk compression job {job_id} with {len(file_data_list)} files")
             return job
             
         except Exception as e:
             db.session.rollback()
             logger.error(f"Error creating bulk job: {str(e)}")
+            # Clean up any created files
+            try:
+                if 'job_dir' in locals() and os.path.exists(job_dir):
+                    import shutil
+                    shutil.rmtree(job_dir)
+            except:
+                pass
             raise
     
-    def process_bulk_job_async(self, job_id: int) -> str:
+    def process_bulk_job(self, job_id: str) -> Dict[str, Any]:
         """
-        Queue a bulk compression job for asynchronous processing
+        Process a bulk compression job synchronously
         
         Args:
-            job_id: ID of the compression job
-            
-        Returns:
-            Celery task ID
-        """
-        try:
-            from src.tasks.compression_tasks import process_bulk_compression
-            
-            # Queue the task
-            task = process_bulk_compression.delay(job_id)
-            
-            # Update job with task ID
-            job = CompressionJob.query.get(job_id)
-            if job:
-                job.task_id = task.id
-                db.session.commit()
-            
-            logger.info(f"Queued bulk compression job {job_id} with task ID {task.id}")
-            return task.id
-            
-        except Exception as e:
-            logger.error(f"Error queuing bulk job {job_id}: {str(e)}")
-            raise
-    
-    def get_task_status(self, task_id: str) -> Dict[str, Any]:
-        """
-        Get the status of a Celery task
-        
-        Args:
-            task_id: Celery task ID
-            
-        Returns:
-            Task status information
-        """
-        try:
-            from src.celery_app import celery_app
-            
-            result = celery_app.AsyncResult(task_id)
-            
-            if result.state == 'PENDING':
-                return {
-                    'state': result.state,
-                    'status': 'Task is waiting to be processed',
-                    'progress': 0
-                }
-            elif result.state == 'PROGRESS':
-                return {
-                    'state': result.state,
-                    'current': result.info.get('current', 0),
-                    'total': result.info.get('total', 1),
-                    'progress': result.info.get('progress', 0),
-                    'status': result.info.get('status', 'Processing...')
-                }
-            elif result.state == 'SUCCESS':
-                return {
-                    'state': result.state,
-                    'result': result.result,
-                    'status': 'Task completed successfully',
-                    'progress': 100
-                }
-            elif result.state == 'FAILURE':
-                return {
-                    'state': result.state,
-                    'error': str(result.info),
-                    'status': 'Task failed',
-                    'progress': 0
-                }
-            else:
-                return {
-                    'state': result.state,
-                    'status': f'Task state: {result.state}',
-                    'progress': 0
-                }
-                
-        except Exception as e:
-            logger.error(f"Error getting task status for {task_id}: {str(e)}")
-            return {
-                'state': 'ERROR',
-                'error': str(e),
-                'status': 'Error retrieving task status',
-                'progress': 0
-            }
-
-    def process_bulk_job_sync(self, job_id: int) -> Dict[str, Any]:
-        """
-        Process a bulk compression job synchronously (for testing/small batches)
-        
-        Args:
-            job_id: ID of the compression job
+            job_id: ID of the job
             
         Returns:
             Processing results
         """
         try:
-            job = CompressionJob.query.get(job_id)
+            job = Job.query.get(job_id)
             if not job:
                 raise ValueError(f"Job {job_id} not found")
             
-            if job.job_type != 'bulk':
-                raise ValueError(f"Job {job_id} is not a bulk job")
+            if job.task_type != 'bulk_compress':
+                raise ValueError(f"Job {job_id} is not a bulk compression job")
             
-            # Mark job as processing
-            job.mark_as_processing()
+            # Update job status
+            job.status = JobStatus.PROCESSING
             db.session.commit()
             
-            # Get job settings and files
-            settings = job.get_settings()
-            input_files = settings.get('input_files', [])
-            job_dir = settings.get('job_directory')
+            # Get job data
+            input_data = job.input_data
+            input_files = input_data.get('input_files', [])
+            compression_settings = input_data.get('compression_settings', {})
+            job_dir = input_data.get('job_directory')
             
             if not job_dir or not os.path.exists(job_dir):
                 raise ValueError("Job directory not found")
@@ -417,13 +303,16 @@ class BulkCompressionService:
             for i, file_info in enumerate(input_files):
                 try:
                     result = self._process_single_file_in_batch(
-                        file_info, job_dir, settings, i
+                        file_info, job_dir, compression_settings, i
                     )
                     processed_files.append(result)
                     total_compressed_size += result['compressed_size']
                     
-                    # Update progress
-                    job.completed_count = i + 1
+                    # Update progress in job metadata
+                    progress_data = job.result or {}
+                    progress_data['processed_count'] = i + 1
+                    progress_data['total_count'] = len(input_files)
+                    job.result = progress_data
                     db.session.commit()
                     
                 except Exception as e:
@@ -438,29 +327,28 @@ class BulkCompressionService:
             # Create result archive if any files were processed
             result_path = None
             if processed_files:
-                result_path = self._create_result_archive(job_dir, processed_files, job.id)
+                result_path = self._create_result_archive(job_dir, processed_files, job_id)
             
             # Update job with final results
-            job.compressed_size_bytes = total_compressed_size
-            job.result_path = result_path
-            job.calculate_compression_ratio()
+            job.result = {
+                'processed_files': len(processed_files),
+                'total_files': len(input_files),
+                'errors': errors,
+                'result_path': result_path,
+                'total_compressed_size': total_compressed_size,
+                'processed_files_info': processed_files
+            }
             
             if errors and not processed_files:
-                # All files failed
-                job.mark_as_failed(f"All files failed to process. Errors: {len(errors)}")
+                job.status = JobStatus.FAILED
+                job.error = f"All files failed: {len(errors)} errors"
             elif errors:
-                # Some files failed
-                job.mark_as_completed()
-                job.error_message = f"Completed with {len(errors)} errors"
+                job.status = JobStatus.COMPLETED
+                job.result['warning'] = f"Completed with {len(errors)} errors"
             else:
-                # All files succeeded
-                job.mark_as_completed()
+                job.status = JobStatus.COMPLETED
             
             db.session.commit()
-            
-            # Increment usage counter for successful compressions
-            if processed_files:
-                SubscriptionService.increment_usage(job.user_id, len(processed_files))
             
             return {
                 'success': True,
@@ -473,9 +361,10 @@ class BulkCompressionService:
             }
             
         except Exception as e:
-            # Mark job as failed
+            # Update job status on error
             if 'job' in locals():
-                job.mark_as_failed(str(e))
+                job.status = JobStatus.FAILED
+                job.error = str(e)
                 db.session.commit()
             
             logger.error(f"Error processing bulk job {job_id}: {str(e)}")
@@ -515,7 +404,7 @@ class BulkCompressionService:
         }
     
     def _create_result_archive(self, job_dir: str, processed_files: List[Dict[str, Any]], 
-                             job_id: int) -> str:
+                             job_id: str) -> str:
         """Create a ZIP archive containing all compressed files"""
         archive_filename = f"compressed_files_job_{job_id}.zip"
         archive_path = os.path.join(job_dir, archive_filename)
@@ -529,18 +418,18 @@ class BulkCompressionService:
         
         return archive_path
     
-    def get_job_progress(self, job_id: int) -> Dict[str, Any]:
+    def get_job_progress(self, job_id: str) -> Dict[str, Any]:
         """
         Get progress information for a bulk job
         
         Args:
-            job_id: ID of the compression job
+            job_id: ID of the job
             
         Returns:
             Progress information
         """
         try:
-            job = CompressionJob.query.get(job_id)
+            job = Job.query.get(job_id)
             if not job:
                 return {
                     'found': False,
@@ -550,27 +439,39 @@ class BulkCompressionService:
             progress_data = {
                 'found': True,
                 'job_id': job_id,
-                'status': job.status,
-                'job_type': job.job_type,
-                'file_count': job.file_count,
-                'completed_count': job.completed_count,
-                'progress_percentage': job.get_progress_percentage(),
+                'status': job.status.value,
+                'task_type': job.task_type,
                 'created_at': job.created_at.isoformat(),
-                'started_at': job.started_at.isoformat() if job.started_at else None,
-                'completed_at': job.completed_at.isoformat() if job.completed_at else None,
-                'is_completed': job.is_completed(),
-                'is_successful': job.is_successful(),
-                'error_message': job.error_message
+                'updated_at': job.updated_at.isoformat(),
+                'client_job_id': job.client_job_id
             }
             
-            # Add result information if completed
-            if job.is_completed() and job.is_successful():
+            # Add file count information if available
+            if job.input_data:
+                progress_data['file_count'] = job.input_data.get('file_count', 0)
+                progress_data['total_size'] = job.input_data.get('total_size', 0)
+            
+            # Add progress information if processing
+            if job.status == JobStatus.PROCESSING and job.result:
                 progress_data.update({
-                    'original_size_bytes': job.original_size_bytes,
-                    'compressed_size_bytes': job.compressed_size_bytes,
-                    'compression_ratio': job.compression_ratio,
-                    'result_available': bool(job.result_path and os.path.exists(job.result_path))
+                    'processed_count': job.result.get('processed_count', 0),
+                    'total_count': job.result.get('total_count', 0),
+                    'progress_percentage': int((job.result.get('processed_count', 0) / 
+                                              job.result.get('total_count', 1)) * 100)
                 })
+            
+            # Add result information if completed
+            if job.status == JobStatus.COMPLETED and job.result:
+                progress_data.update({
+                    'processed_files': job.result.get('processed_files', 0),
+                    'error_count': len(job.result.get('errors', [])),
+                    'result_available': bool(job.result.get('result_path')),
+                    'total_compressed_size': job.result.get('total_compressed_size', 0)
+                })
+            
+            # Add error information if failed
+            if job.status == JobStatus.FAILED:
+                progress_data['error'] = job.error
             
             return progress_data
             
@@ -581,56 +482,75 @@ class BulkCompressionService:
                 'error': 'System error retrieving job progress'
             }
     
-    def get_result_file_path(self, job_id: int, user_id: int) -> Optional[str]:
+    def get_result_file_path(self, job_id: str) -> Optional[str]:
         """
         Get the result file path for a completed bulk job
         
         Args:
-            job_id: ID of the compression job
-            user_id: ID of the user (for authorization)
+            job_id: ID of the job
             
         Returns:
             Path to result file or None if not available
         """
         try:
-            job = CompressionJob.query.filter_by(id=job_id, user_id=user_id).first()
+            job = Job.query.get(job_id)
             
             if not job:
-                logger.warning(f"Job {job_id} not found for user {user_id}")
+                logger.warning(f"Job {job_id} not found")
                 return None
             
-            if not job.is_completed() or not job.is_successful():
-                logger.warning(f"Job {job_id} is not completed successfully")
+            if job.status != JobStatus.COMPLETED:
+                logger.warning(f"Job {job_id} is not completed")
                 return None
             
-            if not job.result_path or not os.path.exists(job.result_path):
-                logger.warning(f"Result file not found for job {job_id}")
+            if not job.result or 'result_path' not in job.result:
+                logger.warning(f"Result file not found in job {job_id} data")
                 return None
             
-            return job.result_path
+            result_path = job.result['result_path']
+            if not os.path.exists(result_path):
+                logger.warning(f"Result file not found on disk: {result_path}")
+                return None
+            
+            return result_path
             
         except Exception as e:
             logger.error(f"Error getting result file for job {job_id}: {str(e)}")
             return None
     
-    def cleanup_job_files(self, job_id: int) -> bool:
+    def cleanup_job_files(self, job_id: str) -> bool:
         """
         Clean up all files associated with a bulk job
         
         Args:
-            job_id: ID of the compression job
+            job_id: ID of the job
             
         Returns:
             True if cleanup was successful
         """
         try:
-            job = CompressionJob.query.get(job_id)
+            job = Job.query.get(job_id)
             if not job:
                 return False
             
-            settings = job.get_settings()
-            job_dir = settings.get('job_directory')
+            # Get job directory from input data
+            job_dir = None
+            if job.input_data and 'job_directory' in job.input_data:
+                job_dir = job.input_data['job_directory']
             
+            # Clean up result files from result data
+            if job.result and 'result_path' in job.result:
+                result_path = job.result['result_path']
+                if os.path.exists(result_path):
+                    delete_file_safely(result_path)
+            
+            # Clean up processed files
+            if job.result and 'processed_files_info' in job.result:
+                for file_info in job.result['processed_files_info']:
+                    if 'output_path' in file_info and os.path.exists(file_info['output_path']):
+                        delete_file_safely(file_info['output_path'])
+            
+            # Clean up input files and directory
             if job_dir and os.path.exists(job_dir):
                 import shutil
                 shutil.rmtree(job_dir)
@@ -642,45 +562,87 @@ class BulkCompressionService:
             logger.error(f"Error cleaning up job {job_id}: {str(e)}")
             return False
     
-    def _get_max_files_for_tier(self, tier: str) -> int:
-        """Get maximum number of files allowed for user tier"""
-        tier_limits = {
-            'free': self.MAX_FILES_FREE,
-            'premium': self.MAX_FILES_PREMIUM,
-            'pro': self.MAX_FILES_PRO
-        }
-        return tier_limits.get(tier, self.MAX_FILES_FREE)
-    
-    def _get_max_total_size_for_tier(self, tier: str) -> float:
-        """Get maximum total file size in MB for user tier"""
-        tier_limits = {
-            'free': 10.0,  # 10MB total for free users
-            'premium': 500.0,  # 500MB total for premium users
-            'pro': 1000.0  # 1GB total for pro users
-        }
-        return tier_limits.get(tier, 10.0)
-    
-    def get_user_bulk_jobs(self, user_id: int, limit: int = 10) -> List[Dict[str, Any]]:
+    def process_bulk_files_direct(self, file_data_list: List[bytes], filenames: List[str],
+                                compression_settings: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Get recent bulk compression jobs for a user
+        Process bulk files directly without creating a job record
+        (For small batches or testing)
         
         Args:
-            user_id: ID of the user
-            limit: Maximum number of jobs to return
+            file_data_list: List of file data as bytes
+            filenames: List of original filenames
+            compression_settings: Compression settings
             
         Returns:
-            List of job information dictionaries
+            Processing results
         """
         try:
-            jobs = CompressionJob.query.filter_by(
-                user_id=user_id, 
-                job_type='bulk'
-            ).order_by(
-                CompressionJob.created_at.desc()
-            ).limit(limit).all()
-            
-            return [job.to_dict() for job in jobs]
-            
+            # Create temporary directory
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Save files to temp directory
+                input_files = []
+                for i, (file_data, filename) in enumerate(zip(file_data_list, filenames)):
+                    file_path = os.path.join(temp_dir, f"input_{i:03d}_{secure_filename(filename)}")
+                    with open(file_path, 'wb') as f:
+                        f.write(file_data)
+                    
+                    input_files.append({
+                        'original_name': filename,
+                        'path': file_path,
+                        'size': len(file_data)
+                    })
+                
+                # Process files
+                processed_files = []
+                errors = []
+                total_compressed_size = 0
+                
+                for i, file_info in enumerate(input_files):
+                    try:
+                        result = self._process_single_file_in_batch(
+                            file_info, temp_dir, compression_settings, i
+                        )
+                        processed_files.append(result)
+                        total_compressed_size += result['compressed_size']
+                    except Exception as e:
+                        errors.append({
+                            'file': file_info['original_name'],
+                            'error': str(e),
+                            'index': i
+                        })
+                
+                # Create result archive in memory
+                result_zip_data = None
+                if processed_files:
+                    result_zip_data = self._create_result_archive_in_memory(processed_files)
+                
+                return {
+                    'success': True,
+                    'processed_count': len(processed_files),
+                    'error_count': len(errors),
+                    'errors': errors,
+                    'total_compressed_size': total_compressed_size,
+                    'result_zip_data': result_zip_data,
+                    'processed_files': processed_files
+                }
+                
         except Exception as e:
-            logger.error(f"Error getting bulk jobs for user {user_id}: {str(e)}")
-            return []
+            logger.error(f"Error in direct bulk processing: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def _create_result_archive_in_memory(self, processed_files: List[Dict[str, Any]]) -> bytes:
+        """Create a ZIP archive in memory"""
+        import io
+        
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for file_info in processed_files:
+                if os.path.exists(file_info['output_path']):
+                    archive_name = f"compressed_{file_info['original_name']}"
+                    zipf.write(file_info['output_path'], archive_name)
+        
+        zip_buffer.seek(0)
+        return zip_buffer.getvalue()

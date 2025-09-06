@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from src.main.main import create_app
 from src.models.base import db
 from src.models import User, CompressionJob, Subscription, Plan
-from src.tasks.compression_tasks import process_bulk_compression, cleanup_expired_jobs
+from src.tasks.tasks import process_bulk_compression, cleanup_expired_jobs
 from src.services.bulk_compression_service import BulkCompressionService
 from src.celery_app import make_celery
 

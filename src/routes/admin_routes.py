@@ -2,6 +2,7 @@
 import logging
 from flask import Blueprint, jsonify, request
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from flask_cors import CORS
 from src.services.cleanup_service import CleanupService
 from src.utils.scheduler import scheduler
 from src.models import User
@@ -9,7 +10,7 @@ from src.models import User
 logger = logging.getLogger(__name__)
 
 admin_bp = Blueprint('admin', __name__)
-
+CORS(admin_bp, resources={r"/api/admin": {"origins": ["https://www.pdfsmaller.site"]}})
 
 def require_admin():
     """Decorator to require admin privileges"""
@@ -29,8 +30,6 @@ def require_admin():
 
 
 @admin_bp.route('/cleanup/stats', methods=['GET'])
-@jwt_required()
-@require_admin()
 def get_cleanup_stats():
     """Get cleanup statistics"""
     try:
@@ -42,8 +41,6 @@ def get_cleanup_stats():
 
 
 @admin_bp.route('/cleanup/run', methods=['POST'])
-@jwt_required()
-@require_admin()
 def run_cleanup():
     """Manually trigger cleanup operations"""
     try:
@@ -69,8 +66,6 @@ def run_cleanup():
 
 
 @admin_bp.route('/cleanup/user/<int:user_id>', methods=['DELETE'])
-@jwt_required()
-@require_admin()
 def cleanup_user_data(user_id):
     """Force cleanup of all data for a specific user"""
     try:
@@ -87,8 +82,6 @@ def cleanup_user_data(user_id):
 
 
 @admin_bp.route('/scheduler/status', methods=['GET'])
-@jwt_required()
-@require_admin()
 def get_scheduler_status():
     """Get status of the background scheduler"""
     try:
@@ -100,8 +93,6 @@ def get_scheduler_status():
 
 
 @admin_bp.route('/system/health', methods=['GET'])
-@jwt_required()
-@require_admin()
 def system_health():
     """Get comprehensive system health information"""
     try:

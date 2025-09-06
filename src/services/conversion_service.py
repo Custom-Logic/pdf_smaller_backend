@@ -1,14 +1,16 @@
 """
-Conversion Service
-Handles PDF to Word, Excel, Text, and HTML conversion
+Conversion Service - Job-Oriented Architecture
+Handles PDF to Word, Text, HTML, and Images conversion
 """
 
 import os
 import tempfile
 import logging
-from pathlib import Path
-from typing import Dict, Any, Optional
+import uuid
 import json
+from pathlib import Path
+from typing import Dict, Any, Optional, List, Tuple
+import asyncio
 
 # PDF processing libraries
 try:
@@ -29,23 +31,15 @@ except ImportError:
     DOCX_AVAILABLE = False
     logging.warning("python-docx not available. Install for Word document creation.")
 
-try:
-    import openpyxl
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, Alignment, Border, Side
-    XLSX_AVAILABLE = True
-except ImportError:
-    XLSX_AVAILABLE = False
-    logging.warning("openpyxl not available. Install for Excel document creation.")
-
 logger = logging.getLogger(__name__)
 
 class ConversionService:
-    """Service for converting PDFs to various formats"""
+    """Service for converting PDFs to various formats - Job-Oriented"""
     
-    def __init__(self):
-        self.supported_formats = ['docx', 'xlsx', 'txt', 'html']
-        self.temp_dir = tempfile.mkdtemp(prefix='pdf_conversion_')
+    def __init__(self, upload_folder: str = None):
+        self.upload_folder = upload_folder or tempfile.mkdtemp(prefix='pdf_conversion_')
+        self.supported_formats = ['docx', 'txt', 'html', 'images']
+        Path(self.upload_folder).mkdir(parents=True, exist_ok=True)
         
         # Check library availability
         if not PDF_LIBS_AVAILABLE:
@@ -53,18 +47,18 @@ class ConversionService:
         
         if not DOCX_AVAILABLE:
             logger.warning("Word document creation not available. Install python-docx.")
-            
-        if not XLSX_AVAILABLE:
-            logger.warning("Excel document creation not available. Install openpyxl.")
     
-    def convert_pdf(self, file, target_format: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def convert_pdf_data(self, file_data: bytes, target_format: str, 
+                             options: Dict[str, Any] = None, 
+                             original_filename: str = None) -> Dict[str, Any]:
         """
-        Convert PDF to specified format
+        Convert PDF data to specified format
         
         Args:
-            file: Uploaded file object
-            target_format: Target format (docx, xlsx, txt, html)
-            options: Conversion options
+            file_data: PDF file data as bytes
+            target_format: Target format (docx, txt, html, images)
+            options: Conversion options including quality
+            original_filename: Original filename for naming
             
         Returns:
             Dictionary with conversion result
@@ -73,43 +67,55 @@ class ConversionService:
             options = {}
             
         try:
-            # Validate format
+            # Validate format against frontend supported formats
             if target_format not in self.supported_formats:
-                raise ValueError(f"Unsupported format: {target_format}")
+                raise ValueError(f"Unsupported format: {target_format}. Supported: {self.supported_formats}")
             
-            # Save uploaded file to temp directory
-            temp_file_path = self._save_uploaded_file(file)
+            # Create temporary file
+            temp_file_path = await self._save_file_data(file_data, original_filename)
             
-            # Extract content from PDF
-            pdf_content = self._extract_pdf_content(temp_file_path, options)
-            
-            # Convert to target format
-            if target_format == 'docx':
-                result = self._convert_to_docx(pdf_content, options)
-            elif target_format == 'xlsx':
-                result = self._convert_to_xlsx(pdf_content, options)
-            elif target_format == 'txt':
-                result = self._convert_to_txt(pdf_content, options)
-            elif target_format == 'html':
-                result = self._convert_to_html(pdf_content, options)
-            else:
-                raise ValueError(f"Unsupported format: {target_format}")
-            
-            # Clean up temp file
-            os.unlink(temp_file_path)
-            
-            return result
-            
+            try:
+                # Extract content from PDF
+                pdf_content = await self._extract_pdf_content(temp_file_path, options)
+                
+                # Convert to target format
+                if target_format == 'docx':
+                    result = await self._convert_to_docx(pdf_content, options)
+                elif target_format == 'txt':
+                    result = await self._convert_to_txt(pdf_content, options)
+                elif target_format == 'html':
+                    result = await self._convert_to_html(pdf_content, options)
+                elif target_format == 'images':
+                    result = await self._convert_to_images(pdf_content, options)
+                else:
+                    raise ValueError(f"Unsupported format: {target_format}")
+                
+                # Add metadata
+                result.update({
+                    'format': target_format,
+                    'quality': options.get('quality', 'medium'),
+                    'original_filename': original_filename,
+                    'original_size': len(file_data)
+                })
+                
+                return result
+                
+            finally:
+                # Clean up temp file
+                if os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
+                    
         except Exception as e:
             logger.error(f"PDF conversion failed: {str(e)}")
             raise
     
-    def get_conversion_preview(self, file, target_format: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
+    async def get_conversion_preview(self, file_data: bytes, target_format: str, 
+                                   options: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Get conversion preview and estimates
         
         Args:
-            file: Uploaded file object
+            file_data: PDF file data as bytes
             target_format: Target format
             options: Conversion options
             
@@ -120,40 +126,52 @@ class ConversionService:
             options = {}
             
         try:
-            # Save uploaded file to temp directory
-            temp_file_path = self._save_uploaded_file(file)
+            # Create temporary file
+            temp_file_path = await self._save_file_data(file_data, "preview.pdf")
             
-            # Analyze PDF
-            pdf_content = self._extract_pdf_content(temp_file_path, options)
-            
-            # Generate preview
-            preview = {
-                'originalSize': file.content_length or 0,
-                'pageCount': pdf_content.get('page_count', 0),
-                'estimatedSize': self._estimate_output_size(pdf_content, target_format),
-                'estimatedTime': self._estimate_conversion_time(pdf_content, target_format),
-                'complexity': self._assess_complexity(pdf_content, target_format),
-                'recommendations': self._get_recommendations(pdf_content, target_format, options)
-            }
-            
-            # Clean up temp file
-            os.unlink(temp_file_path)
-            
-            return preview
-            
+            try:
+                # Analyze PDF
+                pdf_content = await self._extract_pdf_content(temp_file_path, options)
+                
+                # Generate preview
+                preview = {
+                    'success': True,
+                    'original_size': len(file_data),
+                    'page_count': pdf_content.get('page_count', 0),
+                    'estimated_size': self._estimate_output_size(pdf_content, target_format),
+                    'estimated_time': self._estimate_conversion_time(pdf_content, target_format),
+                    'complexity': self._assess_complexity(pdf_content, target_format),
+                    'recommendations': self._get_recommendations(pdf_content, target_format, options),
+                    'supported_formats': self.supported_formats
+                }
+                
+                return preview
+                
+            finally:
+                # Clean up temp file
+                if os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
+                    
         except Exception as e:
             logger.error(f"Conversion preview failed: {str(e)}")
-            raise
+            return {
+                'success': False,
+                'error': str(e),
+                'original_size': len(file_data)
+            }
     
-    def _save_uploaded_file(self, file) -> str:
-        """Save uploaded file to temporary directory"""
-        filename = secure_filename(file.filename)
-        temp_path = os.path.join(self.temp_dir, filename)
+    async def _save_file_data(self, file_data: bytes, filename: str = None) -> str:
+        """Save file data to temporary directory"""
+        filename = filename or f"temp_{uuid.uuid4().hex[:8]}.pdf"
+        safe_filename = self._secure_filename(filename)
+        temp_path = os.path.join(self.upload_folder, safe_filename)
         
-        file.save(temp_path)
+        with open(temp_path, 'wb') as f:
+            f.write(file_data)
+        
         return temp_path
     
-    def _extract_pdf_content(self, file_path: str, options: Dict[str, Any]) -> Dict[str, Any]:
+    async def _extract_pdf_content(self, file_path: str, options: Dict[str, Any]) -> Dict[str, Any]:
         """Extract content from PDF file"""
         if not PDF_LIBS_AVAILABLE:
             raise RuntimeError("PDF processing libraries not available")
@@ -180,7 +198,7 @@ class ConversionService:
                     text = page.get_text()
                     content['text'] += text + '\n'
                     
-                    # Extract tables (basic detection)
+                    # Extract tables
                     tables = self._extract_tables_from_page(page)
                     content['tables'].extend(tables)
                     
@@ -209,12 +227,10 @@ class ConversionService:
         tables = []
         try:
             # Basic table detection using text layout analysis
-            # This is a simplified approach - in production you'd use more sophisticated table detection
             text_blocks = page.get_text("dict")
             
             for block in text_blocks.get("blocks", []):
                 if "lines" in block:
-                    # Check if this looks like a table structure
                     if self._looks_like_table(block):
                         table_data = self._extract_table_data(block)
                         if table_data:
@@ -227,12 +243,10 @@ class ConversionService:
     
     def _looks_like_table(self, block) -> bool:
         """Check if a text block looks like a table"""
-        # Simple heuristic: check for multiple lines with similar structure
         lines = block.get("lines", [])
         if len(lines) < 2:
             return False
         
-        # Check if lines have similar number of spans (columns)
         span_counts = [len(line.get("spans", [])) for line in lines]
         return len(set(span_counts)) <= 2 and max(span_counts) > 1
     
@@ -283,7 +297,7 @@ class ConversionService:
         
         return images
     
-    def _convert_to_docx(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
+    async def _convert_to_docx(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
         """Convert PDF content to Word document"""
         if not DOCX_AVAILABLE:
             raise RuntimeError("Word document creation not available. Install python-docx.")
@@ -291,10 +305,14 @@ class ConversionService:
         try:
             doc = Document()
             
-            # Apply options
-            preserve_formatting = options.get('preserveFormatting', True)
-            include_headers = options.get('includeHeaders', True)
-            include_footers = options.get('includeFooters', True)
+            # Apply quality settings
+            quality = options.get('quality', 'medium')
+            quality_settings = {
+                'low': {'preserve_formatting': False, 'include_images': False},
+                'medium': {'preserve_formatting': True, 'include_images': True},
+                'high': {'preserve_formatting': True, 'include_images': True, 'high_quality': True}
+            }
+            quality_config = quality_settings.get(quality, quality_settings['medium'])
             
             # Add title
             if pdf_content.get('metadata', {}).get('title'):
@@ -303,13 +321,11 @@ class ConversionService:
             
             # Process each page
             for page in pdf_content['pages']:
-                # Add page break (except for first page)
                 if page['page_num'] > 1:
                     doc.add_page_break()
                 
                 # Add page text
                 if page['text'].strip():
-                    # Split text into paragraphs
                     paragraphs = page['text'].split('\n\n')
                     for para_text in paragraphs:
                         if para_text.strip():
@@ -318,11 +334,9 @@ class ConversionService:
                 # Add tables
                 for table_data in page['tables']:
                     if table_data and len(table_data) > 0:
-                        # Create table
                         table = doc.add_table(rows=len(table_data), cols=len(table_data[0]))
                         table.style = 'Table Grid'
                         
-                        # Populate table
                         for row_idx, row_data in enumerate(table_data):
                             for col_idx, cell_data in enumerate(row_data):
                                 if col_idx < len(table_data[row_idx]):
@@ -330,168 +344,126 @@ class ConversionService:
             
             # Save document
             output_filename = f"converted_{pdf_content.get('metadata', {}).get('title', 'document')}.docx"
-            output_path = os.path.join(self.temp_dir, output_filename)
+            output_path = os.path.join(self.upload_folder, output_filename)
             doc.save(output_path)
             
+            # Read the file data
+            with open(output_path, 'rb') as f:
+                file_data = f.read()
+            
             return {
-                'file_path': output_path,
+                'success': True,
+                'file_data': file_data,
                 'filename': output_filename,
                 'mime_type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                'format': 'docx'
+                'file_size': len(file_data)
             }
             
         except Exception as e:
             logger.error(f"DOCX conversion failed: {str(e)}")
             raise
     
-    def _convert_to_xlsx(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
-        """Convert PDF content to Excel document"""
-        if not XLSX_AVAILABLE:
-            raise RuntimeError("Excel document creation not available. Install openpyxl.")
-        
-        try:
-            wb = Workbook()
-            
-            # Apply options
-            sheet_per_page = options.get('sheetPerPage', False)
-            merge_tables = options.get('mergeTables', True)
-            
-            if sheet_per_page:
-                # Create one sheet per page
-                for page in pdf_content['pages']:
-                    if page['page_num'] == 1:
-                        ws = wb.active
-                        ws.title = f"Page {page['page_num']}"
-                    else:
-                        ws = wb.create_sheet(f"Page {page['page_num']}")
-                    
-                    self._add_page_to_worksheet(ws, page)
-            else:
-                # Create one sheet with all content
-                ws = wb.active
-                ws.title = "PDF Content"
-                
-                # Add all pages
-                for page in pdf_content['pages']:
-                    self._add_page_to_worksheet(ws, page)
-                    
-                    # Add page break
-                    if page['page_num'] < len(pdf_content['pages']):
-                        ws.append([])  # Empty row as separator
-            
-            # Save workbook
-            output_filename = f"converted_{pdf_content.get('metadata', {}).get('title', 'document')}.xlsx"
-            output_path = os.path.join(self.temp_dir, output_filename)
-            wb.save(output_path)
-            
-            return {
-                'file_path': output_path,
-                'filename': output_filename,
-                'mime_type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                'format': 'xlsx'
-            }
-            
-        except Exception as e:
-            logger.error(f"XLSX conversion failed: {str(e)}")
-            raise
-    
-    def _add_page_to_worksheet(self, ws, page):
-        """Add page content to worksheet"""
-        # Add page header
-        ws.append([f"Page {page['page_num']}"])
-        ws.append([])  # Empty row
-        
-        # Add text content
-        if page['text'].strip():
-            paragraphs = page['text'].split('\n\n')
-            for para_text in paragraphs:
-                if para_text.strip():
-                    ws.append([para_text.strip()])
-            ws.append([])  # Empty row
-        
-        # Add tables
-        for table_data in page['tables']:
-            if table_data and len(table_data) > 0:
-                for row_data in table_data:
-                    ws.append(row_data)
-                ws.append([])  # Empty row after table
-    
-    def _convert_to_txt(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
+    async def _convert_to_txt(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
         """Convert PDF content to text file"""
         try:
-            # Apply options
-            preserve_paragraphs = options.get('preserveParagraphs', True)
-            remove_extra_spaces = options.get('removeExtraSpaces', True)
+            # Apply quality settings
+            quality = options.get('quality', 'medium')
+            quality_settings = {
+                'low': {'preserve_paragraphs': False, 'remove_extra_spaces': True},
+                'medium': {'preserve_paragraphs': True, 'remove_extra_spaces': True},
+                'high': {'preserve_paragraphs': True, 'remove_extra_spaces': False, 'preserve_layout': True}
+            }
+            quality_config = quality_settings.get(quality, quality_settings['medium'])
             
             text_content = pdf_content['text']
             
-            if remove_extra_spaces:
-                # Clean up extra whitespace
+            if quality_config.get('remove_extra_spaces', True):
                 import re
                 text_content = re.sub(r'\s+', ' ', text_content)
                 text_content = re.sub(r'\n\s*\n', '\n\n', text_content)
             
-            # Save text file
-            output_filename = f"converted_{pdf_content.get('metadata', {}).get('title', 'document')}.txt"
-            output_path = os.path.join(self.temp_dir, output_filename)
-            
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(text_content)
+            # Convert to bytes
+            file_data = text_content.encode('utf-8')
             
             return {
-                'file_path': output_path,
-                'filename': output_filename,
+                'success': True,
+                'file_data': file_data,
+                'filename': f"converted_{pdf_content.get('metadata', {}).get('title', 'document')}.txt",
                 'mime_type': 'text/plain',
-                'format': 'txt'
+                'file_size': len(file_data)
             }
             
         except Exception as e:
             logger.error(f"TXT conversion failed: {str(e)}")
             raise
     
-    def _convert_to_html(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
+    async def _convert_to_html(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
         """Convert PDF content to HTML file"""
         try:
-            # Apply options
-            include_css = options.get('includeCSS', True)
-            responsive_layout = options.get('responsiveLayout', True)
+            # Apply quality settings
+            quality = options.get('quality', 'medium')
+            quality_settings = {
+                'low': {'include_css': False, 'responsive_layout': False},
+                'medium': {'include_css': True, 'responsive_layout': True},
+                'high': {'include_css': True, 'responsive_layout': True, 'preserve_styles': True}
+            }
+            quality_config = quality_settings.get(quality, quality_settings['medium'])
             
             # Generate HTML content
-            html_content = self._generate_html_content(pdf_content, options)
+            html_content = self._generate_html_content(pdf_content, quality_config)
             
-            # Save HTML file
-            output_filename = f"converted_{pdf_content.get('metadata', {}).get('title', 'document')}.html"
-            output_path = os.path.join(self.temp_dir, output_filename)
-            
-            with open(output_path, 'w', encoding='utf-8') as f:
-                f.write(html_content)
+            # Convert to bytes
+            file_data = html_content.encode('utf-8')
             
             return {
-                'file_path': output_path,
-                'filename': output_filename,
+                'success': True,
+                'file_data': file_data,
+                'filename': f"converted_{pdf_content.get('metadata', {}).get('title', 'document')}.html",
                 'mime_type': 'text/html',
-                'format': 'html'
+                'file_size': len(file_data)
             }
             
         except Exception as e:
             logger.error(f"HTML conversion failed: {str(e)}")
             raise
     
+    async def _convert_to_images(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
+        """Convert PDF to images (one per page)"""
+        try:
+            # Apply quality settings
+            quality = options.get('quality', 'medium')
+            dpi_settings = {
+                'low': 72,
+                'medium': 150,
+                'high': 300
+            }
+            dpi = dpi_settings.get(quality, 150)
+            
+            # This would be implemented using PyMuPDF to extract images from each page
+            # For now, return a placeholder since image extraction is complex
+            return {
+                'success': False,
+                'error': 'Image conversion not fully implemented',
+                'format': 'images'
+            }
+            
+        except Exception as e:
+            logger.error(f"Image conversion failed: {str(e)}")
+            raise
+    
     def _generate_html_content(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> str:
         """Generate HTML content from PDF content"""
         css_styles = ""
-        if options.get('includeCSS', True):
+        if options.get('include_css', True):
             css_styles = """
             <style>
                 body { font-family: Arial, sans-serif; margin: 20px; }
-                .page { page-break-after: always; margin-bottom: 30px; }
-                .page:last-child { page-break-after: avoid; }
+                .page { margin-bottom: 30px; }
                 .page-header { font-size: 18px; font-weight: bold; margin-bottom: 15px; color: #333; }
                 .text-content { line-height: 1.6; }
                 table { border-collapse: collapse; width: 100%; margin: 15px 0; }
                 th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
                 th { background-color: #f2f2f2; }
-                @media print { .page { page-break-after: always; } }
             </style>
             """
         
@@ -531,13 +503,11 @@ class ConversionService:
                     html_parts.append('<table>')
                     for row_idx, row_data in enumerate(table_data):
                         if row_idx == 0:
-                            # Header row
                             html_parts.append('<thead><tr>')
                             for cell_data in row_data:
                                 html_parts.append(f'<th>{cell_data}</th>')
                             html_parts.append('</tr></thead>')
                         else:
-                            # Data row
                             html_parts.append('<tr>')
                             for cell_data in row_data:
                                 html_parts.append(f'<td>{cell_data}</td>')
@@ -558,10 +528,10 @@ class ConversionService:
         base_size = len(pdf_content.get('text', ''))
         
         size_multipliers = {
-            'docx': 1.2,    # Word files are typically larger due to formatting
-            'xlsx': 0.8,    # Excel files are more compact
-            'txt': 0.3,     # Text files are much smaller
-            'html': 1.5     # HTML files include markup
+            'docx': 1.2,
+            'txt': 0.3,
+            'html': 1.5,
+            'images': 2.0  # Images are larger
         }
         
         multiplier = size_multipliers.get(target_format, 1.0)
@@ -571,12 +541,11 @@ class ConversionService:
         """Estimate conversion time in seconds"""
         page_count = pdf_content.get('page_count', 1)
         
-        # Base time per format
         base_times = {
-            'docx': 2,   # 2 seconds per page
-            'xlsx': 3,   # 3 seconds per page (table processing)
-            'txt': 0.5,  # 0.5 seconds per page
-            'html': 1    # 1 second per page
+            'docx': 2,
+            'txt': 0.5,
+            'html': 1,
+            'images': 3  # Image conversion takes longer
         }
         
         base_time = base_times.get(target_format, 1)
@@ -604,32 +573,79 @@ class ConversionService:
         image_count = len(pdf_content.get('images', []))
         
         if page_count > 100:
-            recommendations.append("Large document detected. Consider splitting into smaller files for better performance.")
+            recommendations.append("Large document detected. Consider splitting into smaller files.")
         
-        if table_count > 0 and target_format == 'xlsx':
-            recommendations.append("Document contains tables. Excel format will preserve table structure best.")
+        if table_count > 0 and target_format == 'txt':
+            recommendations.append("Document contains tables. Consider DOCX format for better table preservation.")
         
         if image_count > 0 and target_format == 'txt':
             recommendations.append("Document contains images. Text format will not preserve images.")
         
-        if target_format == 'docx' and table_count > 10:
-            recommendations.append("Document has many tables. Consider Excel format for better table handling.")
+        if target_format == 'html' and table_count > 10:
+            recommendations.append("Document has many tables. HTML format will preserve table structure.")
         
         return recommendations
+    
+    def _secure_filename(self, filename: str) -> str:
+        """Secure filename for safe file operations"""
+        import re
+        # Remove unsafe characters
+        filename = re.sub(r'[^\w\s-]', '', filename)
+        filename = re.sub(r'[-\s]+', '-', filename)
+        return filename.strip('-')
+    
+    async def create_conversion_job(self, file_data: bytes, target_format: str,
+                                  options: Dict[str, Any] = None,
+                                  original_filename: str = None,
+                                  client_job_id: str = None,
+                                  client_session_id: str = None) -> Dict[str, Any]:
+        """
+        Create a conversion job for async processing
+        """
+        try:
+            # For async processing, you'd typically:
+            # 1. Create a job record in database
+            # 2. Store file data in temporary storage
+            # 3. Return job ID for tracking
+            
+            job_id = str(uuid.uuid4())
+            
+            # In a real implementation, you'd save this to a database
+            job_info = {
+                'job_id': job_id,
+                'target_format': target_format,
+                'options': options or {},
+                'original_filename': original_filename,
+                'client_job_id': client_job_id,
+                'client_session_id': client_session_id,
+                'status': 'pending',
+                'created_at': datetime.now().isoformat()
+            }
+            
+            # Store file data temporarily (in production, use proper storage)
+            temp_file_path = await self._save_file_data(file_data, f"{job_id}.pdf")
+            job_info['temp_file_path'] = temp_file_path
+            
+            return {
+                'success': True,
+                'job_id': job_id,
+                'status': 'pending',
+                'message': 'Conversion job created successfully'
+            }
+            
+        except Exception as e:
+            logger.error(f"Error creating conversion job: {str(e)}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
     
     def cleanup_temp_files(self):
         """Clean up temporary files"""
         try:
             import shutil
-            shutil.rmtree(self.temp_dir, ignore_errors=True)
+            shutil.rmtree(self.upload_folder, ignore_errors=True)
+            # Recreate directory
+            Path(self.upload_folder).mkdir(parents=True, exist_ok=True)
         except Exception as e:
             logger.warning(f"Failed to cleanup temp files: {str(e)}")
-
-def secure_filename(filename):
-    """Secure filename for safe file operations"""
-    # This is a simplified version - in production use werkzeug.utils.secure_filename
-    import re
-    # Remove or replace unsafe characters
-    filename = re.sub(r'[^\w\s-]', '', filename)
-    filename = re.sub(r'[-\s]+', '-', filename)
-    return filename.strip('-')
