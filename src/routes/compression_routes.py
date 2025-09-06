@@ -3,12 +3,9 @@ import os
 import logging
 import uuid
 from flask import Blueprint, request, send_file, jsonify, g
-from flask_jwt_extended import jwt_required, get_jwt_identity, verify_jwt_in_request
 from flask_cors import CORS
 from src.services.compression_service import CompressionService
-from src.services.subscription_service import SubscriptionService
-from src.utils.security_utils import validate_file, validate_request_headers, log_security_event
-from src.utils.rate_limiter import compression_rate_limit
+from src.utils.security_utils import validate_file
 from src.utils.validation import validate_request_payload
 from datetime import datetime
 from enum import Enum
@@ -33,22 +30,7 @@ class JobStatus(Enum):
     COMPLETED = 'completed'
     FAILED = 'failed'
 
-@compression_bp.before_request
-def before_request():
-    """Security checks before processing requests"""
-    # Validate request headers for security threats
-    header_validation = validate_request_headers()
-    if not header_validation['valid']:
-        log_security_event('blocked_request', {
-            'reason': 'header_validation_failed',
-            'warnings': header_validation['warnings']
-        }, 'WARNING')
-        return jsonify({
-            'error': {
-                'code': 'REQUEST_BLOCKED',
-                'message': 'Request blocked due to security concerns'
-            }
-        }), 403
+
 
 @compression_bp.route('/compress', methods=['POST'])
 def compress_pdf():
@@ -93,6 +75,7 @@ def compress_pdf():
                 'compression_level': compression_level,
                 'image_quality': image_quality
             },
+            original_filename=file.filename,
             client_job_id=client_job_id,
             client_session_id=client_session_id
         )
@@ -114,7 +97,7 @@ def compress_pdf():
 def get_job_status(job_id):
     """Get job status and result if completed"""
     try:
-        from src.models.job import Job, JobStatus as JS
+        from src.models import Job, JobStatus as JS
         
         job = Job.query.filter_by(id=job_id).first()
         

@@ -43,13 +43,6 @@ def make_celery(app=None):
             'src.tasks.process_compression': {'queue': 'compression'},
             'tasks.compress_task': {'queue': 'compression'},
             'tasks.bulk_compress_task': {'queue': 'compression'},
-            'tasks.convert_pdf_task': {'queue': 'conversion'},
-            'tasks.conversion_preview_task': {'queue': 'conversion'},
-            'tasks.ocr_process_task': {'queue': 'ocr'},
-            'tasks.ocr_preview_task': {'queue': 'ocr'},
-            'tasks.ai_summarize_task': {'queue': 'ai'},
-            'tasks.ai_translate_task': {'queue': 'ai'},
-            'tasks.extract_text_task': {'queue': 'ai'},
             'tasks.cleanup_expired_jobs': {'queue': 'cleanup'},
             'tasks.get_task_status': {'queue': 'default'}
         },
@@ -73,7 +66,7 @@ def make_celery(app=None):
         # Beat schedule for periodic tasks
         beat_schedule={
             'cleanup-expired-jobs': {
-                'task': 'tasks.cleanup_expired_jobs',
+                'task': 'src.tasks.cleanup_expired_jobs',
                 'schedule': 3600.0,  # Run every hour
                 'options': {'queue': 'cleanup'}
             },

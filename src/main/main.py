@@ -1,23 +1,19 @@
 import os
 import logging
 from flask import Flask, jsonify
-from flask_jwt_extended import JWTManager
 from flask_migrate import Migrate
 
-from src.routes import auth_bp, compression_bp, subscription_bp, admin_bp, extended_features_bp
+from src.routes import compression_bp, extended_features_bp
 from src.utils import setup_logging
 from src.utils.scheduler import start_background_scheduler
-from src.utils.rate_limiter import create_rate_limiter, RateLimitMiddleware
-from src.utils.security_middleware import create_security_middleware
 from src.utils.cors_config import configure_secure_cors
 from src.utils.error_handlers import register_error_handlers
 from src.config.config import get_config, validate_current_config, ConfigValidationError
 from src.models.base import db
-from src.database import init_database, setup_migrations
+from src.database import init_database
 
 # Global extensions
 migrate = Migrate()
-jwt = JWTManager()
 
 def create_app(config_name=None, config_override=None):
     """
@@ -95,12 +91,6 @@ def initialize_extensions(app):
     # Initialize database migrations
     migrate.init_app(app, db)
     
-    # Setup JWT
-    jwt.init_app(app)
-    
-    # Configure JWT callbacks
-    configure_jwt_callbacks(app)
-    
     # Initialize Celery (if not in testing mode)
     if not app.config.get('TESTING', False):
         try:
@@ -115,48 +105,9 @@ def initialize_extensions(app):
     init_database(app)
 
 
-def configure_jwt_callbacks(app):
-    """Configure JWT callbacks for token management"""
-    
-    @jwt.expired_token_loader
-    def expired_token_callback(jwt_header, jwt_payload):
-        return jsonify({
-            'error': {
-                'code': 'TOKEN_EXPIRED',
-                'message': 'The token has expired'
-            }
-        }), 401
-    
-    @jwt.invalid_token_loader
-    def invalid_token_callback(error):
-        return jsonify({
-            'error': {
-                'code': 'INVALID_TOKEN',
-                'message': 'Invalid token'
-            }
-        }), 401
-    
-    @jwt.unauthorized_loader
-    def missing_token_callback(error):
-        return jsonify({
-            'error': {
-                'code': 'MISSING_TOKEN',
-                'message': 'Authorization token is required'
-            }
-        }), 401
-
 
 def initialize_security(app):
-    """Initialize security middleware and CORS"""
-    
-    # Initialize security middleware (must be before CORS and rate limiting)
-    try:
-        security_middleware = create_security_middleware(app)
-        app.security_middleware = security_middleware
-        app.logger.info("Security middleware initialized")
-    except Exception as e:
-        app.logger.error(f"Security middleware initialization failed: {e}")
-        raise
+    """Initialize CORS"""
     
     # Configure secure CORS
     try:
@@ -167,31 +118,19 @@ def initialize_security(app):
     except Exception as e:
         app.logger.error(f"CORS configuration failed: {e}")
         raise
-    
-    # Initialize rate limiting
-    try:
-        rate_limiter = create_rate_limiter(app)
-        rate_limit_middleware = RateLimitMiddleware(app, rate_limiter)
-        app.rate_limiter = rate_limiter
-        app.logger.info("Rate limiting initialized")
-    except Exception as e:
-        app.logger.warning(f"Rate limiting initialization failed: {e}")
 
 
 def register_blueprints(app):
     """Register application blueprints"""
     
     blueprints = [
-        (auth_bp, '/api/auth'),
         (compression_bp, '/api'),
-        (subscription_bp, '/api/subscriptions'),
-        (admin_bp, '/api/admin'),
-		(extended_features_bp, '/api')
+        (extended_features_bp, '/api')
     ]
     
     for blueprint, url_prefix in blueprints:
         try:
-            app.register_blueprint(blueprint)
+            app.register_blueprint(blueprint, url_prefix=url_prefix)
             app.logger.info(f"Registered blueprint: {blueprint.name} at {url_prefix}")
         except Exception as e:
             app.logger.error(f"Failed to register blueprint {blueprint.name}: {e}")

@@ -16,7 +16,6 @@ import hashlib
 from src.services.compression_service import CompressionService
 from src.utils.file_utils import secure_filename, cleanup_old_files
 from src.models.compression_job import CompressionJob
-from src.models.user import User
 from src.models.base import db
 
 logger = logging.getLogger(__name__)

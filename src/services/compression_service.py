@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Any, Tuple
-from src.models.job import Job, JobStatus
+from src.models import Job, JobStatus
 from src.models.base import db
 from src.utils.file_utils import secure_filename, cleanup_old_files, get_file_size
 

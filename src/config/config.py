@@ -26,13 +26,7 @@ class BaseConfig:
         'max_overflow': int(os.environ.get('DB_MAX_OVERFLOW', 0)),
     }
     
-    # JWT settings
-    JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY', SECRET_KEY)
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=int(os.environ.get('JWT_ACCESS_TOKEN_MINUTES', 15)))
-    JWT_REFRESH_TOKEN_EXPIRES = timedelta(days=int(os.environ.get('JWT_REFRESH_TOKEN_DAYS', 7)))
-    JWT_ALGORITHM = os.environ.get('JWT_ALGORITHM', 'HS256')
-    JWT_BLACKLIST_ENABLED = True
-    JWT_BLACKLIST_TOKEN_CHECKS = ['access', 'refresh']
+
     
     # File handling
     UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', '/tmp/pdf_uploads')
@@ -66,24 +60,8 @@ class BaseConfig:
     RATE_LIMIT_STRATEGY = os.environ.get('RATE_LIMIT_STRATEGY', 'fixed-window')
     RATE_LIMIT_DEFAULT = os.environ.get('RATE_LIMIT_DEFAULT', '100 per hour')
     
-    # User tier rate limits
-    RATE_LIMITS = {
-        'free': {
-            'compression': '10 per day',
-            'api': '50 per hour',
-            'auth': '5 per minute'
-        },
-        'premium': {
-            'compression': '500 per day',
-            'api': '1000 per hour',
-            'auth': '10 per minute'
-        },
-        'pro': {
-            'compression': '10000 per day',
-            'api': '5000 per hour',
-            'auth': '20 per minute'
-        }
-    }
+    # Rate limit for all requests
+    RATE_LIMIT = os.environ.get('RATE_LIMIT', '100 per hour')
     
     # Logging configuration
     LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
@@ -93,11 +71,7 @@ class BaseConfig:
     LOG_MAX_BYTES = int(os.environ.get('LOG_MAX_BYTES', 10 * 1024 * 1024))  # 10MB
     LOG_BACKUP_COUNT = int(os.environ.get('LOG_BACKUP_COUNT', 5))
     
-    # Stripe payment settings
-    STRIPE_PUBLISHABLE_KEY = os.environ.get('STRIPE_PUBLISHABLE_KEY')
-    STRIPE_SECRET_KEY = os.environ.get('STRIPE_SECRET_KEY')
-    STRIPE_WEBHOOK_SECRET = os.environ.get('STRIPE_WEBHOOK_SECRET')
-    STRIPE_API_VERSION = os.environ.get('STRIPE_API_VERSION', '2023-10-16')
+
     
     # Subscription plans configuration
     SUBSCRIPTION_PLANS = {

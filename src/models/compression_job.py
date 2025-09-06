@@ -5,8 +5,6 @@ class CompressionJob(BaseModel):
     """Compression job tracking model"""
     __tablename__ = 'compression_jobs'
     
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    
     # Job details
     job_type = db.Column(db.String(50), nullable=False)  # 'single' or 'bulk'
     status = db.Column(db.String(50), nullable=False, default='pending')  # pending, processing, completed, failed
@@ -38,8 +36,7 @@ class CompressionJob(BaseModel):
     # Celery task tracking
     task_id = db.Column(db.String(255))
     
-    def __init__(self, user_id, job_type, original_filename=None, settings=None):
-        self.user_id = user_id
+    def __init__(self, job_type, original_filename=None, settings=None):
         self.job_type = job_type
         self.original_filename = original_filename
         self.settings = settings or {}
@@ -101,7 +98,6 @@ class CompressionJob(BaseModel):
         """Convert job to dictionary for JSON serialization"""
         return {
             'id': self.id,
-            'user_id': self.user_id,
             'job_type': self.job_type,
             'status': self.status,
             'original_filename': self.original_filename,

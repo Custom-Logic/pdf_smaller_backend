@@ -12,7 +12,7 @@ from celery import current_task
 from celery.exceptions import Retry
 
 from src.celery_app import celery_app
-from src.models.job import Job, JobStatus
+from src.models import Job, JobStatus
 from src.models.base import db
 from src.services.compression_service import CompressionService
 from src.services.conversion_service import ConversionService

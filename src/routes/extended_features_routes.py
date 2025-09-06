@@ -24,7 +24,6 @@ from flask_cors import CORS
 # Import utilities
 from ..utils.file_validator import validate_file_type, validate_file_size
 from ..utils.response_helpers import success_response, error_response
-from ..utils.auth_decorators import require_auth, optional_auth
 
 # Initialize blueprint
 extended_features_bp = Blueprint('extended_features', __name__)
