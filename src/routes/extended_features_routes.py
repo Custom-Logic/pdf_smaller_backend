@@ -4,25 +4,22 @@ Handles conversion, OCR, AI, and cloud integration endpoints
 Returns job IDs for async processing
 """
 
-from flask import Blueprint, request, jsonify, send_file
-from werkzeug.utils import secure_filename
-import os
-import tempfile
 import json
-from datetime import datetime
 import logging
+import os
 import uuid
+from datetime import datetime
 from enum import Enum
 
+from flask import Blueprint, request, send_file
+from flask_cors import CORS
+
+from ..services.ai_service import AIService
+from ..services.cloud_integration_service import CloudIntegrationService
 # Import services
 from ..services.conversion_service import ConversionService
 from ..services.ocr_service import OCRService
-from ..services.ai_service import AIService
-from ..services.cloud_integration_service import CloudIntegrationService
-from flask_cors import CORS
-
 # Import utilities
-from ..utils.file_validator import validate_file_type, validate_file_size
 from ..utils.response_helpers import success_response, error_response
 
 # Initialize blueprint
@@ -67,6 +64,7 @@ def allowed_file(filename, feature_type):
 # JOB MANAGEMENT ROUTES
 # ============================================================================
 
+# noinspection DuplicatedCode
 @extended_features_bp.route('/jobs/<job_id>', methods=['GET'])
 def get_job_status(job_id):
     """Get job status and result if completed"""
@@ -95,11 +93,11 @@ def get_job_status(job_id):
         elif job.status == JS.FAILED and job.error:
             response_data['error'] = job.error
         
-        return success_response("Job status retrieved", response_data)
+        return success_response(message="Job status retrieved", data=response_data)
         
     except Exception as e:
         logger.error(f"Error getting job status {job_id}: {str(e)}")
-        return error_response("Failed to retrieve job status", 500)
+        return error_response(message="Failed to retrieve job status", status_code=500)
 
 @extended_features_bp.route('/jobs/<job_id>/download', methods=['GET'])
 def download_job_result(job_id):
@@ -110,18 +108,18 @@ def download_job_result(job_id):
         job = Job.query.filter_by(id=job_id).first()
         
         if not job:
-            return error_response("Job not found", 404)
+            return error_response(message="Job not found", status_code=404)
         
         if job.status != JobStatus.COMPLETED:
-            return error_response("Job not completed yet", 400)
+            return error_response(message="Job not completed yet", status_code=400)
         
         if not job.result or 'output_path' not in job.result:
-            return error_response("No result file available", 404)
+            return error_response(message="No result file available", status_code=404)
         
         output_path = job.result['output_path']
         
         if not os.path.exists(output_path):
-            return error_response("Result file not found", 404)
+            return error_response(message="Result file not found", status_code=404)
         
         # Generate download filename
         original_filename = job.result.get('original_filename', 'result')
@@ -139,7 +137,7 @@ def download_job_result(job_id):
         
     except Exception as e:
         logger.error(f"Error downloading job result {job_id}: {str(e)}")
-        return error_response("Failed to download result file", 500)
+        return error_response(message="Failed to download result file", status_code=500)
 
 # ============================================================================
 # CONVERSION ROUTES (Job-Oriented)
@@ -152,22 +150,22 @@ def convert_pdf(format):
         # Validate format
         supported_formats = ['docx', 'xlsx', 'txt', 'html']
         if format not in supported_formats:
-            return error_response(f"Unsupported format: {format}", 400)
+            return error_response(message=f"Unsupported format: {format}", status_code=400)
         
         # Check if file was uploaded
         if 'file' not in request.files:
-            return error_response("No file provided", 400)
+            return error_response(message="No file provided", status_code=400)
         
         file = request.files['file']
         if file.filename == '':
-            return error_response("No file selected", 400)
+            return error_response(message="No file selected", status_code=400)
         
         # Validate file
         if not allowed_file(file.filename, 'conversion'):
-            return error_response("Invalid file type. Only PDF files are supported.", 400)
+            return error_response(message="Invalid file type. Only PDF files are supported.", status_code=400)
         
         if file.content_length and file.content_length > MAX_FILE_SIZES['conversion']:
-            return error_response("File too large. Maximum size is 100MB.", 400)
+            return error_response(message="File too large. Maximum size is 100MB.", status_code=400)
         
         # Get conversion options
         options = {}
@@ -175,7 +173,7 @@ def convert_pdf(format):
             try:
                 options = json.loads(request.form['options'])
             except json.JSONDecodeError:
-                return error_response("Invalid options format", 400)
+                return error_response(message="Invalid options format", status_code=400)
         
         # Get client-provided tracking IDs
         client_job_id = request.form.get('client_job_id')
@@ -194,16 +192,16 @@ def convert_pdf(format):
             convert_pdf_task,
             job_id,
             file_data,
-            format,
+            format,  # This becomes 'target_format' parameter
             options,
             original_filename,
-            client_job_id=client_job_id,
-            client_session_id=client_session_id
+            client_job_id,
+            client_session_id
         )
         
         logger.info(f"Conversion job {job_id} enqueued (format: {format}, client_job_id: {client_job_id})")
         
-        return success_response("Conversion job queued successfully", {
+        return success_response(message="Conversion job queued successfully", data={
             'job_id': job_id,
             'status': JobStatus.PENDING.value,
             'format': format,
@@ -212,14 +210,14 @@ def convert_pdf(format):
         
     except Exception as e:
         logger.error(f"PDF conversion job creation failed: {str(e)}")
-        return error_response(f"Failed to create conversion job: {str(e)}", 500)
+        return error_response(message=f"Failed to create conversion job: {str(e)}", status_code=500)
 
 @extended_features_bp.route('/convert/preview', methods=['POST'])
 def get_conversion_preview():
     """Get conversion preview and estimates - returns job ID"""
     try:
         if 'file' not in request.files:
-            return error_response("No file provided", 400)
+            return error_response(message="No file provided",status_code=400)
         
         file = request.files['file']
         format = request.form.get('format', 'docx')
@@ -229,7 +227,7 @@ def get_conversion_preview():
             try:
                 options = json.loads(request.form['options'])
             except json.JSONDecodeError:
-                return error_response("Invalid options format", 400)
+                return error_response(message="Invalid options format", status_code=400)
         
         # Get client-provided tracking IDs
         client_job_id = request.form.get('client_job_id')
@@ -255,7 +253,7 @@ def get_conversion_preview():
         
         logger.info(f"Conversion preview job {job_id} enqueued (client_job_id: {client_job_id})")
         
-        return success_response("Conversion preview job queued successfully", {
+        return success_response(message="Conversion preview job queued successfully", data={
             'job_id': job_id,
             'status': JobStatus.PENDING.value,
             'message': 'Conversion preview job queued for processing'
@@ -263,7 +261,7 @@ def get_conversion_preview():
         
     except Exception as e:
         logger.error(f"Conversion preview job creation failed: {str(e)}")
-        return error_response(f"Failed to create preview job: {str(e)}", 500)
+        return error_response(message=f"Failed to create preview job: {str(e)}", status_code=500)
 
 # ============================================================================
 # OCR ROUTES (Job-Oriented)
@@ -274,18 +272,18 @@ def process_ocr():
     """Process OCR on uploaded file - returns job ID"""
     try:
         if 'file' not in request.files:
-            return error_response("No file provided", 400)
+            return error_response(message="No file provided", status_code=400)
         
         file = request.files['file']
         if file.filename == '':
-            return error_response("No file selected", 400)
+            return error_response(message="No file selected",status_code=400)
         
         # Validate file
         if not allowed_file(file.filename, 'ocr'):
-            return error_response("Invalid file type for OCR processing.", 400)
+            return error_response(message="Invalid file type for OCR processing.", status_code=400)
         
         if file.content_length and file.content_length > MAX_FILE_SIZES['ocr']:
-            return error_response("File too large. Maximum size is 50MB.", 400)
+            return error_response(message="File too large. Maximum size is 50MB.", status_code=400)
         
         # Get OCR options
         options = {}
@@ -293,7 +291,7 @@ def process_ocr():
             try:
                 options = json.loads(request.form['options'])
             except json.JSONDecodeError:
-                return error_response("Invalid options format", 400)
+                return error_response(message="Invalid options format",status_code=400)
         
         # Get client-provided tracking IDs
         client_job_id = request.form.get('client_job_id')
@@ -320,7 +318,7 @@ def process_ocr():
         
         logger.info(f"OCR job {job_id} enqueued (client_job_id: {client_job_id})")
         
-        return success_response("OCR job queued successfully", {
+        return success_response(message="OCR job queued successfully",data= {
             'job_id': job_id,
             'status': JobStatus.PENDING.value,
             'message': 'OCR job queued for processing'
@@ -328,14 +326,14 @@ def process_ocr():
         
     except Exception as e:
         logger.error(f"OCR job creation failed: {str(e)}")
-        return error_response(f"Failed to create OCR job: {str(e)}", 500)
+        return error_response(message=f"Failed to create OCR job: {str(e)}", status_code=500)
 
 @extended_features_bp.route('/ocr/preview', methods=['POST'])
 def get_ocr_preview():
     """Get OCR preview and estimates - returns job ID"""
     try:
         if 'file' not in request.files:
-            return error_response("No file provided", 400)
+            return error_response(message="No file provided", status_code=400)
         
         file = request.files['file']
         options = {}
@@ -344,7 +342,7 @@ def get_ocr_preview():
             try:
                 options = json.loads(request.form['options'])
             except json.JSONDecodeError:
-                return error_response("Invalid options format", 400)
+                return error_response(message="Invalid options format", status_code=400)
         
         # Get client-provided tracking IDs
         client_job_id = request.form.get('client_job_id')
@@ -369,7 +367,7 @@ def get_ocr_preview():
         
         logger.info(f"OCR preview job {job_id} enqueued (client_job_id: {client_job_id})")
         
-        return success_response("OCR preview job queued successfully", {
+        return success_response(message="OCR preview job queued successfully",data={
             'job_id': job_id,
             'status': JobStatus.PENDING.value,
             'message': 'OCR preview job queued for processing'
@@ -377,7 +375,7 @@ def get_ocr_preview():
         
     except Exception as e:
         logger.error(f"OCR preview job creation failed: {str(e)}")
-        return error_response(f"Failed to create OCR preview job: {str(e)}", 500)
+        return error_response(message=f"Failed to create OCR preview job: {str(e)}", status_code=500)
 
 # ============================================================================
 # AI ROUTES (Job-Oriented)
@@ -390,14 +388,14 @@ def summarize_pdf():
         # Get text content from request
         data = request.get_json()
         if not data or 'text' not in data:
-            return error_response("No text content provided", 400)
+            return error_response(message="No text content provided", status_code=400)
         
         text = data['text']
         options = data.get('options', {})
         
         # Validate text length
         if len(text) > 100000:  # 100KB limit
-            return error_response("Text too long. Maximum length is 100KB.", 400)
+            return error_response(message="Text too long. Maximum length is 100KB.", status_code=400)
         
         # Get client-provided tracking IDs
         client_job_id = data.get('client_job_id')
@@ -419,7 +417,7 @@ def summarize_pdf():
         
         logger.info(f"AI summarization job {job_id} enqueued (client_job_id: {client_job_id})")
         
-        return success_response("Summarization job queued successfully", {
+        return success_response(message="Summarization job queued successfully",data={
             'job_id': job_id,
             'status': JobStatus.PENDING.value,
             'message': 'AI summarization job queued for processing'
@@ -427,7 +425,7 @@ def summarize_pdf():
         
     except Exception as e:
         logger.error(f"AI summarization job creation failed: {str(e)}")
-        return error_response(f"Failed to create summarization job: {str(e)}", 500)
+        return error_response(message=f"Failed to create summarization job: {str(e)}", status_code=500)
 
 @extended_features_bp.route('/ai/translate', methods=['POST'])
 def translate_text():
@@ -435,7 +433,7 @@ def translate_text():
     try:
         data = request.get_json()
         if not data or 'text' not in data:
-            return error_response("No text content provided", 400)
+            return error_response(message="No text content provided", status_code=400)
         
         text = data['text']
         target_language = data.get('target_language', 'en')
@@ -443,7 +441,7 @@ def translate_text():
         
         # Validate text length
         if len(text) > 100000:  # 100KB limit
-            return error_response("Text too long. Maximum length is 100KB.", 400)
+            return error_response(message="Text too long. Maximum length is 100KB.",status_code= 400)
         
         # Get client-provided tracking IDs
         client_job_id = data.get('client_job_id')
@@ -466,7 +464,7 @@ def translate_text():
         
         logger.info(f"AI translation job {job_id} enqueued (client_job_id: {client_job_id})")
         
-        return success_response("Translation job queued successfully", {
+        return success_response(message="Translation job queued successfully",data= {
             'job_id': job_id,
             'status': JobStatus.PENDING.value,
             'message': 'AI translation job queued for processing'
@@ -474,7 +472,7 @@ def translate_text():
         
     except Exception as e:
         logger.error(f"AI translation job creation failed: {str(e)}")
-        return error_response(f"Failed to create translation job: {str(e)}", 500)
+        return error_response(message=f"Failed to create translation job: {str(e)}", status_code=500)
 
 # ============================================================================
 # TEXT EXTRACTION ROUTES (Job-Oriented)
@@ -485,18 +483,18 @@ def extract_text():
     """Extract text content from PDF - returns job ID"""
     try:
         if 'file' not in request.files:
-            return error_response("No file provided", 400)
+            return error_response(message="No file provided", status_code=400)
         
         file = request.files['file']
         if file.filename == '':
-            return error_response("No file selected", 400)
+            return error_response(message="No file selected", status_code=400)
         
         # Validate file
         if not allowed_file(file.filename, 'ai'):
-            return error_response("Invalid file type. Only PDF files are supported.", 400)
+            return error_response(message="Invalid file type. Only PDF files are supported.", status_code=400)
         
         if file.content_length and file.content_length > MAX_FILE_SIZES['ai']:
-            return error_response("File too large. Maximum size is 25MB.", 400)
+            return error_response(message="File too large. Maximum size is 25MB.", status_code=400)
         
         # Get client-provided tracking IDs
         client_job_id = request.form.get('client_job_id')
@@ -522,7 +520,7 @@ def extract_text():
         
         logger.info(f"Text extraction job {job_id} enqueued (client_job_id: {client_job_id})")
         
-        return success_response("Text extraction job queued successfully", {
+        return success_response(message="Text extraction job queued successfully",data={
             'job_id': job_id,
             'status': JobStatus.PENDING.value,
             'message': 'Text extraction job queued for processing'
@@ -530,7 +528,7 @@ def extract_text():
         
     except Exception as e:
         logger.error(f"Text extraction job creation failed: {str(e)}")
-        return error_response(f"Failed to create text extraction job: {str(e)}", 500)
+        return error_response(message=f"Failed to create text extraction job: {str(e)}", status_code=500)
 
 # ============================================================================
 # CLOUD INTEGRATION ROUTES (Synchronous - no job creation needed)
@@ -552,11 +550,11 @@ def exchange_cloud_token(provider):
         
         # Exchange code for token
         result = cloud_service.exchange_code_for_token(provider, code, redirect_uri)
-        return success_response("Token exchange successful", result)
+        return success_response(message="Token exchange successful", data=result)
         
     except Exception as e:
         logger.error(f"Cloud token exchange failed: {str(e)}")
-        return error_response(f"Token exchange failed: {str(e)}", 500)
+        return error_response(message=f"Token exchange failed: {str(e)}", status_code=500)
 
 @extended_features_bp.route('/cloud/<provider>/validate', methods=['GET'])
 def validate_cloud_token(provider):
@@ -565,7 +563,7 @@ def validate_cloud_token(provider):
         # Get token from authorization header
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
-            return error_response("No valid authorization header", 401)
+            return error_response(message="No valid authorization header", status_code=401)
         
         token = auth_header.split(' ')[1]
         
@@ -573,13 +571,13 @@ def validate_cloud_token(provider):
         is_valid = cloud_service.validate_token(provider, token)
         
         if is_valid:
-            return success_response("Token is valid", {'valid': True})
+            return success_response(message="Token is valid",data= {'valid': True})
         else:
-            return error_response("Token is invalid", 401)
+            return error_response(message="Token is invalid",status_code=401)
             
     except Exception as e:
         logger.error(f"Cloud token validation failed: {str(e)}")
-        return error_response(f"Token validation failed: {str(e)}", 500)
+        return error_response(message=f"Token validation failed: {str(e)}",status_code=500)
 
 # ============================================================================
 # HEALTH CHECK AND STATUS ROUTES
@@ -628,11 +626,11 @@ def get_extended_features_status():
             'timestamp': datetime.utcnow().isoformat()
         }
         
-        return success_response("Extended features status retrieved successfully", status)
+        return success_response(message="Extended features status retrieved successfully", data=status)
         
     except Exception as e:
         logger.error(f"Status retrieval failed: {str(e)}")
-        return error_response(f"Status retrieval failed: {str(e)}", 500)
+        return error_response(message=f"Status retrieval failed: {str(e)}", status_code=500)
 
 @extended_features_bp.route('/extended-features/capabilities', methods=['GET'])
 def get_extended_features_capabilities():
@@ -682,8 +680,8 @@ def get_extended_features_capabilities():
             }
         }
         
-        return success_response("Extended features capabilities retrieved successfully", capabilities)
+        return success_response(message="Extended features capabilities retrieved successfully", data=capabilities)
         
     except Exception as e:
         logger.error(f"Capabilities retrieval failed: {str(e)}")
-        return error_response(f"Capabilities retrieval failed: {str(e)}", 500)
+        return error_response(message=f"Capabilities retrieval failed: {str(e)}", status_code=500)

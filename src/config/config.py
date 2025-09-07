@@ -171,8 +171,6 @@ class BaseConfig:
             'max_file_size': cls.MAX_FILE_SIZE,
             'compression_levels': list(cls.COMPRESSION_LEVELS.keys()),
             'default_compression': cls.DEFAULT_COMPRESSION_LEVEL,
-            
-            
             'log_level': cls.LOG_LEVEL,
             'rate_limit_default': cls.RATE_LIMIT_DEFAULT,
             'allowed_origins': cls.ALLOWED_ORIGINS,
