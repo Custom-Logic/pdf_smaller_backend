@@ -1,4 +1,5 @@
 """
+src/celery_app.py
 Celery application configuration for background task processing
 """
 import os

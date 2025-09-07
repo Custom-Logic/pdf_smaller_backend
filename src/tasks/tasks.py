@@ -1,4 +1,5 @@
 """
+src/tasks/tasks.py
 Celery tasks for background job processing - Job-Oriented Architecture
 """
 
