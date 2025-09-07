@@ -7,7 +7,7 @@ import os
 import sys
 
 # Add the project root to Python path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, '/root/app/pdf_smaller_backend')
 
 from src.main.main import create_app
 from src.celery_app import make_celery
