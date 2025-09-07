@@ -39,11 +39,15 @@ def make_celery(app=None):
         
         # Task routing
         task_routes={
-            'src.tasks.process_bulk_compression': {'queue': 'compression'},
-            'src.tasks.cleanup_expired_jobs': {'queue': 'cleanup'},
-            'src.tasks.process_compression': {'queue': 'compression'},
             'tasks.compress_task': {'queue': 'compression'},
             'tasks.bulk_compress_task': {'queue': 'compression'},
+            'tasks.convert_pdf_task': {'queue': 'default'},
+            'tasks.conversion_preview_task': {'queue': 'default'},
+            'tasks.ocr_process_task': {'queue': 'default'},
+            'tasks.ocr_preview_task': {'queue': 'default'},
+            'tasks.ai_summarize_task': {'queue': 'default'},
+            'tasks.ai_translate_task': {'queue': 'default'},
+            'tasks.extract_text_task': {'queue': 'default'},
             'tasks.cleanup_expired_jobs': {'queue': 'cleanup'},
             'tasks.get_task_status': {'queue': 'default'}
         },
@@ -67,10 +71,10 @@ def make_celery(app=None):
         # Beat schedule for periodic tasks
         beat_schedule={
             'cleanup-expired-jobs': {
-                'task': 'src.tasks.cleanup_expired_jobs',
+                'task': 'tasks.cleanup_expired_jobs',
                 'schedule': 3600.0,  # Run every hour
                 'options': {'queue': 'cleanup'}
-            },
+            }
         },
     )
     

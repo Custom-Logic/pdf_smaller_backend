@@ -1,4 +1,3 @@
-import subprocess
 import os
 import logging
 import uuid
@@ -66,9 +65,8 @@ def compress_pdf():
         job_id = str(uuid.uuid4())
         
         # Enqueue compression task (async processing)
-        from src.queues.task_queue import task_queue, compress_task
-        task_queue.enqueue(
-            compress_task,
+        from src.tasks.tasks import compress_task
+        compress_task.delay(
             job_id,
             file_data,
             {
@@ -222,9 +220,8 @@ def bulk_compress():
         job_id = str(uuid.uuid4())
         
         # Enqueue bulk compression task
-        from src.queues.task_queue import task_queue, bulk_compress_task
-        task_queue.enqueue(
-            bulk_compress_task,
+        from src.tasks.tasks import bulk_compress_task
+        bulk_compress_task.delay(
             job_id,
             file_data_list,
             original_filenames,
@@ -250,52 +247,7 @@ def bulk_compress():
             'error_code': 'SYSTEM_ERROR'
         }), 500
 
-@compression_bp.route('/info', methods=['POST'])
-def get_pdf_info():
-    """Get information about a PDF file - returns job ID for async processing"""
-    try:
-        if 'file' not in request.files:
-            return jsonify({'error': 'No file provided'}), 400
-        
-        file = request.files['file']
-        
-        # Validate file
-        validation_error = validate_file(file)
-        if validation_error:
-            return jsonify({'error': validation_error}), 400
-        
-        # Get client-provided tracking IDs
-        client_job_id = request.form.get('client_job_id')
-        client_session_id = request.form.get('client_session_id')
-        
-        # Read file data
-        file_data = file.read()
-        
-        # Create job and enqueue for processing
-        job_id = str(uuid.uuid4())
-        
-        # Enqueue PDF info task
-        from src.queues.task_queue import task_queue, pdf_info_task
-        task_queue.enqueue(
-            pdf_info_task,
-            job_id,
-            file_data,
-            client_job_id=client_job_id,
-            client_session_id=client_session_id
-        )
-        
-        logger.info(f"PDF info job {job_id} enqueued (client_job_id: {client_job_id})")
-        
-        return jsonify({
-            'success': True,
-            'job_id': job_id,
-            'status': JobStatus.PENDING.value,
-            'message': 'PDF analysis job queued successfully'
-        }), 202
-        
-    except Exception as e:
-        logger.error(f"Error creating PDF info job: {str(e)}")
-        return jsonify({'error': f'Failed to create analysis job: {str(e)}'}), 500
+
 
 @compression_bp.route('/health', methods=['GET'])
 def compression_health_check():
@@ -321,8 +273,8 @@ def compression_health_check():
         # Check Redis connection (for job queue)
         redis_available = False
         try:
-            from src.queues.task_queue import redis_conn
-            redis_available = redis_conn.ping()
+            from src.celery_app import celery_app
+            redis_available = celery_app.control.ping(timeout=1.0) is not None
         except:
             pass
         
