@@ -56,31 +56,31 @@ def create_app(config_name=None, config_override=None):
     if hasattr(config_class, 'get_config_summary'):
         config_summary = config_class.get_config_summary()
         app.logger.info(f"Application starting with configuration: {config_summary}")
-    
-    # Initialize extensions
-    initialize_extensions(app)
-    
-    # Register error handlers
-    register_error_handlers(app)
-    
-    # Initialize security and middleware
-    initialize_security(app)
-    
-    # Register blueprints
-    register_blueprints(app)
-    
-    # Setup background tasks
-    initialize_background_tasks(app)
-    
-    # Register health check endpoints
-    register_health_checks(app)
-    
-    # Register configuration endpoint (development only)
-    if app.config.get('DEBUG', False):
-        register_debug_endpoints(app)
-    
-    app.logger.info("Application factory completed successfully")
-    return app
+    with app.app_context():
+        # Initialize extensions
+        initialize_extensions(app)
+        
+        # Register error handlers
+        register_error_handlers(app)
+        
+        # Initialize security and middleware
+        initialize_security(app)
+        
+        # Register blueprints
+        register_blueprints(app)
+        
+        # Setup background tasks
+        initialize_background_tasks(app)
+        
+        # Register health check endpoints
+        register_health_checks(app)
+        
+        # Register configuration endpoint (development only)
+        if app.config.get('DEBUG', False):
+            register_debug_endpoints(app)
+        
+        app.logger.info("Application factory completed successfully")
+        return app
 
 
 def initialize_extensions(app):
