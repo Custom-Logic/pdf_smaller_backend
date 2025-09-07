@@ -448,7 +448,7 @@ class TestBulkCompressionService:
             }
         ]
         
-        archive_path = bulk_service._create_result_archive(temp_upload_dir, processed_files, 123)
+        archive_path = bulk_service.create_result_archive(temp_upload_dir, processed_files, 123)
         
         assert os.path.exists(archive_path)
         assert archive_path.endswith('compressed_files_job_123.zip')

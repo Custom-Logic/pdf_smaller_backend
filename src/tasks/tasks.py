@@ -173,7 +173,7 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
         result_path = None
         if processed_files:
             try:
-                result_path = bulk_service._create_result_archive(processed_files, job_id)
+                result_path = bulk_service.create_result_archive(processed_files, job_id, )
                 logger.info(f"Created result archive for job {job_id}: {result_path}")
             except Exception as e:
                 logger.error(f"Error creating result archive for job {job_id}: {str(e)}")
@@ -334,7 +334,7 @@ def conversion_preview_task(self, job_id: str, file_data: bytes,
         db.session.commit()
         
         # Generate preview
-        preview = conversion_service.get_conversion_preview_data(file_data, target_format, options)
+        preview = conversion_service.get_conversion_preview(file_data, target_format, options)
         
         job.result = preview
         job.status = JobStatus.COMPLETED
@@ -448,7 +448,7 @@ def ocr_preview_task(self, job_id: str, file_data: bytes, options: Dict,
         db.session.commit()
         
         # Generate preview
-        preview = ocr_service.get_ocr_preview_data(file_data, options)
+        preview = ocr_service.get_ocr_preview(file_data, options)
         
         job.result = preview
         job.status = JobStatus.COMPLETED

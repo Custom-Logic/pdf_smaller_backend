@@ -87,7 +87,7 @@ def cleanup_old_files(directory: str, max_age_hours: int = 1) -> int:
     return deleted_count
 
 
-def ensure_directory_exists(directory: str) -> bool:
+def ensure_directory_exists(directory: Path) -> bool:
     """
     Ensure a directory exists, creating it if necessary.
     
@@ -190,7 +190,8 @@ def copy_file_safely(source: str, destination: str) -> bool:
         import shutil
         
         # Ensure destination directory exists
-        dest_dir = os.path.dirname(destination)
+        # noinspection PyTypeChecker
+        dest_dir: Path = os.path.dirname(destination)
         if not ensure_directory_exists(dest_dir):
             return False
         

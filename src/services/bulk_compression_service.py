@@ -200,37 +200,36 @@ class BulkCompressionService:
         Returns:
             Created Job instance
         """
+        # Generate unique job identifier
+        job_id = str(uuid.uuid4())
+        # Create job directory
+        # noinspection PyTypeChecker
+        job_dir: Path = os.path.join(self.upload_folder, f"bulk_job_{job_id}")
+        ensure_directory_exists(job_dir)
         try:
-            # Generate unique job identifier
-            job_id = str(uuid.uuid4())
-            
-            # Create job directory
-            job_dir = os.path.join(self.upload_folder, f"bulk_job_{job_id}")
-            ensure_directory_exists(job_dir)
-            
             # Save uploaded files
             input_files = []
             total_size = 0
-            
             for i, (file_data, filename) in enumerate(zip(file_data_list, filenames)):
                 secure_name = secure_filename(filename)
+                # noinspection PyTypeChecker
                 unique_name = get_unique_filename(job_dir, f"input_{i:03d}_{secure_name}")
                 file_path = os.path.join(job_dir, unique_name)
-                
+
                 # Write file data to disk
                 with open(file_path, 'wb') as f:
                     f.write(file_data)
-                
+
                 file_size = get_file_size(file_path)
                 total_size += file_size
-                
+
                 input_files.append({
                     'original_name': filename,
                     'saved_name': unique_name,
                     'path': file_path,
                     'size': file_size
                 })
-            
+
             # Create job record
             job = Job(
                 id=job_id,
@@ -245,19 +244,19 @@ class BulkCompressionService:
                 client_job_id=client_job_id,
                 client_session_id=client_session_id
             )
-            
+
             db.session.add(job)
             db.session.commit()
-            
+
             logger.info(f"Created bulk compression job {job_id} with {len(file_data_list)} files")
             return job
-            
+
         except Exception as e:
             db.session.rollback()
             logger.error(f"Error creating bulk job: {str(e)}")
             # Clean up any created files
             try:
-                if 'job_dir' in locals() and os.path.exists(job_dir):
+                if job_dir and 'job_dir' in locals() and os.path.exists(job_dir):
                     import shutil
                     shutil.rmtree(job_dir)
             except:
@@ -327,7 +326,7 @@ class BulkCompressionService:
             # Create result archive if any files were processed
             result_path = None
             if processed_files:
-                result_path = self._create_result_archive(job_dir, processed_files, job_id)
+                result_path = self.create_result_archive(job_dir, processed_files, job_id)
             
             # Update job with final results
             job.result = {
@@ -403,7 +402,7 @@ class BulkCompressionService:
             'output_filename': output_filename
         }
     
-    def _create_result_archive(self, job_dir: str, processed_files: List[Dict[str, Any]], 
+    def create_result_archive(self, job_dir: str, processed_files: List[Dict[str, Any]],
                              job_id: str) -> str:
         """Create a ZIP archive containing all compressed files"""
         archive_filename = f"compressed_files_job_{job_id}.zip"

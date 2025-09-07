@@ -631,3 +631,10 @@ class AIService:
                 'error': str(e),
                 'timestamp': datetime.utcnow().isoformat()
             }
+
+
+    async def extract_text_from_pdf_data(self, pdf_data: Any):
+        """
+            Use AI to Extrat Text from PDF Documenta
+        """
+        pass
