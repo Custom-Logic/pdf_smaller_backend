@@ -48,7 +48,8 @@ def create_app(config_name=None, config_override=None):
             raise
     
     # Setup logging early
-    setup_logging(app)
+    log_level = app.config.get('LOG_LEVEL', 'INFO')
+    setup_logging(log_level=log_level)
     
     # Log configuration summary (excluding sensitive data)
     config_class = get_config(config_name) if not config_override else config_override

@@ -171,8 +171,8 @@ class BaseConfig:
             'max_file_size': cls.MAX_FILE_SIZE,
             'compression_levels': list(cls.COMPRESSION_LEVELS.keys()),
             'default_compression': cls.DEFAULT_COMPRESSION_LEVEL,
-            'jwt_access_expires': str(cls.JWT_ACCESS_TOKEN_EXPIRES),
-            'jwt_refresh_expires': str(cls.JWT_REFRESH_TOKEN_EXPIRES),
+            
+            
             'log_level': cls.LOG_LEVEL,
             'rate_limit_default': cls.RATE_LIMIT_DEFAULT,
             'allowed_origins': cls.ALLOWED_ORIGINS,
@@ -199,10 +199,7 @@ class DevelopmentConfig(BaseConfig):
     # Development origins
     ALLOWED_ORIGINS = [origin.strip() for origin in 
                       os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',')]
-    
-    # Shorter token expiry for testing
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=int(os.environ.get('JWT_ACCESS_TOKEN_MINUTES', 60)))
-    
+       
     # Development file settings
     UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', './uploads/dev')
     MAX_FILE_AGE = timedelta(minutes=int(os.environ.get('MAX_FILE_AGE_MINUTES', 30)))
@@ -218,11 +215,7 @@ class TestingConfig(BaseConfig):
     
     # Disable CSRF for testing
     WTF_CSRF_ENABLED = False
-    
-    # Fast token expiry for testing
-    JWT_ACCESS_TOKEN_EXPIRES = timedelta(minutes=5)
-    JWT_REFRESH_TOKEN_EXPIRES = timedelta(minutes=10)
-    
+      
     # Test file settings
     UPLOAD_FOLDER = '/tmp/pdf_test_uploads'
     MAX_FILE_AGE = timedelta(minutes=1)
