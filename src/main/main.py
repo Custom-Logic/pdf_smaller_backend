@@ -177,7 +177,7 @@ def register_health_checks(app):
         """Database health check endpoint"""
         try:
             # Simple database query to check connection
-            db.session.execute('SELECT 1')
+            db.session.execute(text('SELECT 1'))  # Wrap with text()
             db.session.commit()
             
             return jsonify({
@@ -192,7 +192,7 @@ def register_health_checks(app):
                 'database': 'disconnected',
                 'error': str(e)
             }), 500
-    
+
     @app.route('/health/redis')
     def redis_health_check():
         """Redis health check endpoint"""

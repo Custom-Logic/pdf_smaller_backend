@@ -57,6 +57,10 @@ class BaseConfig:
     # Rate limiting and Redis
     REDIS_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
     RATE_LIMIT_STORAGE_URL = REDIS_URL
+    REDIS_HOST = os.environ.get('REDIS_HOST', 'localhost')
+    REDIS_PORT = os.environ.get('REDIS_PORT', 6379)
+    REDIS_DB = os.environ.get('REDIS_DB', 0)
+
     RATE_LIMIT_STRATEGY = os.environ.get('RATE_LIMIT_STRATEGY', 'fixed-window')
     RATE_LIMIT_DEFAULT = os.environ.get('RATE_LIMIT_DEFAULT', '100 per hour')
     
@@ -102,17 +106,13 @@ class BaseConfig:
     }
     
     # Celery task queue settings
-    CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'redis://localhost:6379/0')
-    CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
+    CELERY_BROKER_URL =  REDIS_URL
+    CELERY_RESULT_BACKEND = REDIS_URL
     CELERY_TASK_SERIALIZER = 'json'
     CELERY_RESULT_SERIALIZER = 'json'
     CELERY_ACCEPT_CONTENT = ['json']
     CELERY_TIMEZONE = os.environ.get('CELERY_TIMEZONE', 'UTC')
     CELERY_ENABLE_UTC = True
-    CELERY_TASK_ROUTES = {
-        'src.tasks.compression_tasks.process_bulk_compression': {'queue': 'compression'},
-        'src.tasks.cleanup_tasks.cleanup_expired_files': {'queue': 'cleanup'},
-    }
     
     # Email settings (for notifications)
     MAIL_SERVER = os.environ.get('MAIL_SERVER')
