@@ -195,29 +195,42 @@ def register_health_checks(app):
 
     @app.route('/health/redis')
     def redis_health_check():
-        """Redis health check endpoint"""
+        """Redis health check endpoint via Celery ping"""
         try:
-            if hasattr(app, 'rate_limiter') and app.rate_limiter:
-                # Test Redis connection through rate limiter
-                app.rate_limiter.storage.storage.ping()
-                return jsonify({
-                    'status': 'healthy',
-                    'redis': 'connected'
-                })
+            if hasattr(app, 'celery') and app.celery:
+                # Simple ping test through Celery
+                # This will test both broker and backend connections
+                result = app.celery.control.ping(timeout=1)
+                
+                if result:
+                    return jsonify({
+                        'status': 'healthy',
+                        'redis': 'connected',
+                        'method': 'via_celery_ping',
+                        'workers_responding': len(result),
+                        'broker_url': app.config.get('CELERY_BROKER_URL', 'unknown')
+                    })
+                else:
+                    return jsonify({
+                        'status': 'unhealthy',
+                        'redis': 'no_workers_responding',
+                        'method': 'via_celery_ping'
+                    }), 500
+                    
             else:
                 return jsonify({
                     'status': 'unknown',
-                    'redis': 'not_configured'
+                    'redis': 'celery_not_configured'
                 })
         except Exception as e:
             app.logger.error(f"Redis health check failed: {e}")
             return jsonify({
                 'status': 'unhealthy',
                 'redis': 'disconnected',
+                'method': 'via_celery_ping',
                 'error': str(e)
             }), 500
-
-
+            
 def register_debug_endpoints(app):
     """Register debug endpoints (development only)"""
     
