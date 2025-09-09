@@ -6,19 +6,18 @@ Returns job IDs for async processing
 
 import json
 import logging
-import os
 import uuid
 from datetime import datetime
 from enum import Enum
 
-from flask import Blueprint, request, send_file, jsonify
+from flask import Blueprint, request
 from flask_cors import CORS
 
-from ..services.ai_service import AIService
-from ..services.cloud_integration_service import CloudIntegrationService
-from ..services.conversion_service import ConversionService
-from ..services.ocr_service import OCRService
-from ..utils.response_helpers import success_response, error_response
+from src.services.ai_service import AIService
+from src.services.cloud_integration_service import CloudIntegrationService
+from src.services.conversion_service import ConversionService
+from src.services.ocr_service import OCRService
+from src.utils.response_helpers import success_response, error_response
 
 # Initialize blueprint
 extended_features_bp = Blueprint('extended_features', __name__)
@@ -78,21 +77,6 @@ def get_file_and_validate(feature_type, max_size_mb=None):
 
     return file, None
 
-def get_tracking_ids():
-    """Helper function to extract client tracking IDs"""
-    return {
-        'job_id': request.form.get('job_id'),
-        'session_id': request.form.get('session_id')
-    }
-
-def get_json_tracking_ids():
-    """Helper function to extract tracking IDs from JSON"""
-    data = request.get_json() or {}
-    return {
-        'job_id': data.get('job_id'),
-        'session_id': data.get('session_id')
-    }
-
 # ============================================================================
 # CONVERSION ROUTES (Job-Oriented)
 # ============================================================================
@@ -120,12 +104,11 @@ def convert_pdf():
             except json.JSONDecodeError:
                 return error_response(message="Invalid options format", status_code=400)
 
-        # Get tracking IDs
-        tracking = get_tracking_ids()
+        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        session_id = request.form.get('session_id', str(uuid.uuid4()))
 
         # Read file data
         file_data = file.read()
-        job_id = str(uuid.uuid4())
 
         # Enqueue conversion task using .delay() pattern
         from src.tasks.tasks import convert_pdf_task
@@ -135,8 +118,8 @@ def convert_pdf():
             format,
             options,
             file.filename,
-            tracking['job_id'],
-            tracking['session_id']
+            job_id=job_id,
+            session_id=session_id
         )
 
         logger.info(f"Conversion job {job_id} enqueued (format: {format}, task_id: {task.id})")
@@ -169,9 +152,10 @@ def get_conversion_preview():
             except json.JSONDecodeError:
                 return error_response(message="Invalid options format", status_code=400)
 
-        tracking = get_tracking_ids()
+        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        session_id = request.form.get('session_id', str(uuid.uuid4()))
+
         file_data = file.read()
-        job_id = str(uuid.uuid4())
 
         # Enqueue conversion preview task using .delay() pattern
         from src.tasks.tasks import conversion_preview_task
@@ -180,8 +164,8 @@ def get_conversion_preview():
             file_data,
             format,
             options,
-            tracking['job_id'],
-            tracking['session_id']
+            job_id=job_id,
+            session_id=session_id
         )
 
         logger.info(f"Conversion preview job {job_id} enqueued (task_id: {task.id})")
@@ -215,9 +199,10 @@ def process_ocr():
             except json.JSONDecodeError:
                 return error_response(message="Invalid options format", status_code=400)
 
-        tracking = get_tracking_ids()
+
+        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        session_id = request.form.get('session_id', str(uuid.uuid4()))
         file_data = file.read()
-        job_id = str(uuid.uuid4())
 
         # Enqueue OCR task using .delay() pattern
         from src.tasks.tasks import ocr_process_task
@@ -226,8 +211,8 @@ def process_ocr():
             file_data,
             options,
             file.filename,
-            tracking['job_id'],
-            tracking['session_id']
+            job_id,
+            session_id=session_id
         )
 
         logger.info(f"OCR job {job_id} enqueued (task_id: {task.id})")
@@ -257,9 +242,10 @@ def get_ocr_preview():
             except json.JSONDecodeError:
                 return error_response(message="Invalid options format", status_code=400)
 
-        tracking = get_tracking_ids()
+        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        session_id = request.form.get('session_id', str(uuid.uuid4()))
+
         file_data = file.read()
-        job_id = str(uuid.uuid4())
 
         # Enqueue OCR preview task using .delay() pattern
         from src.tasks.tasks import ocr_preview_task
@@ -267,8 +253,8 @@ def get_ocr_preview():
             job_id,
             file_data,
             options,
-            tracking['job_id'],
-            tracking['session_id']
+            job_id=job_id,
+            session_id=session_id
         )
 
         logger.info(f"OCR preview job {job_id} enqueued (task_id: {task.id})")
@@ -300,8 +286,9 @@ def summarize_pdf():
             return error_response(message="Text too long. Maximum length is 100KB.", status_code=400)
 
         options = data.get('options', {})
-        tracking = get_json_tracking_ids()
-        job_id = str(uuid.uuid4())
+        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        session_id = request.form.get('session_id', str(uuid.uuid4()))
+
 
         # Enqueue AI summarization task using .delay() pattern
         from src.tasks.tasks import ai_summarize_task
@@ -309,8 +296,8 @@ def summarize_pdf():
             job_id,
             text,
             options,
-            tracking['job_id'],
-            tracking['session_id']
+            job_id=job_id,
+            session_id=session_id
         )
 
         logger.info(f"AI summarization job {job_id} enqueued (task_id: {task.id})")
@@ -339,8 +326,8 @@ def translate_text():
 
         target_language = data.get('target_language', 'en')
         options = data.get('options', {})
-        tracking = get_json_tracking_ids()
-        job_id = str(uuid.uuid4())
+        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        session_id = request.form.get('session_id', str(uuid.uuid4()))
 
         # Enqueue AI translation task using .delay() pattern
         from src.tasks.tasks import ai_translate_task
@@ -349,8 +336,8 @@ def translate_text():
             text,
             target_language,
             options,
-            tracking['job_id'],
-            tracking['session_id']
+            job_id=job_id,
+            session_id=session_id
         )
 
         logger.info(f"AI translation job {job_id} enqueued (task_id: {task.id})")
@@ -377,9 +364,10 @@ def extract_text():
         if error:
             return error
 
-        tracking = get_tracking_ids()
+        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        session_id = request.form.get('session_id', str(uuid.uuid4()))
+
         file_data = file.read()
-        job_id = str(uuid.uuid4())
 
         # Enqueue text extraction task using .delay() pattern
         from src.tasks.tasks import extract_text_task
@@ -387,8 +375,8 @@ def extract_text():
             job_id,
             file_data,
             file.filename,
-            tracking['job_id'],
-            tracking['session_id']
+            job_id=job_id,
+            session_id=session_id
         )
 
         logger.info(f"Text extraction job {job_id} enqueued (task_id: {task.id})")

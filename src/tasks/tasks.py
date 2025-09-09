@@ -10,7 +10,7 @@ from typing import Dict, Any, List
 from celery import current_task
 from src.celery_app import celery_app
 from src.config.config import Config
-from src.models import Job
+from src.models import Job, JobStatus
 from src.models.base import db
 from src.services.ai_service import AIService
 from src.services.bulk_compression_service import BulkCompressionService
@@ -23,23 +23,23 @@ logger = logging.getLogger(__name__)
 # Initialize services
 config = Config()
 compression_service = CompressionService(config.UPLOAD_FOLDER)
-conversion_service = ConversionService()
-ocr_service = OCRService()
+conversion_service = ConversionService(config.UPLOAD_FOLDER)
+ocr_service = OCRService(config.UPLOAD_FOLDER)
 ai_service = AIService()
 bulk_service = BulkCompressionService(config.UPLOAD_FOLDER)
 
 # ============================================================================
 # COMPRESSION TASKS
 # ============================================================================
+def create_session_id():
+    import uuid
+    return str(uuid.uuid4())
 
 @celery_app.task(bind=True, max_retries=3)
-def compress_task(self, job_id, file_data, compression_settings, original_filename=None, 
-                client_job_id=None, client_session_id=None):
+def compress_task(self, job_id, file_data, compression_settings, original_filename=None):
     """Async compression task"""
     try:
-        from src.models import Job, JobStatus
-        from src.models.base import db
-        
+
         # Get or create job
         job = Job.query.filter_by(job_id=job_id).first()
         if not job:
@@ -51,7 +51,7 @@ def compress_task(self, job_id, file_data, compression_settings, original_filena
                     'file_size': len(file_data),
                     'original_filename': original_filename
                 },
-                session_id=client_session_id
+                session_id=create_session_id()
             )
             db.session.add(job)
 
@@ -59,14 +59,12 @@ def compress_task(self, job_id, file_data, compression_settings, original_filena
         db.session.commit()
 
         # Get compression service
-        compression_service = CompressionService(os.environ.get('UPLOAD_FOLDER', '/tmp/pdf_uploads'))
-
+        compression_service = CompressionService(os.environ.get('UPLOAD_FOLDER', '/uploads/dev'))
         # Process the file
         result = compression_service.process_file_data(
-            file_data,
-            compression_settings,
-            original_filename
-        )
+            file_data=file_data,
+            settings=compression_settings,
+            original_filename=original_filename)
 
         # Update job with results
         job.mark_as_completed(result)
@@ -98,12 +96,12 @@ def compress_task(self, job_id, file_data, compression_settings, original_filena
 @celery_app.task(bind=True, name='tasks.bulk_compress_task')
 def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
                       filenames: List[str], settings: Dict,
-                      client_job_id: str = None, client_session_id: str = None) -> Dict[str, Any]:
+                       ) -> Dict[str, Any]:
     """
     Process bulk compression task asynchronously
     """
     try:
-        logger.info(f"Starting bulk compression task for job {job_id} (client_job_id: {client_job_id})")
+        logger.info(f"Starting bulk compression task for job {job_id} (job_id: {job_id})")
         # Create/update job record
         job = Job.query.filter_by(job_id=job_id).first()
         if not job:
@@ -115,7 +113,7 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
                     'file_count': len(file_data_list),
                     'total_size': sum(len(data) for data in file_data_list)
                 },
-                session_id=client_session_id
+                session_id=create_session_id()
             )
             db.session.add(job)
 
@@ -229,7 +227,7 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
 @celery_app.task(bind=True, name='tasks.convert_pdf_task')
 def convert_pdf_task(self, job_id: str, file_data: bytes, target_format: str,
                     options: Dict, original_filename: str = None,
-                    client_job_id: str = None, client_session_id: str = None) -> Dict[str, Any]:
+                     session_id: str = None) -> Dict[str, Any]:
     """
     Convert PDF to specified format asynchronously
     """
@@ -247,7 +245,7 @@ def convert_pdf_task(self, job_id: str, file_data: bytes, target_format: str,
                     'file_size': len(file_data),
                     'original_filename': original_filename
                 },
-                session_id=client_session_id
+                session_id=session_id
             )
             db.session.add(job)
 
@@ -263,7 +261,10 @@ def convert_pdf_task(self, job_id: str, file_data: bytes, target_format: str,
         )
 
         # Process conversion
-        result = conversion_service.convert_pdf_data(file_data, target_format, options, original_filename)
+        result = conversion_service.convert_pdf_data(file_data=file_data,
+                                                     target_format=target_format,
+                                                     options= options,
+                                                     original_filename=original_filename)
 
         job.mark_as_completed(result)
         db.session.commit()
@@ -299,7 +300,7 @@ def convert_pdf_task(self, job_id: str, file_data: bytes, target_format: str,
 @celery_app.task(bind=True, name='tasks.conversion_preview_task')
 def conversion_preview_task(self, job_id: str, file_data: bytes,
                            target_format: str, options: Dict,
-                           client_job_id: str = None, client_session_id: str = None) -> Dict[str, Any]:
+                            ) -> Dict[str, Any]:
     """
     Generate conversion preview asynchronously
     """
@@ -315,7 +316,7 @@ def conversion_preview_task(self, job_id: str, file_data: bytes,
                     'options': options,
                     'file_size': len(file_data)
                 },
-                session_id=client_session_id
+                session_id=create_session_id()
             )
             db.session.add(job)
 
@@ -346,8 +347,8 @@ def conversion_preview_task(self, job_id: str, file_data: bytes,
 
 @celery_app.task(bind=True, name='tasks.ocr_process_task')
 def ocr_process_task(self, job_id: str, file_data: bytes, options: Dict,
-                    original_filename: str = None, client_job_id: str = None,
-                    client_session_id: str = None) -> Dict[str, Any]:
+                    original_filename: str = None, 
+                    ) -> Dict[str, Any]:
     """
     Process OCR on file data asynchronously
     """
@@ -364,7 +365,7 @@ def ocr_process_task(self, job_id: str, file_data: bytes, options: Dict,
                     'file_size': len(file_data),
                     'original_filename': original_filename
                 },
-                session_id=client_session_id
+                session_id=create_session_id()
             )
             db.session.add(job)
 
@@ -415,7 +416,7 @@ def ocr_process_task(self, job_id: str, file_data: bytes, options: Dict,
 
 @celery_app.task(bind=True, name='tasks.ocr_preview_task')
 def ocr_preview_task(self, job_id: str, file_data: bytes, options: Dict,
-                    client_job_id: str = None, client_session_id: str = None) -> Dict[str, Any]:
+                     ) -> Dict[str, Any]:
     """
     Generate OCR preview asynchronously
     """
@@ -431,7 +432,7 @@ def ocr_preview_task(self, job_id: str, file_data: bytes, options: Dict,
                     'options': options,
                     'file_size': len(file_data)
                 },
-                session_id=client_session_id
+                session_id=create_session_id()
             )
             db.session.add(job)
 
@@ -462,7 +463,7 @@ def ocr_preview_task(self, job_id: str, file_data: bytes, options: Dict,
 
 @celery_app.task(bind=True, name='tasks.ai_summarize_task')
 def ai_summarize_task(self, job_id: str, text: str, options: Dict,
-                     client_job_id: str = None, client_session_id: str = None) -> Dict[str, Any]:
+                      ) -> Dict[str, Any]:
     """
     Summarize text using AI asynchronously
     """
@@ -478,7 +479,7 @@ def ai_summarize_task(self, job_id: str, text: str, options: Dict,
                     'text_length': len(text),
                     'options': options
                 },
-                session_id=client_session_id
+                session_id=create_session_id()
             )
             db.session.add(job)
 
@@ -505,8 +506,8 @@ def ai_summarize_task(self, job_id: str, text: str, options: Dict,
 
 @celery_app.task(bind=True, name='tasks.ai_translate_task')
 def ai_translate_task(self, job_id: str, text: str, target_language: str,
-                     options: Dict, client_job_id: str = None,
-                     client_session_id: str = None) -> Dict[str, Any]:
+                     options: Dict, 
+                     ) -> Dict[str, Any]:
     """
     Translate text using AI asynchronously
     """
@@ -523,7 +524,7 @@ def ai_translate_task(self, job_id: str, text: str, target_language: str,
                     'text_length': len(text),
                     'options': options
                 },
-                session_id=client_session_id
+                session_id=create_session_id()
             )
             db.session.add(job)
 
@@ -550,8 +551,8 @@ def ai_translate_task(self, job_id: str, text: str, target_language: str,
 
 @celery_app.task(bind=True, name='tasks.extract_text_task')
 def extract_text_task(self, job_id: str, file_data: bytes,
-                     original_filename: str = None, client_job_id: str = None,
-                     client_session_id: str = None) -> Dict[str, Any]:
+                     original_filename: str = None, 
+                     ) -> Dict[str, Any]:
     """
     Extract text from PDF asynchronously
     """
@@ -567,7 +568,7 @@ def extract_text_task(self, job_id: str, file_data: bytes,
                     'file_size': len(file_data),
                     'original_filename': original_filename
                 },
-                session_id=client_session_id
+                session_id=create_session_id()
             )
             db.session.add(job)
 

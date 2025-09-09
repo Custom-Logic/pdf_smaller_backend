@@ -402,8 +402,9 @@ class BulkCompressionService:
             'output_filename': output_filename
         }
     
-    def create_result_archive(self, job_dir: str, processed_files: List[Dict[str, Any]],
-                             job_id: str) -> str:
+    @staticmethod
+    def create_result_archive(job_dir: str, processed_files: List[Dict[str, Any]],
+                              job_id: str) -> str:
         """Create a ZIP archive containing all compressed files"""
         archive_filename = f"compressed_files_job_{job_id}.zip"
         archive_path = os.path.join(job_dir, archive_filename)
@@ -417,7 +418,8 @@ class BulkCompressionService:
         
         return archive_path
     
-    def get_job_progress(self, job_id: str) -> Dict[str, Any]:
+    @staticmethod
+    def get_job_progress(job_id: str) -> Dict[str, Any]:
         """
         Get progress information for a bulk job
         
@@ -481,7 +483,8 @@ class BulkCompressionService:
                 'error': 'System error retrieving job progress'
             }
     
-    def get_result_file_path(self, job_id: str) -> Optional[str]:
+    @staticmethod
+    def get_result_file_path(job_id: str) -> Optional[str]:
         """
         Get the result file path for a completed bulk job
         

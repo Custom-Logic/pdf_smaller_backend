@@ -4,26 +4,18 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from flask import Blueprint, request, send_file, jsonify
+from flask import Blueprint, request, jsonify
 from flask_cors import CORS
 
 from src.services.compression_service import CompressionService
-from src.utils import secure_filename
 from src.utils.security_utils import validate_file
+from src.utils.response_helpers import success_response, error_response
 
 logger = logging.getLogger(__name__)
 
 compression_bp = Blueprint('compression', __name__)
 CORS(compression_bp, resources={r"/api": {"origins": ["https://www.pdfsmaller.site"]}})
 
-# Initialize compression service lazily
-compression_service = None
-
-def get_compression_service():
-    global compression_service
-    if compression_service is None:
-        compression_service = CompressionService(os.environ.get('UPLOAD_FOLDER', '/tmp/pdf_uploads'))
-    return compression_service
 
 class JobStatus(Enum):
     PENDING = 'pending'
@@ -39,15 +31,15 @@ def compress_pdf():
     try:
         # Check if file was uploaded
         if 'file' not in request.files:
-            return jsonify({'error': 'No file provided'}), 400
-        
+            return error_response(message='No file provided', error_code='NO_FILE', status_code=400)
+
         file = request.files['file']
         
         # Validate file
         validation_error = validate_file(file)
         if validation_error:
-            return jsonify({'error': validation_error}), 400
-        
+            return  error_response(message='Invalid file', errors={'file': [validation_error]}, status_code=400)
+
         # Get compression parameters
         compression_level = request.form.get('compressionLevel', 'medium')
         try:
@@ -57,41 +49,34 @@ def compress_pdf():
         image_quality = max(10, min(image_quality, 100))
 
         # Get client-provided tracking IDs
-        job_id = request.form.get('job_id')
-
+        job_id = request.form.get('job_id', str(uuid.uuid4()))
         # Read file data
         file_data = file.read()
-        
         # Create job and enqueue for processing
-        if job_id is None:
-            job_id = str(uuid.uuid4())
-        session_id = request.form.get('session_id', str(uuid.uuid4()))
         # Enqueue compression task (async processing)
         from src.tasks.tasks import compress_task
         compress_task.delay(
-            job_id,
-            file_data,
-            {
+            job_id=job_id,
+            file_data=file_data,
+            compression_settings={
                 'compression_level': compression_level,
-                'image_quality': image_quality
-            },
+                'image_quality': image_quality},
             original_filename=file.filename,
-            client_job_id=job_id,
-            client_session_id=session_id
         )
+
+        logger.info(f"Compression job {job_id} enqueued (job_id: {job_id})")
         
-        logger.info(f"Compression job {job_id} enqueued (client_job_id: {job_id})")
-        
-        return jsonify({
+        data = {
             'success': True,
             'job_id': job_id,
             'status': JobStatus.PENDING.value,
             'message': 'Compression job queued successfully'
-        }), 202
+        }
+        return success_response(data=data, message='Compression job created', status_code=202)
         
     except Exception as e:
         logger.error(f"Error creating compression job: {str(e)}")
-        return jsonify({'error': f'Failed to create compression job: {str(e)}'}), 500
+        return error_response(message='Failed to create compression job', status_code=500)
 
 @compression_bp.route('/bulk', methods=['POST'])
 def bulk_compress():
@@ -99,19 +84,13 @@ def bulk_compress():
     try:
         # Check if files were uploaded
         if 'files' not in request.files:
-            return jsonify({
-                'error': 'No files provided',
-                'error_code': 'NO_FILES'
-            }), 400
-        
+            return error_response(message='No files provided', error_code='NO_FILES', status_code=400)
+
         files = request.files.getlist('files')
         
         if not files or len(files) == 0:
-            return jsonify({
-                'error': 'No files provided',
-                'error_code': 'NO_FILES'
-            }), 400
-        
+            return error_response(message='No files provided', error_code='NO_FILES', status_code=400)
+
         # Get compression settings
         compression_level = request.form.get('compressionLevel', 'medium')
         try:
@@ -126,9 +105,9 @@ def bulk_compress():
         }
         
         # Get client-provided tracking IDs
-        client_job_id = request.form.get('client_job_id')
-        client_session_id = request.form.get('client_session_id')
-        
+        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        session_id = request.form.get('session_id', str(uuid.uuid4()))
+
         # Read all files
         file_data_list = []
         original_filenames = []
@@ -141,31 +120,27 @@ def bulk_compress():
             original_filenames.append(file.filename)
         
         if not file_data_list:
-            return jsonify({'error': 'No valid files provided'}), 400
-        
-        # Create job and enqueue for processing
-        job_id = str(uuid.uuid4())
-        
+            return error_response(message='No valid files provided', error_code='NO_VALID_FILES', status_code=400)
+
         # Enqueue bulk compression task
         from src.tasks.tasks import bulk_compress_task
         bulk_compress_task.delay(
-            job_id,
-            file_data_list,
-            original_filenames,
-            compression_settings,
-            client_job_id=client_job_id,
-            client_session_id=client_session_id
+            job_id=job_id,
+            file_data_list=file_data_list,
+            filenames=original_filenames,
+            settings=compression_settings,
         )
         
-        logger.info(f"Bulk compression job {job_id} enqueued (client_job_id: {client_job_id})")
-        
-        return jsonify({
+        logger.info(f"Bulk compression job {job_id} enqueued (job_id: {job_id})")
+
+        data = {
             'success': True,
             'job_id': job_id,
             'status': JobStatus.PENDING.value,
             'file_count': len(file_data_list),
             'message': f'Bulk compression job created with {len(file_data_list)} files'
-        }), 202
+        }
+        return success_response(message='Bulk compression job created', data=data, status_code=202)
         
     except Exception as e:
         logger.error(f"Error creating bulk compression job: {str(e)}")

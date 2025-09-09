@@ -7,6 +7,7 @@ import logging
 import os
 import tempfile
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any
 
@@ -46,7 +47,7 @@ class ConversionService:
         if not DOCX_AVAILABLE:
             logger.warning("Word document creation not available. Install python-docx.")
     
-    async def convert_pdf_data(self, file_data: bytes, target_format: str, 
+    def convert_pdf_data(self, file_data: bytes, target_format: str,
                              options: Dict[str, Any] = None, 
                              original_filename: str = None) -> Dict[str, Any]:
         """
@@ -70,21 +71,21 @@ class ConversionService:
                 raise ValueError(f"Unsupported format: {target_format}. Supported: {self.supported_formats}")
             
             # Create temporary file
-            temp_file_path = await self._save_file_data(file_data, original_filename)
+            temp_file_path = self._save_file_data(file_data, original_filename)
             
             try:
                 # Extract content from PDF
-                pdf_content = await self._extract_pdf_content(temp_file_path, options)
+                pdf_content = self._extract_pdf_content(temp_file_path, options)
                 
                 # Convert to target format
                 if target_format == 'docx':
-                    result = await self._convert_to_docx(pdf_content, options)
+                    result = self._convert_to_docx(pdf_content, options)
                 elif target_format == 'txt':
-                    result = await self._convert_to_txt(pdf_content, options)
+                    result = self._convert_to_txt(pdf_content, options)
                 elif target_format == 'html':
-                    result = await self._convert_to_html(pdf_content, options)
+                    result = self._convert_to_html(pdf_content, options)
                 elif target_format == 'images':
-                    result = await self._convert_to_images(pdf_content, options)
+                    result = self._convert_to_images(pdf_content, options)
                 else:
                     raise ValueError(f"Unsupported format: {target_format}")
                 
@@ -107,7 +108,7 @@ class ConversionService:
             logger.error(f"PDF conversion failed: {str(e)}")
             raise
     
-    async def get_conversion_preview(self, file_data: bytes, target_format: str, 
+    def get_conversion_preview(self, file_data: bytes, target_format: str, 
                                    options: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Get conversion preview and estimates
@@ -125,11 +126,11 @@ class ConversionService:
             
         try:
             # Create temporary file
-            temp_file_path = await self._save_file_data(file_data, "preview.pdf")
+            temp_file_path = self._save_file_data(file_data, "preview.pdf")
             
             try:
                 # Analyze PDF
-                pdf_content = await self._extract_pdf_content(temp_file_path, options)
+                pdf_content = self._extract_pdf_content(temp_file_path, options)
                 
                 # Generate preview
                 preview = {
@@ -158,7 +159,7 @@ class ConversionService:
                 'original_size': len(file_data)
             }
     
-    async def _save_file_data(self, file_data: bytes, filename: str = None) -> str:
+    def _save_file_data(self, file_data: bytes, filename: str = None) -> str:
         """Save file data to temporary directory"""
         filename = filename or f"temp_{uuid.uuid4().hex[:8]}.pdf"
         safe_filename = self._secure_filename(filename)
@@ -169,7 +170,7 @@ class ConversionService:
         
         return temp_path
     
-    async def _extract_pdf_content(self, file_path: str, options: Dict[str, Any]) -> Dict[str, Any]:
+    def _extract_pdf_content(self, file_path: str, options: Dict[str, Any]) -> Dict[str, Any]:
         """Extract content from PDF file"""
         if not PDF_LIBS_AVAILABLE:
             raise RuntimeError("PDF processing libraries not available")
@@ -239,7 +240,8 @@ class ConversionService:
         
         return tables
     
-    def _looks_like_table(self, block) -> bool:
+    @staticmethod
+    def _looks_like_table(block) -> bool:
         """Check if a text block looks like a table"""
         lines = block.get("lines", [])
         if len(lines) < 2:
@@ -248,7 +250,8 @@ class ConversionService:
         span_counts = [len(line.get("spans", [])) for line in lines]
         return len(set(span_counts)) <= 2 and max(span_counts) > 1
     
-    def _extract_table_data(self, block) -> list:
+    @staticmethod
+    def _extract_table_data(block) -> list| None:
         """Extract table data from a block"""
         try:
             table_data = []
@@ -272,7 +275,8 @@ class ConversionService:
             logger.warning(f"Table data extraction failed: {str(e)}")
             return None
     
-    def _extract_images_from_page(self, page) -> list:
+    @staticmethod
+    def _extract_images_from_page(page) -> list:
         """Extract images from a PDF page"""
         images = []
         try:
@@ -295,7 +299,7 @@ class ConversionService:
         
         return images
     
-    async def _convert_to_docx(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
+    def _convert_to_docx(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
         """Convert PDF content to Word document"""
         if not DOCX_AVAILABLE:
             raise RuntimeError("Word document creation not available. Install python-docx.")
@@ -361,7 +365,8 @@ class ConversionService:
             logger.error(f"DOCX conversion failed: {str(e)}")
             raise
     
-    async def _convert_to_txt(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
+    @staticmethod
+    def _convert_to_txt(pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
         """Convert PDF content to text file"""
         try:
             # Apply quality settings
@@ -395,7 +400,7 @@ class ConversionService:
             logger.error(f"TXT conversion failed: {str(e)}")
             raise
     
-    async def _convert_to_html(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
+    def _convert_to_html(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
         """Convert PDF content to HTML file"""
         try:
             # Apply quality settings
@@ -425,7 +430,8 @@ class ConversionService:
             logger.error(f"HTML conversion failed: {str(e)}")
             raise
     
-    async def _convert_to_images(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
+    @staticmethod
+    def _convert_to_images(pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
         """Convert PDF to images (one per page)"""
         try:
             # Apply quality settings
@@ -521,7 +527,8 @@ class ConversionService:
         
         return '\n'.join(html_parts)
     
-    def _estimate_output_size(self, pdf_content: Dict[str, Any], target_format: str) -> int:
+    @staticmethod
+    def _estimate_output_size(pdf_content: Dict[str, Any], target_format: str) -> int:
         """Estimate output file size"""
         base_size = len(pdf_content.get('text', ''))
         
@@ -535,7 +542,8 @@ class ConversionService:
         multiplier = size_multipliers.get(target_format, 1.0)
         return int(base_size * multiplier)
     
-    def _estimate_conversion_time(self, pdf_content: Dict[str, Any], target_format: str) -> int:
+    @staticmethod
+    def _estimate_conversion_time(pdf_content: Dict[str, Any], target_format: str) -> int:
         """Estimate conversion time in seconds"""
         page_count = pdf_content.get('page_count', 1)
         
@@ -562,7 +570,8 @@ class ConversionService:
         else:
             return 'low'
     
-    def _get_recommendations(self, pdf_content: Dict[str, Any], target_format: str, options: Dict[str, Any]) -> list:
+    @staticmethod
+    def _get_recommendations(pdf_content: Dict[str, Any], target_format: str, options: Dict[str, Any]) -> list:
         """Get conversion recommendations"""
         recommendations = []
         
@@ -584,7 +593,8 @@ class ConversionService:
         
         return recommendations
     
-    def _secure_filename(self, filename: str) -> str:
+    @staticmethod
+    def _secure_filename(filename: str) -> str:
         """Secure filename for safe file operations"""
         import re
         # Remove unsafe characters
@@ -592,16 +602,16 @@ class ConversionService:
         filename = re.sub(r'[-\s]+', '-', filename)
         return filename.strip('-')
     
-    async def create_conversion_job(self, file_data: bytes, target_format: str,
+    def create_conversion_job(self, file_data: bytes, target_format: str,
                                   options: Dict[str, Any] = None,
                                   original_filename: str = None,
                                   client_job_id: str = None,
                                   client_session_id: str = None) -> Dict[str, Any]:
         """
-        Create a conversion job for async processing
+        Create a conversion job for processing
         """
         try:
-            # For async processing, you'd typically:
+            # For processing, you'd typically:
             # 1. Create a job record in database
             # 2. Store file data in temporary storage
             # 3. Return job ID for tracking
@@ -621,7 +631,7 @@ class ConversionService:
             }
             
             # Store file data temporarily (in production, use proper storage)
-            temp_file_path = await self._save_file_data(file_data, f"{job_id}.pdf")
+            temp_file_path = self._save_file_data(file_data, f"{job_id}.pdf")
             job_info['temp_file_path'] = temp_file_path
             
             return {

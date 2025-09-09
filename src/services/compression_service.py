@@ -22,8 +22,6 @@ class CompressionService:
         if not os.path.exists(self.GHOSTSCRIPT_BINARY):
             raise EnvironmentError(f"Ghostscript binary not found at {self.GHOSTSCRIPT_BINARY}")
 
-    # Updated compression_service.py - Key fixes
-
     def process_file_data(self, file_data: bytes, settings: Dict[str, Any], original_filename: str = None) -> Dict[str, Any]:
         """Process file data and save result to persistent location"""
         try:
@@ -144,24 +142,20 @@ class CompressionService:
 
     @staticmethod
     def create_compression_job(file_data: bytes, settings: Dict[str, Any],
-                               original_filename: str = None, client_job_id: str = None,
-                               client_session_id: str = None) -> Job:
+                               original_filename: str = None, job_id: str = None,
+                               session_id: str = None) -> Job:
         """
         Create a compression job record for async processing
         """
         try:
-            job_id = str(uuid.uuid4())
-            
             job = Job(
-                id=job_id,
+                job_id=job_id,
                 task_type='compress',
                 input_data={
                     'settings': settings,
                     'file_size': len(file_data),
                     'original_filename': original_filename
-                },
-                client_job_id=client_job_id,
-                client_session_id=client_session_id
+                }
             )
             
             db.session.add(job)
