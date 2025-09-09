@@ -1,19 +1,19 @@
-import os
 import logging
+import os
+
 from flask import Flask, jsonify
-from flask_migrate import Migrate
 from sqlalchemy import text
 
-from src.database.init_db import reset_database
+from src.config.config import get_config, validate_current_config, ConfigValidationError
+from src.database import init_database
+from src.models.base import db
 from src.routes import compression_bp, extended_features_bp
 from src.utils import setup_logging
-from src.utils.scheduler import start_background_scheduler
 from src.utils.cors_config import configure_secure_cors
 from src.utils.error_handlers import register_error_handlers
-from src.config.config import get_config, validate_current_config, ConfigValidationError
-from src.models.base import db
-from src.database import init_database
+from src.utils.scheduler import start_background_scheduler
 
+import sentry_sdk
 
 def create_app(config_name=None, config_override=None):
     """
@@ -26,7 +26,13 @@ def create_app(config_name=None, config_override=None):
     Returns:
         Flask: Configured Flask application instance
     """
-    
+
+    sentry_sdk.init(
+        dsn="https://ad33a061c36eab16eaba8e51bb76e4f9@o544206.ingest.us.sentry.io/4509991179124736",
+        # Add data like request headers and IP for users,
+        # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
+        send_default_pii=True,
+    )
     # Create Flask application
     app = Flask(__name__)
     
@@ -91,7 +97,6 @@ def initialize_extensions(app):
     db.init_app(app)
 
     # Import models AFTER db is initialized
-    from src.models.job import Job  # This ensures models are registered
 
     # Initialize database tables
     init_database(app)
