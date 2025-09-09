@@ -209,7 +209,7 @@ class TestingConfig(BaseConfig):
     TESTING = True
     
     # In-memory database for testing
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///pdf_smaller_test.db'
     
     # Disable CSRF for testing
     WTF_CSRF_ENABLED = False
