@@ -36,79 +36,60 @@ bulk_service = BulkCompressionService(config.UPLOAD_FOLDER)
 # COMPRESSION TASKS
 # ============================================================================
 
-@celery_app.task(bind=True, name='tasks.compress_task')
-def compress_task(self, job_id: str, file_data: bytes, settings: Dict, 
-                 original_filename: str = None, client_job_id: str = None, 
-                 client_session_id: str = None) -> Dict[str, Any]:
-    """
-    Process compression task asynchronously
-    """
+@celery_app.task(bind=True, max_retries=3)
+def compress_task(self, job_id, file_data, compression_settings, original_filename=None, 
+                client_job_id=None, client_session_id=None):
+    """Async compression task"""
     try:
-        logger.info(f"Starting compression task for job {job_id} (client_job_id: {client_job_id})")
+        from src.models import Job, JobStatus
+        from src.models.base import db
         
-        # Create/update job record
-        job = Job.query.get(job_id) or Job(
-            id=job_id,
-            task_type='compress',
-            input_data={
-                'settings': settings,
-                'file_size': len(file_data),
-                'original_filename': original_filename
-            },
-            client_job_id=client_job_id,
-            client_session_id=client_session_id
-        )
+        # Update job status to processing
+        job = Job.query.get(job_id)
+        if not job:
+            logger.error(f"Job {job_id} not found for processing")
+            return
+            
         job.status = JobStatus.PROCESSING
         db.session.commit()
         
-        # Update task progress
-        current_task.update_state(
-            state='PROGRESS',
-            meta={
-                'progress': 10,
-                'status': 'Starting compression processing'
-            }
+        # Get compression service
+        compression_service = CompressionService(os.environ.get('UPLOAD_FOLDER', '/tmp/pdf_uploads'))
+        
+        # Process the file
+        result = compression_service.process_file_data(
+            file_data, 
+            compression_settings, 
+            original_filename
         )
         
-        # Process compression
-        result = compression_service.process_file_data(file_data, settings, original_filename)
-        
-        # Update job with result
+        # Update job with results
         job.result = result
         job.status = JobStatus.COMPLETED
         db.session.commit()
         
-        # Final progress update
-        current_task.update_state(
-            state='SUCCESS',
-            meta={
-                'progress': 100,
-                'status': 'Compression completed successfully'
-            }
-        )
-        
-        logger.info(f"Compression task completed for job {job_id}")
-        return result
+        logger.info(f"Compression job {job_id} completed successfully")
         
     except Exception as e:
-        logger.error(f"Error in compression task {job_id}: {str(e)}")
+        logger.error(f"Compression task failed for job {job_id}: {str(e)}")
         
-        # Update job with error
-        if 'job' in locals() and job:
-            job.status = JobStatus.FAILED
-            job.error = str(e)
-            db.session.commit()
+        # Update job status to failed
+        try:
+            job = Job.query.get(job_id)
+            if job:
+                job.status = JobStatus.FAILED
+                job.error = str(e)
+                db.session.commit()
+        except Exception as db_error:
+            logger.error(f"Failed to update job status: {db_error}")
         
-        # Update task state
-        current_task.update_state(
-            state='FAILURE',
-            meta={
-                'error': str(e),
-                'job_id': job_id
-            }
-        )
+        # Retry if possible
+        if self.request.retries < self.max_retries:
+            logger.info(f"Retrying compression job {job_id} (attempt {self.request.retries + 1})")
+            raise self.retry(countdown=60 * (self.request.retries + 1))
         
         raise
+
 
 @celery_app.task(bind=True, name='tasks.bulk_compress_task')
 def bulk_compress_task(self, job_id: str, file_data_list: List[bytes], 

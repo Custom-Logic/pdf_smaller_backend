@@ -22,6 +22,58 @@ class CompressionService:
         if not os.path.exists(self.GHOSTSCRIPT_BINARY):
             raise EnvironmentError(f"Ghostscript binary not found at {self.GHOSTSCRIPT_BINARY}")
 
+    # Updated compression_service.py - Key fixes
+
+    def process_file_data(self, file_data: bytes, settings: Dict[str, Any], original_filename: str = None) -> Dict[str, Any]:
+        """Process file data and save result to persistent location"""
+        try:
+            # Create output directory in upload folder (persistent)
+            output_dir = os.path.join(self.upload_folder, 'results')
+            Path(output_dir).mkdir(parents=True, exist_ok=True)
+            
+            # Generate unique output filename
+            job_id = str(uuid.uuid4())
+            output_filename = f"compressed_{job_id}_{secure_filename(original_filename or 'file.pdf')}"
+            output_path = os.path.join(output_dir, output_filename)
+            
+            with tempfile.TemporaryDirectory() as temp_dir:
+                # Save input file in temp directory
+                input_path = os.path.join(temp_dir, secure_filename(original_filename or 'input.pdf'))
+                with open(input_path, 'wb') as f:
+                    f.write(file_data)
+                
+                original_size = len(file_data)
+                compression_level = settings.get('compression_level', 'medium')
+                image_quality = settings.get('image_quality', 80)
+                
+                # Compress to persistent location
+                self.compress_pdf(input_path, output_path, compression_level, image_quality)
+                
+                compressed_size = get_file_size(output_path)
+                compression_ratio = ((original_size - compressed_size) / original_size) * 100
+                
+                return {
+                    'success': True,
+                    'original_size': original_size,
+                    'compressed_size': compressed_size,
+                    'compression_ratio': compression_ratio,
+                    'compression_level': compression_level,
+                    'image_quality': image_quality,
+                    'original_filename': original_filename,
+                    'output_path': output_path,  # Persistent path
+                    'mime_type': 'application/pdf'
+                }
+                
+        except Exception as e:
+            logger.error(f"Error processing file data: {str(e)}")
+            # Clean up output file if created
+            if 'output_path' in locals() and os.path.exists(output_path):
+                try:
+                    os.unlink(output_path)
+                except:
+                    pass
+            raise
+
     def compress_pdf(self, input_path: str, output_path: str, compression_level: str = 'medium', image_quality: int = 80) -> bool:
         """
         Compress PDF using Ghostscript with advanced options

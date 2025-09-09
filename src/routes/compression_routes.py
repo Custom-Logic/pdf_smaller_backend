@@ -30,6 +30,113 @@ class JobStatus(Enum):
     FAILED = 'failed'
 
 
+# Updated routes.py - Fixed download endpoint
+@compression_bp.route('/jobs/<job_id>/download', methods=['GET'])
+def download_job_result(job_id):
+    """Download the result file for a completed job"""
+    try:
+        from src.models.job import Job, JobStatus
+        
+        job = Job.query.filter_by(id=job_id).first()
+        
+        if not job:
+            logger.error(f"Job {job_id} not found")
+            return jsonify({'error': 'Job not found'}), 404
+        
+        if job.status != JobStatus.COMPLETED:
+            logger.warning(f"Job {job_id} not completed, status: {job.status.value}")
+            return jsonify({
+                'error': 'Job not completed yet',
+                'status': job.status.value
+            }), 400
+        
+        if not job.result or 'output_path' not in job.result:
+            logger.error(f"Job {job_id} has no result or output_path")
+            return jsonify({'error': 'No result file available'}), 404
+        
+        output_path = job.result['output_path']
+        
+        if not os.path.exists(output_path):
+            logger.error(f"Result file not found at {output_path} for job {job_id}")
+            return jsonify({'error': 'Result file not found'}), 404
+        
+        # Verify file is readable and not empty
+        try:
+            file_size = os.path.getsize(output_path)
+            if file_size == 0:
+                logger.error(f"Result file is empty for job {job_id}")
+                return jsonify({'error': 'Result file is empty'}), 404
+        except OSError as e:
+            logger.error(f"Cannot access result file for job {job_id}: {e}")
+            return jsonify({'error': 'Cannot access result file'}), 404
+        
+        # Generate download filename
+        original_filename = job.result.get('original_filename', 'document.pdf')
+        # Ensure filename is safe
+        safe_filename = secure_filename(original_filename)
+        download_filename = f"compressed_{safe_filename}"
+        
+        return send_file(
+            output_path,
+            as_attachment=True,
+            download_name=download_filename,
+            mimetype='application/pdf'
+        )
+        
+    except Exception as e:
+        logger.error(f"Error downloading job result {job_id}: {str(e)}")
+        return jsonify({'error': f'Failed to download result file: {str(e)}'}), 500
+
+# Fixed job status endpoint
+@compression_bp.route('/jobs/<job_id>', methods=['GET'])
+def get_job_status(job_id):
+    """Get job status and result if completed"""
+    try:
+        from src.models import Job, JobStatus as JS
+        
+        # Validate job_id format
+        if not job_id or len(job_id.strip()) == 0:
+            return jsonify({'error': 'Invalid job ID'}), 400
+        
+        job = Job.query.filter_by(id=job_id.strip()).first()
+        logger.debug(f"Looking up job status for job_id {job_id}")
+
+        if not job:
+            logger.debug(f"Job with id {job_id} was not found")
+            return jsonify({'error': 'Job not found'}), 404
+        
+        response_data = {
+            'job_id': job.id,
+            'status': job.status.value,
+            'task_type': job.task_type,
+            'client_job_id': job.client_job_id,
+            'created_at': job.created_at.isoformat(),
+            'updated_at': job.updated_at.isoformat()
+        }
+        
+        logger.debug(f"Job status found: {response_data}")        
+
+        if job.status == JS.COMPLETED and job.result:
+            response_data['result'] = job.result
+            
+            # Verify download availability
+            if job.result.get('output_path') and os.path.exists(job.result['output_path']):
+                response_data['download_url'] = f"/api/jobs/{job_id}/download"
+                response_data['download_available'] = True
+            else:
+                logger.warning(f"Job {job_id} completed but output file not found")
+                response_data['download_available'] = False
+        
+        elif job.status == JS.FAILED and job.error:
+            response_data['error'] = job.error
+        
+        return jsonify(response_data)
+        
+    except Exception as e:
+        logger.error(f"Error getting job status {job_id}: {str(e)}")
+        return jsonify({'error': f'Failed to retrieve job status: {str(e)}'}), 500
+
+# Updated tasks.py - Ensure proper error handling
 
 @compression_bp.route('/compress', methods=['POST'])
 def compress_pdf():
@@ -90,81 +197,6 @@ def compress_pdf():
     except Exception as e:
         logger.error(f"Error creating compression job: {str(e)}")
         return jsonify({'error': f'Failed to create compression job: {str(e)}'}), 500
-
-@compression_bp.route('/jobs/<job_id>', methods=['GET'])
-def get_job_status(job_id):
-    """Get job status and result if completed"""
-    try:
-        from src.models import Job, JobStatus as JS
-        
-        job = Job.query.filter_by(id=job_id).first()
-        
-        if not job:
-            return jsonify({'error': 'Job not found'}), 404
-        
-        response_data = {
-            'job_id': job.id,
-            'status': job.status.value,
-            'task_type': job.task_type,
-            'client_job_id': job.client_job_id,
-            'created_at': job.created_at.isoformat(),
-            'updated_at': job.updated_at.isoformat()
-        }
-        
-        if job.status == JS.COMPLETED and job.result:
-            response_data['result'] = job.result
-            # Include download URL if file is available
-            if job.result.get('output_path'):
-                response_data['download_url'] = f"/api/jobs/{job_id}/download"
-        
-        elif job.status == JS.FAILED and job.error:
-            response_data['error'] = job.error
-        
-        return jsonify(response_data)
-        
-    except Exception as e:
-        logger.error(f"Error getting job status {job_id}: {str(e)}")
-        return jsonify({'error': 'Failed to retrieve job status'}), 500
-
-@compression_bp.route('/jobs/<job_id>/download', methods=['GET'])
-def download_job_result(job_id):
-    """Download the result file for a completed job"""
-    try:
-        from src.models.job import Job, JobStatus
-        
-        job = Job.query.filter_by(id=job_id).first()
-        
-        if not job:
-            return jsonify({'error': 'Job not found'}), 404
-        
-        if job.status != JobStatus.COMPLETED:
-            return jsonify({
-                'error': 'Job not completed yet',
-                'status': job.status.value
-            }), 400
-        
-        if not job.result or 'output_path' not in job.result:
-            return jsonify({'error': 'No result file available'}), 404
-        
-        output_path = job.result['output_path']
-        
-        if not os.path.exists(output_path):
-            return jsonify({'error': 'Result file not found'}), 404
-        
-        # Generate download filename
-        original_filename = job.result.get('original_filename', 'document.pdf')
-        download_filename = f"compressed_{original_filename}"
-        
-        return send_file(
-            output_path,
-            as_attachment=True,
-            download_name=download_filename,
-            mimetype='application/pdf'
-        )
-        
-    except Exception as e:
-        logger.error(f"Error downloading job result {job_id}: {str(e)}")
-        return jsonify({'error': 'Failed to download result file'}), 500
 
 @compression_bp.route('/bulk', methods=['POST'])
 def bulk_compress():
@@ -246,8 +278,6 @@ def bulk_compress():
             'error': 'Failed to create bulk compression job',
             'error_code': 'SYSTEM_ERROR'
         }), 500
-
-
 
 @compression_bp.route('/health', methods=['GET'])
 def compression_health_check():
