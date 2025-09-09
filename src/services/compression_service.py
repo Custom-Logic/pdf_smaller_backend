@@ -420,7 +420,7 @@ class CompressionService:
             return True
             
         except Exception as e:
-            logger.error(f"Error cleaning up job files for job {job.id}: {str(e)}")
+            logger.error(f"Error cleaning up job files for job {job.job_id}: {str(e)}")
             return False
 
     @staticmethod

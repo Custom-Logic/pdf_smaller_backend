@@ -100,7 +100,7 @@ def get_job_status(job_id):
         if not job_id or len(job_id.strip()) == 0:
             return jsonify({'error': 'Invalid job ID'}), 400
         
-        job = Job.query.filter_by(id=job_id.strip()).first()
+        job = Job.query.filter_by(job_id=job_id.strip()).first()
         logger.debug(f"Looking up job status for job_id {job_id}")
 
         if not job:
@@ -108,7 +108,7 @@ def get_job_status(job_id):
             return jsonify({'error': 'Job not found'}), 404
         
         response_data = {
-            'job_id': job.id,
+            'job_id': job.job_id,
             'status': job.status.value,
             'task_type': job.task_type,
             'client_job_id': job.client_job_id,
