@@ -4,6 +4,9 @@ import threading
 import time
 from datetime import datetime, timedelta
 from typing import Callable, Dict, Any
+
+from flask import Flask
+
 from src.services.cleanup_service import CleanupService
 
 logger = logging.getLogger(__name__)
@@ -101,28 +104,28 @@ class TaskScheduler:
 scheduler = TaskScheduler()
 
 
-def setup_cleanup_scheduler(upload_folder: str):
+def setup_cleanup_scheduler(upload_folder: str, app: Flask):
     """Set up the cleanup scheduler with default tasks"""
+    with app.app_context():
+        def cleanup_expired_jobs():
+            """Wrapper for expired jobs cleanup"""
+            return CleanupService.cleanup_expired_jobs()
+
+        def cleanup_temp_files():
+            """Wrapper for temp files cleanup"""
+            return CleanupService.cleanup_temp_files(upload_folder)
     
-    def cleanup_expired_jobs():
-        """Wrapper for expired jobs cleanup"""
-        return CleanupService.cleanup_expired_jobs()
-    
-    def cleanup_temp_files():
-        """Wrapper for temp files cleanup"""
-        return CleanupService.cleanup_temp_files(upload_folder)
-    
-    # Add cleanup tasks
-    scheduler.add_task('cleanup_expired_jobs', cleanup_expired_jobs, interval_hours=6)  # Every 6 hours
-    scheduler.add_task('cleanup_temp_files', cleanup_temp_files, interval_hours=1)      # Every hour
-    
-    return scheduler
+        # Add cleanup tasks
+        scheduler.add_task('cleanup_expired_jobs', cleanup_expired_jobs, interval_hours=6)  # Every 6 hours
+        scheduler.add_task('cleanup_temp_files', cleanup_temp_files, interval_hours=1)      # Every hour
+
+        return scheduler
 
 
-def start_background_scheduler(upload_folder: str):
+def start_background_scheduler(upload_folder: str, app: Flask):
     """Start the background scheduler with cleanup tasks"""
     try:
-        setup_cleanup_scheduler(upload_folder)
+        setup_cleanup_scheduler(upload_folder, app)
         scheduler.start()
         logger.info("Background cleanup scheduler started successfully")
     except Exception as e:

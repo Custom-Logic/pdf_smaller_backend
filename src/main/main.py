@@ -62,6 +62,7 @@ def create_app(config_name=None, config_override=None):
     if hasattr(config_class, 'get_config_summary'):
         config_summary = config_class.get_config_summary()
         app.logger.info(f"Application starting with configuration: {config_summary}")
+
     with app.app_context():
         # Initialize extensions
 
@@ -142,15 +143,14 @@ def initialize_background_tasks(app):
     if app.config.get('TESTING', False):
         app.logger.info("Skipping background tasks in testing mode")
         return
-    
     try:
-        upload_folder = app.config.get('UPLOAD_FOLDER', '/tmp/pdf_uploads')
+        upload_folder = app.config.get('UPLOAD_FOLDER', '/uploads/dev')
         
         # Ensure upload folder exists
         os.makedirs(upload_folder, exist_ok=True)
         
         # Start background scheduler for cleanup tasks
-        start_background_scheduler(upload_folder)
+        start_background_scheduler(upload_folder, app)
         app.logger.info(f"Background scheduler started for folder: {upload_folder}")
         
     except Exception as e:
