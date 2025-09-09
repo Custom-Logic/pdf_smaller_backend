@@ -238,7 +238,7 @@ def convert_pdf_task(self, job_id: str, file_data: bytes, target_format: str,
         if not job:
             job = Job(
                 job_id=job_id,
-                task_type=f'convert_to_{target_format}',
+                task_type=f'convert',
                 input_data={
                     'target_format': target_format,
                     'options': options,

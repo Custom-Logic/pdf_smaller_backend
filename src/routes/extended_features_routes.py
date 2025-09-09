@@ -85,11 +85,11 @@ def get_file_and_validate(feature_type, max_size_mb=None):
 def convert_pdf():
     """Convert PDF to specified format - returns job ID"""
     try:
-        format = request.form.get('format', 'docx').lower()
+        target_format = request.form.get('format', 'docx').lower()
         # Validate format
         supported_formats = ['docx', 'xlsx', 'txt', 'html']
-        if format not in supported_formats:
-            return error_response(message=f"Unsupported format: {format}", status_code=400)
+        if target_format not in supported_formats:
+            return error_response(message=f"Unsupported format: {target_format}", status_code=400)
 
         # Get and validate file
         file, error = get_file_and_validate('conversion')
@@ -113,12 +113,11 @@ def convert_pdf():
         # Enqueue conversion task using .delay() pattern
         from src.tasks.tasks import convert_pdf_task
         task = convert_pdf_task.delay(
-            job_id,
-            file_data,
-            format,
-            options,
-            file.filename,
             job_id=job_id,
+            file_data=file_data,
+            target_format=target_format,
+            options=options,
+            original_filename=file.filename,
             session_id=session_id
         )
 
