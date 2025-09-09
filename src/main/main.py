@@ -2,6 +2,7 @@ import os
 import logging
 from flask import Flask, jsonify
 from flask_migrate import Migrate
+from sqlalchemy import text
 
 from src.routes import compression_bp, extended_features_bp
 from src.utils import setup_logging

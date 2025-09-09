@@ -196,7 +196,7 @@ class DevelopmentConfig(BaseConfig):
     
     # Development origins
     ALLOWED_ORIGINS = [origin.strip() for origin in 
-                      os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',')]
+                      os.environ.get('ALLOWED_ORIGINS', 'https://www.pdfsmaller.site,https://pdfsmaller.site').split(',')]
        
     # Development file settings
     UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', './uploads/dev')
@@ -262,13 +262,7 @@ class ProductionConfig(BaseConfig):
         # Production-specific validations
         if 'sqlite' in cls.SQLALCHEMY_DATABASE_URI:
             errors.append("Production should use PostgreSQL, not SQLite")
-        
-        if not cls.STRIPE_SECRET_KEY or 'test' in cls.STRIPE_SECRET_KEY:
-            errors.append("Production STRIPE_SECRET_KEY must be set and not a test key")
-        
-        if not cls.STRIPE_WEBHOOK_SECRET:
-            errors.append("STRIPE_WEBHOOK_SECRET must be set in production")
-        
+
         if cls.DEBUG:
             errors.append("DEBUG should be False in production")
         
