@@ -9,6 +9,8 @@ from src.utils.validation import validate_request_payload
 from datetime import datetime
 from enum import Enum
 
+from src.utils import secure_filename
+
 logger = logging.getLogger(__name__)
 
 compression_bp = Blueprint('compression', __name__)

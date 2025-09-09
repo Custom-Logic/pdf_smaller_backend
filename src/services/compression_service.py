@@ -142,68 +142,10 @@ class CompressionService:
             logger.error(f"Error during compression: {str(e)}")
             raise
 
-    def process_file_data(self, file_data: bytes, settings: Dict[str, Any], original_filename: str = None) -> Dict[str, Any]:
-        """
-        Process file data (bytes) and return compression results
-        Returns job result data instead of file path
-        """
-        try:
-            # Create temporary directory for processing
-            with tempfile.TemporaryDirectory() as temp_dir:
-                # Save input file
-                input_filename = original_filename or f"input_{uuid.uuid4().hex[:8]}.pdf"
-                input_path = os.path.join(temp_dir, secure_filename(input_filename))
-                
-                with open(input_path, 'wb') as f:
-                    f.write(file_data)
-                
-                # Get original size
-                original_size = len(file_data)
-                
-                # Prepare output file
-                output_filename = f"compressed_{input_filename}"
-                output_path = os.path.join(temp_dir, output_filename)
-                
-                # Extract compression settings
-                compression_level = settings.get('compression_level', 'medium')
-                image_quality = settings.get('image_quality', 80)
-                
-                # Perform compression
-                self.compress_pdf(input_path, output_path, compression_level, image_quality)
-                
-                # Get compressed size
-                compressed_size = get_file_size(output_path)
-                
-                # Calculate compression ratio
-                compression_ratio = ((original_size - compressed_size) / original_size) * 100
-                
-                # Read compressed file data
-                with open(output_path, 'rb') as f:
-                    compressed_data = f.read()
-                
-                # Create result with output path for potential file operations
-                result = {
-                    'success': True,
-                    'original_size': original_size,
-                    'compressed_size': compressed_size,
-                    'compression_ratio': compression_ratio,
-                    'compression_level': compression_level,
-                    'image_quality': image_quality,
-                    'original_filename': original_filename,
-                    'output_path': output_path,  # Temporary path, will be cleaned up
-                    'compressed_data': compressed_data,  # Actual compressed bytes
-                    'mime_type': 'application/pdf'
-                }
-                
-                return result
-                
-        except Exception as e:
-            logger.error(f"Error processing file data: {str(e)}")
-            raise
-
-    def create_compression_job(self, file_data: bytes, settings: Dict[str, Any], 
-                              original_filename: str = None, client_job_id: str = None,
-                              client_session_id: str = None) -> Job:
+    @staticmethod
+    def create_compression_job(file_data: bytes, settings: Dict[str, Any],
+                               original_filename: str = None, client_job_id: str = None,
+                               client_session_id: str = None) -> Job:
         """
         Create a compression job record for async processing
         """
@@ -303,7 +245,8 @@ class CompressionService:
             logger.error(f"Error processing compression job {job_id}: {str(e)}")
             raise
 
-    def get_compression_preview(self, file_data: bytes, settings: Dict[str, Any]) -> Dict[str, Any]:
+    @staticmethod
+    def get_compression_preview(file_data: bytes, settings: Dict[str, Any]) -> Dict[str, Any]:
         """
         Generate compression preview without actual processing
         """
@@ -346,6 +289,8 @@ class CompressionService:
     def analyze_pdf_content(self, file_data: bytes) -> Dict[str, Any]:
         """
         Analyze PDF content for compression potential
+        :param file_data:
+        :return:
         """
         try:
             # Create temporary file for analysis
@@ -407,31 +352,33 @@ class CompressionService:
                 'analysis': {}
             }
 
-    def _estimate_compression_potential(self, pdfinfo: Dict[str, str], file_data: bytes) -> float:
+    @staticmethod
+    def _estimate_compression_potential(pdfinfo: Dict[str, str], file_data: bytes) -> float:
         """
         Estimate compression potential based on PDF metadata
         """
         # Simple heuristic-based estimation
         potential = 0.3  # Base potential
-        
+
         # Adjust based on file size (larger files have more potential)
         file_size_mb = len(file_data) / (1024 * 1024)
         if file_size_mb > 10:
             potential += 0.2
         elif file_size_mb > 5:
             potential += 0.1
-        
+
         # Adjust based on page count (more pages = more potential)
         page_count = int(pdfinfo.get('Pages', 1))
         if page_count > 20:
             potential += 0.2
         elif page_count > 10:
             potential += 0.1
-        
+
         # Cap at 0.8 (80% potential)
         return min(potential, 0.8)
 
-    def _classify_document_type(self, pdfinfo: Dict[str, str]) -> str:
+    @staticmethod
+    def _classify_document_type(pdfinfo: Dict[str, str]) -> str:
         """
         Classify document type based on PDF metadata
         """
@@ -450,7 +397,8 @@ class CompressionService:
         else:
             return 'general_document'
 
-    def cleanup_job_files(self, job: Job) -> bool:
+    @staticmethod
+    def cleanup_job_files(job: Job) -> bool:
         """
         Clean up files associated with a compression job
         """
@@ -475,7 +423,8 @@ class CompressionService:
             logger.error(f"Error cleaning up job files for job {job.id}: {str(e)}")
             return False
 
-    def get_recommended_settings(self, analysis: Dict[str, Any]) -> Dict[str, Any]:
+    @staticmethod
+    def get_recommended_settings(analysis: Dict[str, Any]) -> Dict[str, Any]:
         """
         Get recommended compression settings based on analysis
         """

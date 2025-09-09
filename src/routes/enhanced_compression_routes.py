@@ -8,15 +8,11 @@ import logging
 from flask import Blueprint, request, jsonify, send_file
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
-from werkzeug.utils import secure_filename
 import json
 from datetime import datetime
 from flask_cors import CORS
 from src.services.enhanced_compression_service import EnhancedCompressionService
-from src.utils.validation import validate_file
-from src.utils.rate_limiter import rate_limit
-from src.utils.auth_utils import get_current_user, require_auth
-from src.utils.error_handlers import handle_api_error
+
 
 logger = logging.getLogger(__name__)
 
