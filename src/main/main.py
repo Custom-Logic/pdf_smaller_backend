@@ -4,6 +4,7 @@ import os
 from flask import Flask, jsonify
 from sqlalchemy import text
 
+
 from src.config.config import get_config, validate_current_config, ConfigValidationError
 from src.database import init_database
 from src.models.base import db
@@ -125,7 +126,8 @@ def register_blueprints(app):
     
     blueprints = [
         (compression_bp, '/api'),
-        (extended_features_bp, '/api')
+        (extended_features_bp, '/api'),
+        (jobs_bp, '/api')
     ]
     
     for blueprint, url_prefix in blueprints:
