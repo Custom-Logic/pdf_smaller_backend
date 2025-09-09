@@ -3,14 +3,12 @@ Conversion Service - Job-Oriented Architecture
 Handles PDF to Word, Text, HTML, and Images conversion
 """
 
+import logging
 import os
 import tempfile
-import logging
 import uuid
-import json
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
-import asyncio
+from typing import Dict, Any
 
 # PDF processing libraries
 try:

@@ -3,20 +3,17 @@ Enhanced Compression Service
 Provides intelligent PDF compression with analysis and ML recommendations
 """
 
-import os
-import logging
-import asyncio
-from typing import Dict, Any, Optional, List
-from pathlib import Path
-import subprocess
-import json
-from datetime import datetime
 import hashlib
+import json
+import logging
+import subprocess
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, Any, Optional, List
 
-from src.services.compression_service import CompressionService
-from src.utils.file_utils import secure_filename, cleanup_old_files
-from src.models.compression_job import CompressionJob
 from src.models.base import db
+from src.models.compression_job import CompressionJob
+from src.services.compression_service import CompressionService
 
 logger = logging.getLogger(__name__)
 

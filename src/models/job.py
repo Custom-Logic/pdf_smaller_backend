@@ -8,25 +8,12 @@ class JobStatus(Enum):
     COMPLETED = 'completed'
     FAILED = 'failed'
 
-
-from enum import Enum
-from .base import db, BaseModel
-
-
-class JobStatus(Enum):
-    """Job status enum"""
-    PENDING = 'pending'
-    PROCESSING = 'processing'
-    COMPLETED = 'completed'
-    FAILED = 'failed'
-
-
 class Job(BaseModel):
     """Generic job tracking model"""
     __tablename__ = 'jobs'
 
     # Primary key - client-provided ID
-    job_id = db.Column(db.String(255), primary_key=True)
+
 
     session_id = db.Column(db.String(255))  # Optional client session tracking
     # Celery task tracking

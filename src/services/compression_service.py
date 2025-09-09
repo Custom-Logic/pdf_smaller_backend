@@ -1,14 +1,14 @@
+import logging
 import os
 import subprocess
 import tempfile
-import logging
 import uuid
 from pathlib import Path
-from datetime import datetime
-from typing import Optional, Dict, Any, Tuple
+from typing import Dict, Any
+
 from src.models import Job, JobStatus
 from src.models.base import db
-from src.utils.file_utils import secure_filename, cleanup_old_files, get_file_size
+from src.utils.file_utils import secure_filename, get_file_size
 
 logger = logging.getLogger(__name__)
 

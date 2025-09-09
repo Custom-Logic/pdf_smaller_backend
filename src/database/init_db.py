@@ -1,6 +1,6 @@
 """Database initialization and setup utilities"""
 from src.models.base import db
-from src.models import CompressionJob, Job
+from src.models import Job
 import logging
 
 logger = logging.getLogger(__name__)

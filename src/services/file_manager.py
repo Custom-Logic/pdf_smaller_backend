@@ -1,10 +1,10 @@
 import os
 import uuid
-from datetime import datetime
-from typing import Optional, Dict, Any, Tuple
+from typing import Tuple
 
-from src.utils.file_utils import secure_filename, cleanup_old_files, get_file_size
 from src.config import Config
+from src.utils.file_utils import cleanup_old_files, get_file_size
+
 
 class FileManager:
     """Manages file operations for the application"""

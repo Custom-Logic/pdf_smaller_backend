@@ -3,18 +3,18 @@ Bulk compression service - Job-Oriented Architecture
 Handles multiple file compression without user awareness
 """
 
+import logging
 import os
+import tempfile
 import uuid
 import zipfile
-import tempfile
-import logging
 from pathlib import Path
-from datetime import datetime
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional
+
 from werkzeug.datastructures import FileStorage
 
-from src.models.job import Job, JobStatus
 from src.models.base import db
+from src.models.job import Job, JobStatus
 from src.services.compression_service import CompressionService
 from src.utils.file_utils import (
     secure_filename, ensure_directory_exists, get_file_size,
