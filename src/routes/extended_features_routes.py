@@ -206,13 +206,10 @@ def process_ocr():
         # Enqueue OCR task using .delay() pattern
         from src.tasks.tasks import ocr_process_task
         task = ocr_process_task.delay(
-            job_id,
-            file_data,
-            options,
-            file.filename,
-            job_id,
-            session_id=session_id
-        )
+            job_id=job_id,
+            file_data=file_data,
+            options=options,
+            original_filename=file.filename)
 
         logger.info(f"OCR job {job_id} enqueued (task_id: {task.id})")
 
