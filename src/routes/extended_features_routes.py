@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
-from flask import Blueprint, request, send_file
+from flask import Blueprint, request, send_file, jsonify
 from flask_cors import CORS
 
 from ..services.ai_service import AIService
@@ -93,15 +93,6 @@ def get_json_tracking_ids():
         'client_session_id': data.get('client_session_id')
     }
 
-def enqueue_task(task_func, job_id, *args, **kwargs):
-    """Helper function to enqueue tasks with direct Celery import"""
-    try:
-        result = task_func.delay(job_id, *args, **kwargs)
-        return result.id
-    except Exception as e:
-        logger.error(f"Failed to enqueue task {task_func.name}: {str(e)}")
-        raise
-
 # ============================================================================
 # JOB MANAGEMENT ROUTES
 # ============================================================================
@@ -112,24 +103,24 @@ def get_job_status(job_id):
     try:
         from src.models.job import Job, JobStatus as JS
 
-        job = Job.query.filter_by(id=job_id).first()
+        job = Job.query.filter_by(job_id=job_id).first()
         if not job:
             return error_response(message="Job not found", status_code=404)
 
         response_data = {
-            'job_id': job.id,
-            'status': job.status.value,
+            'job_id': job.job_id,
+            'status': job.status,
             'task_type': job.task_type,
-            'client_job_id': job.client_job_id,
-            'created_at': job.created_at.isoformat(),
-            'updated_at': job.updated_at.isoformat()
+            'session_id': job.session_id,
+            'created_at': job.created_at.isoformat() if job.created_at else None,
+            'updated_at': job.updated_at.isoformat() if job.updated_at else None
         }
 
-        if job.status == JS.COMPLETED and job.result:
+        if job.status == JobStatus.COMPLETED.value and job.result:
             response_data['result'] = job.result
             if job.result.get('output_path'):
                 response_data['download_url'] = f"/api/extended/jobs/{job_id}/download"
-        elif job.status == JS.FAILED and job.error:
+        elif job.status == JobStatus.FAILED.value and job.error:
             response_data['error'] = job.error
 
         return success_response(message="Job status retrieved", data=response_data)
@@ -144,11 +135,11 @@ def download_job_result(job_id):
     try:
         from src.models.job import Job, JobStatus
 
-        job = Job.query.filter_by(id=job_id).first()
+        job = Job.query.filter_by(job_id=job_id).first()
         if not job:
             return error_response(message="Job not found", status_code=404)
 
-        if job.status != JobStatus.COMPLETED:
+        if job.status != JobStatus.COMPLETED.value:
             return error_response(message="Job not completed yet", status_code=400)
 
         if not job.result or 'output_path' not in job.result:
@@ -207,10 +198,9 @@ def convert_pdf(format):
         file_data = file.read()
         job_id = str(uuid.uuid4())
 
-        # Enqueue conversion task
+        # Enqueue conversion task using .delay() pattern
         from src.tasks.tasks import convert_pdf_task
-        task_id = enqueue_task(
-            convert_pdf_task,
+        task = convert_pdf_task.delay(
             job_id,
             file_data,
             format,
@@ -220,11 +210,11 @@ def convert_pdf(format):
             tracking['client_session_id']
         )
 
-        logger.info(f"Conversion job {job_id} enqueued (format: {format}, task_id: {task_id})")
+        logger.info(f"Conversion job {job_id} enqueued (format: {format}, task_id: {task.id})")
 
         return success_response(message="Conversion job queued successfully", data={
             'job_id': job_id,
-            'task_id': task_id,
+            'task_id': task.id,
             'status': JobStatus.PENDING.value,
             'format': format
         }), 202
@@ -254,9 +244,9 @@ def get_conversion_preview():
         file_data = file.read()
         job_id = str(uuid.uuid4())
 
+        # Enqueue conversion preview task using .delay() pattern
         from src.tasks.tasks import conversion_preview_task
-        task_id = enqueue_task(
-            conversion_preview_task,
+        task = conversion_preview_task.delay(
             job_id,
             file_data,
             format,
@@ -265,11 +255,11 @@ def get_conversion_preview():
             tracking['client_session_id']
         )
 
-        logger.info(f"Conversion preview job {job_id} enqueued (task_id: {task_id})")
+        logger.info(f"Conversion preview job {job_id} enqueued (task_id: {task.id})")
 
         return success_response(message="Conversion preview job queued successfully", data={
             'job_id': job_id,
-            'task_id': task_id,
+            'task_id': task.id,
             'status': JobStatus.PENDING.value
         }), 202
 
@@ -300,9 +290,9 @@ def process_ocr():
         file_data = file.read()
         job_id = str(uuid.uuid4())
 
+        # Enqueue OCR task using .delay() pattern
         from src.tasks.tasks import ocr_process_task
-        task_id = enqueue_task(
-            ocr_process_task,
+        task = ocr_process_task.delay(
             job_id,
             file_data,
             options,
@@ -311,11 +301,11 @@ def process_ocr():
             tracking['client_session_id']
         )
 
-        logger.info(f"OCR job {job_id} enqueued (task_id: {task_id})")
+        logger.info(f"OCR job {job_id} enqueued (task_id: {task.id})")
 
         return success_response(message="OCR job queued successfully", data={
             'job_id': job_id,
-            'task_id': task_id,
+            'task_id': task.id,
             'status': JobStatus.PENDING.value
         }), 202
 
@@ -342,9 +332,9 @@ def get_ocr_preview():
         file_data = file.read()
         job_id = str(uuid.uuid4())
 
+        # Enqueue OCR preview task using .delay() pattern
         from src.tasks.tasks import ocr_preview_task
-        task_id = enqueue_task(
-            ocr_preview_task,
+        task = ocr_preview_task.delay(
             job_id,
             file_data,
             options,
@@ -352,11 +342,11 @@ def get_ocr_preview():
             tracking['client_session_id']
         )
 
-        logger.info(f"OCR preview job {job_id} enqueued (task_id: {task_id})")
+        logger.info(f"OCR preview job {job_id} enqueued (task_id: {task.id})")
 
         return success_response(message="OCR preview job queued successfully", data={
             'job_id': job_id,
-            'task_id': task_id,
+            'task_id': task.id,
             'status': JobStatus.PENDING.value
         }), 202
 
@@ -384,9 +374,9 @@ def summarize_pdf():
         tracking = get_json_tracking_ids()
         job_id = str(uuid.uuid4())
 
+        # Enqueue AI summarization task using .delay() pattern
         from src.tasks.tasks import ai_summarize_task
-        task_id = enqueue_task(
-            ai_summarize_task,
+        task = ai_summarize_task.delay(
             job_id,
             text,
             options,
@@ -394,11 +384,11 @@ def summarize_pdf():
             tracking['client_session_id']
         )
 
-        logger.info(f"AI summarization job {job_id} enqueued (task_id: {task_id})")
+        logger.info(f"AI summarization job {job_id} enqueued (task_id: {task.id})")
 
         return success_response(message="Summarization job queued successfully", data={
             'job_id': job_id,
-            'task_id': task_id,
+            'task_id': task.id,
             'status': JobStatus.PENDING.value
         }), 202
 
@@ -423,9 +413,9 @@ def translate_text():
         tracking = get_json_tracking_ids()
         job_id = str(uuid.uuid4())
 
+        # Enqueue AI translation task using .delay() pattern
         from src.tasks.tasks import ai_translate_task
-        task_id = enqueue_task(
-            ai_translate_task,
+        task = ai_translate_task.delay(
             job_id,
             text,
             target_language,
@@ -434,11 +424,11 @@ def translate_text():
             tracking['client_session_id']
         )
 
-        logger.info(f"AI translation job {job_id} enqueued (task_id: {task_id})")
+        logger.info(f"AI translation job {job_id} enqueued (task_id: {task.id})")
 
         return success_response(message="Translation job queued successfully", data={
             'job_id': job_id,
-            'task_id': task_id,
+            'task_id': task.id,
             'status': JobStatus.PENDING.value
         }), 202
 
@@ -462,9 +452,9 @@ def extract_text():
         file_data = file.read()
         job_id = str(uuid.uuid4())
 
+        # Enqueue text extraction task using .delay() pattern
         from src.tasks.tasks import extract_text_task
-        task_id = enqueue_task(
-            extract_text_task,
+        task = extract_text_task.delay(
             job_id,
             file_data,
             file.filename,
@@ -472,11 +462,11 @@ def extract_text():
             tracking['client_session_id']
         )
 
-        logger.info(f"Text extraction job {job_id} enqueued (task_id: {task_id})")
+        logger.info(f"Text extraction job {job_id} enqueued (task_id: {task.id})")
 
         return success_response(message="Text extraction job queued successfully", data={
             'job_id': job_id,
-            'task_id': task_id,
+            'task_id': task.id,
             'status': JobStatus.PENDING.value
         }), 202
 

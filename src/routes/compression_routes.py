@@ -1,15 +1,15 @@
-import os
 import logging
+import os
 import uuid
-from flask import Blueprint, request, send_file, jsonify, g
-from flask_cors import CORS
-from src.services.compression_service import CompressionService
-from src.utils.security_utils import validate_file
-from src.utils.validation import validate_request_payload
 from datetime import datetime
 from enum import Enum
 
+from flask import Blueprint, request, send_file, jsonify
+from flask_cors import CORS
+
+from src.services.compression_service import CompressionService
 from src.utils import secure_filename
+from src.utils.security_utils import validate_file
 
 logger = logging.getLogger(__name__)
 
@@ -164,15 +164,15 @@ def compress_pdf():
         image_quality = max(10, min(image_quality, 100))
 
         # Get client-provided tracking IDs
-        client_job_id = request.form.get('client_job_id')
-        client_session_id = request.form.get('client_session_id')
+        job_id = request.form.get('job_id')
 
         # Read file data
         file_data = file.read()
         
         # Create job and enqueue for processing
-        job_id = str(uuid.uuid4())
-        
+        if job_id is None:
+            job_id = str(uuid.uuid4())
+        session_id = request.form.get('session_id', str(uuid.uuid4()))
         # Enqueue compression task (async processing)
         from src.tasks.tasks import compress_task
         compress_task.delay(
@@ -183,11 +183,11 @@ def compress_pdf():
                 'image_quality': image_quality
             },
             original_filename=file.filename,
-            client_job_id=client_job_id,
-            client_session_id=client_session_id
+            client_job_id=job_id,
+            client_session_id=session_id
         )
         
-        logger.info(f"Compression job {job_id} enqueued (client_job_id: {client_job_id})")
+        logger.info(f"Compression job {job_id} enqueued (client_job_id: {job_id})")
         
         return jsonify({
             'success': True,
