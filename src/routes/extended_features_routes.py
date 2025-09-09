@@ -121,13 +121,13 @@ def convert_pdf():
             session_id=session_id
         )
 
-        logger.info(f"Conversion job {job_id} enqueued (format: {format}, task_id: {task.id})")
+        logger.info(f"Conversion job {job_id} enqueued (format: {target_format}, task_id: {task.id})")
 
         return success_response(message="Conversion job queued successfully", data={
             'job_id': job_id,
             'task_id': task.id,
             'status': JobStatus.PENDING.value,
-            'format': format
+            'format': target_format
         }, status_code=202)
 
     except Exception as e:
