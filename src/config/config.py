@@ -17,7 +17,7 @@ class BaseConfig:
     MAX_CONTENT_LENGTH = int(os.environ.get('MAX_CONTENT_LENGTH', 100 * 1024 * 1024))  # 100MB default
     
     # Database settings
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///pdf_smaller.db'
+    SQLALCHEMY_DATABASE_URI = f'sqlite:////root/app/pdf_smaller_backend/pdf_smaller_dev.db'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,
@@ -166,7 +166,7 @@ class BaseConfig:
     def get_config_summary(cls) -> Dict[str, Any]:
         """Get a summary of current configuration (excluding sensitive data)"""
         return {
-            'database_type': 'sqlite' if 'sqlite' in cls.SQLALCHEMY_DATABASE_URI else 'postgresql',
+            'database_type': 'sqlite',
             'upload_folder': cls.UPLOAD_FOLDER,
             'max_file_size': cls.MAX_FILE_SIZE,
             'compression_levels': list(cls.COMPRESSION_LEVELS.keys()),
@@ -192,7 +192,7 @@ class DevelopmentConfig(BaseConfig):
     SECURITY_HEADERS = {}
     
     # Development database (SQLite by default)
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///pdf_smaller_dev.db'
+    SQLALCHEMY_DATABASE_URI = f'sqlite:////root/app/pdf_smaller_backend/pdf_smaller_dev.db'
     
     # Development origins
     ALLOWED_ORIGINS = [origin.strip() for origin in 
@@ -209,13 +209,13 @@ class TestingConfig(BaseConfig):
     TESTING = True
     
     # In-memory database for testing
-    SQLALCHEMY_DATABASE_URI = 'sqlite:///pdf_smaller_test.db'
+    SQLALCHEMY_DATABASE_URI = f'sqlite:////root/app/pdf_smaller_backend/pdf_smaller_dev.db'
     
     # Disable CSRF for testing
     WTF_CSRF_ENABLED = False
       
     # Test file settings
-    UPLOAD_FOLDER = '/tmp/pdf_test_uploads'
+    UPLOAD_FOLDER = '/uploads/dev'
     MAX_FILE_AGE = timedelta(minutes=1)
     
     # Disable external services in testing
@@ -277,7 +277,7 @@ config_by_name = {
 Config = config_by_name[os.environ.get('FLASK_ENV', 'default')]
 
 
-def get_config(config_name: Optional[str] = None) -> BaseConfig:
+def get_config(config_name: Optional[str] = 'production') -> BaseConfig:
     """Get configuration class by name"""
     if config_name is None:
         config_name = os.environ.get('FLASK_ENV', 'default')

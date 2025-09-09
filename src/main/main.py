@@ -4,6 +4,7 @@ from flask import Flask, jsonify
 from flask_migrate import Migrate
 from sqlalchemy import text
 
+from src.database.init_db import reset_database
 from src.routes import compression_bp, extended_features_bp
 from src.utils import setup_logging
 from src.utils.scheduler import start_background_scheduler
@@ -13,8 +14,6 @@ from src.config.config import get_config, validate_current_config, ConfigValidat
 from src.models.base import db
 from src.database import init_database
 
-# Global extensions
-migrate = Migrate()
 
 def create_app(config_name=None, config_override=None):
     """
@@ -59,6 +58,7 @@ def create_app(config_name=None, config_override=None):
         app.logger.info(f"Application starting with configuration: {config_summary}")
     with app.app_context():
         # Initialize extensions
+
         initialize_extensions(app)
         
         # Register error handlers
@@ -85,25 +85,18 @@ def create_app(config_name=None, config_override=None):
 
 def initialize_extensions(app):
     """Initialize Flask extensions"""
-    
-    # Initialize database
-    # db.init_app(app)
-    
-    # Initialize database migrations
-    # migrate.init_app(app, db)
-    
-    # Initialize Celery (if not in testing mode)
-    # if not app.config.get('TESTING', False):
-    #     try:
-    #         from src.celery_app import make_celery
-    #         celery = make_celery(app)
-    #         app.celery = celery
-    #         app.logger.info("Celery initialized successfully")
-    #     except Exception as e:
-    #         app.logger.warning(f"Celery initialization failed: {e}")
-    
+
+    # Initialize database FIRST
+    from src.models import db
+    db.init_app(app)
+
+    # Import models AFTER db is initialized
+    from src.models.job import Job  # This ensures models are registered
+
     # Initialize database tables
     init_database(app)
+
+    # ... rest of your code ...
 
 
 

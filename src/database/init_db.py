@@ -5,17 +5,34 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 def init_database(app):
     """Initialize database tables and create default data"""
     with app.app_context():
         try:
+            from src.models import db
+
+            # Debug info
+            import os
+            db_uri = app.config['SQLALCHEMY_DATABASE_URI']
+            print(f"Database URI: {db_uri}")
+
             # Create all tables
             db.create_all()
-            logger.info("Database tables created successfully")
-            logger.info("Database initialization completed")
-            
+            print("Database tables created successfully")
+
+            # Verify
+            if 'sqlite' in db_uri:
+                db_path = db_uri.replace('sqlite:///', '')
+                if os.path.exists(db_path):
+                    print(f"Database file created: {db_path}")
+                else:
+                    print("WARNING: Database file not found")
+
         except Exception as e:
-            logger.error(f"Database initialization failed: {str(e)}")
+            print(f"Database initialization failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
             raise
 
 def reset_database(app):
