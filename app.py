@@ -18,10 +18,7 @@ except ConfigValidationError as e:
 except Exception as e:
     logging.error(f"Application startup failed: {e}")
     raise
-@app.route("/")
-def hello_world():
-    1/0  # raises an error
-    return "<p>Hello, World!</p>"
+
 if __name__ == '__main__':
     # Development server (not for production)
     debug_mode = app.config.get('DEBUG', False)
