@@ -87,20 +87,20 @@ def initialize_extensions(app):
     """Initialize Flask extensions"""
     
     # Initialize database
-    db.init_app(app)
+    # db.init_app(app)
     
     # Initialize database migrations
-    migrate.init_app(app, db)
+    # migrate.init_app(app, db)
     
     # Initialize Celery (if not in testing mode)
-    if not app.config.get('TESTING', False):
-        try:
-            from src.celery_app import make_celery
-            celery = make_celery(app)
-            app.celery = celery
-            app.logger.info("Celery initialized successfully")
-        except Exception as e:
-            app.logger.warning(f"Celery initialization failed: {e}")
+    # if not app.config.get('TESTING', False):
+    #     try:
+    #         from src.celery_app import make_celery
+    #         celery = make_celery(app)
+    #         app.celery = celery
+    #         app.logger.info("Celery initialized successfully")
+    #     except Exception as e:
+    #         app.logger.warning(f"Celery initialization failed: {e}")
     
     # Initialize database tables
     init_database(app)
