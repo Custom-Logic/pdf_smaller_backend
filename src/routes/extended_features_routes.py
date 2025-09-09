@@ -170,9 +170,10 @@ def download_job_result(job_id):
 # ============================================================================
 
 @extended_features_bp.route('/convert', methods=['POST'])
-def convert_pdf(format):
+def convert_pdf():
     """Convert PDF to specified format - returns job ID"""
     try:
+        format = request.form.get('format', 'docx').lower()
         # Validate format
         supported_formats = ['docx', 'xlsx', 'txt', 'html']
         if format not in supported_formats:
