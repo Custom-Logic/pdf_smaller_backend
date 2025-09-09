@@ -8,7 +8,7 @@ from sqlalchemy import text
 from src.config.config import get_config, validate_current_config, ConfigValidationError
 from src.database import init_database
 from src.models.base import db
-from src.routes import compression_bp, extended_features_bp
+from src.routes import compression_bp, extended_features_bp, jobs_bp
 from src.utils import setup_logging
 from src.utils.cors_config import configure_secure_cors
 from src.utils.error_handlers import register_error_handlers
