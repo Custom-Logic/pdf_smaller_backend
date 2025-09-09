@@ -18,11 +18,6 @@ def init_database(app):
             logger.error(f"Database initialization failed: {str(e)}")
             raise
 
-
-
-
-
-
 def reset_database(app):
     """Reset database - WARNING: This will delete all data"""
     with app.app_context():

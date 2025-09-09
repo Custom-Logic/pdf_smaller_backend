@@ -75,7 +75,6 @@ def create_app(config_name=None, config_override=None):
         
         # Register health check endpoints
         register_health_checks(app)
-        
         # Register configuration endpoint (development only)
         if app.config.get('DEBUG', False):
             register_debug_endpoints(app)
@@ -263,4 +262,36 @@ def register_debug_endpoints(app):
         
         return jsonify({'routes': routes})
 
+    @app.route('/debug/database')
+    def debug_database():
+        """Debug endpoint to check database status"""
+        try:
+            db_uri = app.config['SQLALCHEMY_DATABASE_URI']
+            db_info = {
+                'database_uri': db_uri,
+                'database_type': 'sqlite' if 'sqlite' in db_uri else 'unknown',
+                'current_working_directory': os.getcwd(),
+                'database_file_exists': False,
+                'tables_exist': False
+            }
 
+            if db_uri.startswith('sqlite:///') and db_uri != 'sqlite:///:memory:':
+                db_path = db_uri.replace('sqlite:///', '')
+                db_info['database_path'] = os.path.abspath(db_path)
+                db_info['database_file_exists'] = os.path.exists(db_path)
+
+                # Check if tables exist
+                if db_info['database_file_exists']:
+                    try:
+                        # Try to query a table
+                        from src.models.job import Job
+                        count = db.session.query(Job).count()
+                        db_info['tables_exist'] = True
+                        db_info['job_count'] = count
+                    except:
+                        db_info['tables_exist'] = False
+
+            return jsonify(db_info)
+
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
