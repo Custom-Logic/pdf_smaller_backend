@@ -123,7 +123,7 @@ def get_job_status(job_id):
         elif job.status == JobStatus.FAILED.value and job.error:
             response_data['error'] = job.error
 
-        return success_response(message="Job status retrieved", data=response_data)
+        return success_response(message="Job status retrieved", data=response_data, status_code=202)
 
     except Exception as e:
         logger.error(f"Error getting job status {job_id}: {str(e)}")
@@ -217,7 +217,7 @@ def convert_pdf(format):
             'task_id': task.id,
             'status': JobStatus.PENDING.value,
             'format': format
-        }), 202
+        }, status_code=202)
 
     except Exception as e:
         logger.error(f"PDF conversion job creation failed: {str(e)}")
@@ -261,7 +261,7 @@ def get_conversion_preview():
             'job_id': job_id,
             'task_id': task.id,
             'status': JobStatus.PENDING.value
-        }), 202
+        }, status_code=202)
 
     except Exception as e:
         logger.error(f"Conversion preview job creation failed: {str(e)}")
@@ -284,7 +284,7 @@ def process_ocr():
             try:
                 options = json.loads(request.form['options'])
             except json.JSONDecodeError:
-                return error_response("Invalid options format", 400)
+                return error_response(message="Invalid options format", status_code=400)
 
         tracking = get_tracking_ids()
         file_data = file.read()
@@ -307,7 +307,7 @@ def process_ocr():
             'job_id': job_id,
             'task_id': task.id,
             'status': JobStatus.PENDING.value
-        }), 202
+        }, status_code=202)
 
     except Exception as e:
         logger.error(f"OCR job creation failed: {str(e)}")
@@ -348,7 +348,7 @@ def get_ocr_preview():
             'job_id': job_id,
             'task_id': task.id,
             'status': JobStatus.PENDING.value
-        }), 202
+        }, status_code=202)
 
     except Exception as e:
         logger.error(f"OCR preview job creation failed: {str(e)}")
@@ -390,7 +390,7 @@ def summarize_pdf():
             'job_id': job_id,
             'task_id': task.id,
             'status': JobStatus.PENDING.value
-        }), 202
+        }, status_code=202)
 
     except Exception as e:
         logger.error(f"AI summarization job creation failed: {str(e)}")
@@ -430,7 +430,7 @@ def translate_text():
             'job_id': job_id,
             'task_id': task.id,
             'status': JobStatus.PENDING.value
-        }), 202
+        }, status_code=202)
 
     except Exception as e:
         logger.error(f"AI translation job creation failed: {str(e)}")
@@ -468,7 +468,7 @@ def extract_text():
             'job_id': job_id,
             'task_id': task.id,
             'status': JobStatus.PENDING.value
-        }), 202
+        }, status_code=202)
 
     except Exception as e:
         logger.error(f"Text extraction job creation failed: {str(e)}")
