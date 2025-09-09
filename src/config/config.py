@@ -17,7 +17,7 @@ class BaseConfig:
     MAX_CONTENT_LENGTH = int(os.environ.get('MAX_CONTENT_LENGTH', 100 * 1024 * 1024))  # 100MB default
     
     # Database settings
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 'sqlite:///pdf_smaller.db')
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///pdf_smaller.db'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,
@@ -45,7 +45,7 @@ class BaseConfig:
     # Security settings
     ALLOWED_EXTENSIONS = {'pdf'}
     ALLOWED_ORIGINS = [origin.strip() for origin in 
-                      os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,https://pdfsmaller.site').split(',')]
+                      os.environ.get('ALLOWED_ORIGINS', 'https://www.pdfsmaller.site,https://pdfsmaller.site').split(',')]
     SECURITY_HEADERS = {
         'X-Content-Type-Options': 'nosniff',
         'X-Frame-Options': 'DENY',
@@ -192,7 +192,7 @@ class DevelopmentConfig(BaseConfig):
     SECURITY_HEADERS = {}
     
     # Development database (SQLite by default)
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 'sqlite:///pdf_smaller_dev.db')
+    SQLALCHEMY_DATABASE_URI = 'sqlite:///pdf_smaller_dev.db'
     
     # Development origins
     ALLOWED_ORIGINS = [origin.strip() for origin in 
@@ -245,8 +245,7 @@ class ProductionConfig(BaseConfig):
     }
     
     # Production database (PostgreSQL recommended)
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 
-        'postgresql://user:password@localhost/pdf_smaller_prod')
+    SQLALCHEMY_DATABASE_URI ='sqlite:///pdf_smaller_dev.db'
     
     # Production file settings
     UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', '/var/app/uploads')
@@ -260,9 +259,6 @@ class ProductionConfig(BaseConfig):
         errors = super().validate_config()
         
         # Production-specific validations
-        if 'sqlite' in cls.SQLALCHEMY_DATABASE_URI:
-            errors.append("Production should use PostgreSQL, not SQLite")
-
         if cls.DEBUG:
             errors.append("DEBUG should be False in production")
         
