@@ -81,16 +81,16 @@ def get_file_and_validate(feature_type, max_size_mb=None):
 def get_tracking_ids():
     """Helper function to extract client tracking IDs"""
     return {
-        'client_job_id': request.form.get('client_job_id'),
-        'client_session_id': request.form.get('client_session_id')
+        'job_id': request.form.get('job_id'),
+        'session_id': request.form.get('session_id')
     }
 
 def get_json_tracking_ids():
     """Helper function to extract tracking IDs from JSON"""
     data = request.get_json() or {}
     return {
-        'client_job_id': data.get('client_job_id'),
-        'client_session_id': data.get('client_session_id')
+        'job_id': data.get('job_id'),
+        'session_id': data.get('session_id')
     }
 
 # ============================================================================
@@ -169,7 +169,7 @@ def download_job_result(job_id):
 # CONVERSION ROUTES (Job-Oriented)
 # ============================================================================
 
-@extended_features_bp.route('/convert/pdf-to-<format>', methods=['POST'])
+@extended_features_bp.route('/convert', methods=['POST'])
 def convert_pdf(format):
     """Convert PDF to specified format - returns job ID"""
     try:
@@ -206,8 +206,8 @@ def convert_pdf(format):
             format,
             options,
             file.filename,
-            tracking['client_job_id'],
-            tracking['client_session_id']
+            tracking['job_id'],
+            tracking['session_id']
         )
 
         logger.info(f"Conversion job {job_id} enqueued (format: {format}, task_id: {task.id})")
@@ -251,8 +251,8 @@ def get_conversion_preview():
             file_data,
             format,
             options,
-            tracking['client_job_id'],
-            tracking['client_session_id']
+            tracking['job_id'],
+            tracking['session_id']
         )
 
         logger.info(f"Conversion preview job {job_id} enqueued (task_id: {task.id})")
@@ -271,7 +271,7 @@ def get_conversion_preview():
 # OCR ROUTES (Job-Oriented)
 # ============================================================================
 
-@extended_features_bp.route('/ocr/process', methods=['POST'])
+@extended_features_bp.route('/ocr', methods=['POST'])
 def process_ocr():
     """Process OCR on uploaded file - returns job ID"""
     try:
@@ -297,8 +297,8 @@ def process_ocr():
             file_data,
             options,
             file.filename,
-            tracking['client_job_id'],
-            tracking['client_session_id']
+            tracking['job_id'],
+            tracking['session_id']
         )
 
         logger.info(f"OCR job {job_id} enqueued (task_id: {task.id})")
@@ -338,8 +338,8 @@ def get_ocr_preview():
             job_id,
             file_data,
             options,
-            tracking['client_job_id'],
-            tracking['client_session_id']
+            tracking['job_id'],
+            tracking['session_id']
         )
 
         logger.info(f"OCR preview job {job_id} enqueued (task_id: {task.id})")
@@ -380,8 +380,8 @@ def summarize_pdf():
             job_id,
             text,
             options,
-            tracking['client_job_id'],
-            tracking['client_session_id']
+            tracking['job_id'],
+            tracking['session_id']
         )
 
         logger.info(f"AI summarization job {job_id} enqueued (task_id: {task.id})")
@@ -420,8 +420,8 @@ def translate_text():
             text,
             target_language,
             options,
-            tracking['client_job_id'],
-            tracking['client_session_id']
+            tracking['job_id'],
+            tracking['session_id']
         )
 
         logger.info(f"AI translation job {job_id} enqueued (task_id: {task.id})")
@@ -440,7 +440,7 @@ def translate_text():
 # TEXT EXTRACTION ROUTES (Job-Oriented)
 # ============================================================================
 
-@extended_features_bp.route('/extract/text', methods=['POST'])
+@extended_features_bp.route('/ai/extract-text', methods=['POST'])
 def extract_text():
     """Extract text content from PDF - returns job ID"""
     try:
@@ -458,8 +458,8 @@ def extract_text():
             job_id,
             file_data,
             file.filename,
-            tracking['client_job_id'],
-            tracking['client_session_id']
+            tracking['job_id'],
+            tracking['session_id']
         )
 
         logger.info(f"Text extraction job {job_id} enqueued (task_id: {task.id})")
