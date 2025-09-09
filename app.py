@@ -1,6 +1,6 @@
 import os
 import logging
-from src.main.main import create_app
+from src.main import create_app
 from src.config.config import ConfigValidationError
 
 # Create application instance
