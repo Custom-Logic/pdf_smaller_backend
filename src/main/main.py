@@ -83,8 +83,8 @@ def create_app(config_name=None, config_override=None):
         # Register health check endpoints
         register_health_checks(app)
         # Register configuration endpoint (development only)
-        if app.config.get('DEBUG', False):
-            register_debug_endpoints(app)
+        
+        register_debug_endpoints(app)
         
         app.logger.info("Application factory completed successfully")
         return app
