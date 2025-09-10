@@ -14,6 +14,7 @@ from src.utils import setup_logging
 from src.utils.error_handlers import register_error_handlers
 from src.utils.scheduler import start_background_scheduler
 
+
 import sentry_sdk
 
 def create_app(config_name=None, config_override=None):
@@ -72,9 +73,7 @@ def create_app(config_name=None, config_override=None):
         # Register error handlers
         register_error_handlers(app)
         
-        # Initialize security and middleware
-        # initialize_security(app)
-        
+       
         # Register blueprints
         register_blueprints(app)
         
@@ -110,6 +109,18 @@ def initialize_extensions(app):
     # Initialize database tables
     init_database(app)
 
+    from flask_cors import CORS
+    
+    cors_config = {
+        'origins': ["https://pdfsmaller.site", "https://www.pdfsmaller.site"],
+        'supports_credentials': app.config.get('CORS_SUPPORTS_CREDENTIALS', True),
+        'allow_headers': app.config.get('CORS_ALLOW_HEADERS', ['Content-Type', 'Authorization']),
+        'methods': app.config.get('CORS_METHODS', ['GET', 'POST', 'OPTIONS', 'PUT', 'DELETE']),
+        'max_age': app.config.get('CORS_MAX_AGE', 600)  # 10 minutes
+    }
+    
+    CORS(app, **cors_config)
+    app.logger.info(f"CORS initialized with config: {cors_config}")
 
 
 def register_blueprints(app):
@@ -156,6 +167,9 @@ def register_health_checks(app):
     @app.route('/health')
     def health_check():
         """Basic health check endpoint"""
+        if request.method == 'OPTIONS':
+            return '', 200        
+
         return jsonify({
             'status': 'healthy',
             'service': 'pdf-compression-server',
@@ -166,6 +180,9 @@ def register_health_checks(app):
     @app.route('/health/db')
     def db_health_check():
         """Database health check endpoint"""
+        if request.method == 'OPTIONS':
+            return '', 200        
+
         try:
             # Simple database query to check connection
             db.session.execute(text('SELECT 1'))  # Wrap with text()
@@ -186,7 +203,9 @@ def register_health_checks(app):
 
     @app.route('/health/redis')
     def redis_health_check():
-        """Redis health check endpoint via Celery ping"""
+        if request.method == 'OPTIONS':
+            return '', 200        
+
         try:
             if hasattr(app, 'celery') and app.celery:
                 # Simple ping test through Celery

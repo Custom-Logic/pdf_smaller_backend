@@ -153,7 +153,8 @@ class SecurityMiddleware:
             response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, PUT, DELETE'
             response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
             response.headers['Access-Control-Allow-Credentials'] = 'true'
-        
+        else:
+            logger.error(f"CORS HEADER FOR ORIGIN NOT SET: {origin}")
         # Add request ID header
         if hasattr(g, 'request_id'):
             response.headers['X-Request-ID'] = g.request_id

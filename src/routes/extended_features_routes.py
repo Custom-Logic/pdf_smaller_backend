@@ -21,7 +21,7 @@ from src.utils.response_helpers import success_response, error_response
 
 # Initialize blueprint
 extended_features_bp = Blueprint('extended_features', __name__)
-CORS(extended_features_bp, resources={r"/api": {"origins": ["https://www.pdfsmaller.site"]}})
+# CORS(extended_features_bp, resources={r"/api": {"origins": ["https://www.pdfsmaller.site"]}})
 
 # Initialize services
 conversion_service = ConversionService()

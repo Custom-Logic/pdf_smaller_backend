@@ -18,7 +18,7 @@ from src.services.enhanced_compression_service import EnhancedCompressionService
 logger = logging.getLogger(__name__)
 
 enhanced_compression_bp = Blueprint('enhanced_compression', __name__)
-CORS(enhanced_compression_bp, resources={r"/api/enhanced": {"origins": ["https://www.pdfsmaller.site"]}})
+# CORS(enhanced_compression_bp, resources={r"/api/enhanced": {"origins": ["https://www.pdfsmaller.site"]}})
 # Initialize rate limiter
 limiter = Limiter(
     key_func=get_remote_address,

@@ -5,7 +5,7 @@ from src.models.job import Job, JobStatus
 from src.utils.response_helpers import error_response, success_response
 
 jobs_bp = Blueprint('jobs', __name__)
-CORS(jobs_bp, resources={r"/api": {"origins": ["https://www.pdfsmaller.site"]}})
+# CORS(jobs_bp, resources={r"/api": {"origins": ["https://www.pdfsmaller.site"]}})
 
 # ----------------------------  status  ----------------------------
 @jobs_bp.route('/jobs/<job_id>', methods=['GET'])

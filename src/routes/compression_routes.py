@@ -5,7 +5,6 @@ from datetime import datetime
 from enum import Enum
 
 from flask import Blueprint, request, jsonify
-from flask_cors import CORS
 
 from src.models import db, Job
 from src.utils.security_utils import validate_file
@@ -14,7 +13,7 @@ from src.utils.response_helpers import success_response, error_response
 logger = logging.getLogger(__name__)
 
 compression_bp = Blueprint('compression', __name__)
-CORS(compression_bp, resources={r"/api": {"origins": ["https://www.pdfsmaller.site"]}})
+# CORS(compression_bp, resources={r"/api": {"origins": ["https://www.pdfsmaller.site"]}})
 
 
 class JobStatus(Enum):
