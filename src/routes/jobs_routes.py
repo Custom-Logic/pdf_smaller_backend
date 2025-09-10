@@ -2,7 +2,7 @@ import os
 from flask import Blueprint, send_file
 from src.models.job import Job, JobStatus
 from src.utils.response_helpers import error_response, success_response
-
+from pathlib import Path
 jobs_bp = Blueprint('jobs', __name__)
 
 # ----------------------------  status  ----------------------------
@@ -42,16 +42,20 @@ def download_job_result(job_id):
         return error_response(message="Job not completed yet", status_code=400)
     if not job.result or "output_path" not in job.result:
         return error_response(message="No result file available", status_code=404)
-    path = job.result["output_path"]
-    if not os.path.exists(path):
+    # This is running in UBuntu should the path be like this.
+    # ./uploads/dev/results/compressed_a55865f3-935f-4dc1-83af-fd78ca4b4730_COR14.1A.pdf"
+    #  or should it be a complete path. hint when its like this even though the file exist it is not sending the file
+    raw_path = job.result["output_path"]
+    path = (Path.cwd() / raw_path).resolve()
+    if not path.is_file():
         return error_response(message="Result file not found on disk", status_code=404)
 
     fname = job.result.get("original_filename", "result")
     mime  = job.result.get("mime_type", "application/octet-stream")
-    return error_response(message=f"DEBUG : MIME: {mime} FNAME : {fname} - {path}", status_code=404)
-    # return send_file(
-    #     path,
-    #     as_attachment=True,
-    #     download_name=fname,
-    #     mimetype=mime
-    # )
+    # return error_response(message=f"DEBUG : MIME: {mime} FNAME : {fname} - {path}", status_code=404)
+    return send_file(
+        str(path),
+        as_attachment=True,
+        download_name=fname,
+        mimetype=mime
+    )
