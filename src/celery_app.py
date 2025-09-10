@@ -5,7 +5,8 @@ Celery application configuration for background task processing
 import os
 from celery import Celery
 from src.config import Config
-
+# DO NOT REMOVE: This import is necessary to register tasks with Celery
+from .tasks import tasks
 
 def make_celery(app=None):
     """
