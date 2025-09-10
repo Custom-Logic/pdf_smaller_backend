@@ -6,7 +6,7 @@ from src.config.config import ConfigValidationError
 # Create application instance
 try:
     # Get configuration environment from environment variable
-    config_name = os.environ.get('FLASK_ENV', 'development')
+    config_name = os.environ.get('FLASK_ENV', 'production')
     app = create_app(config_name=config_name)
     
     # Log successful startup
@@ -21,7 +21,7 @@ except Exception as e:
 
 if __name__ == '__main__':
     # Development server (not for production)
-    debug_mode = app.config.get('DEBUG', False)
+    debug_mode = app.config.get('DEBUG', True)
     app.run(
         host='0.0.0.0', 
         port=int(os.environ.get('PORT', 5000)), 
