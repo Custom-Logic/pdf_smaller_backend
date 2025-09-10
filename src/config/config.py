@@ -44,8 +44,7 @@ class BaseConfig:
     
     # Security settings
     ALLOWED_EXTENSIONS = {'pdf'}
-    ALLOWED_ORIGINS = [origin.strip() for origin in 
-                      os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,https://www.pdfsmaller.site').split(',')]
+    ALLOWED_ORIGINS = ['https://pdfsmaller.site,https://www.pdfsmaller.site']
     SECURITY_HEADERS = {
         'X-Content-Type-Options': 'nosniff',
         'X-Frame-Options': 'DENY',
@@ -197,8 +196,7 @@ class DevelopmentConfig(BaseConfig):
     SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', 'sqlite:///pdf_smaller_dev.db')
     
     # Development origins
-    ALLOWED_ORIGINS = [origin.strip() for origin in 
-                      os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',')]
+    ALLOWED_ORIGINS = ['https://pdfsmaller.site,https://www.pdfsmaller.site']
        
     # Development file settings
     UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', './uploads/dev')
