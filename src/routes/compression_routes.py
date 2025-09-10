@@ -57,9 +57,22 @@ def compress_pdf():
             'compression_level': compression_level,
             'image_quality': image_quality
         }
+        job = Job(
+            job_id=job_id,
+            task_type='compress',
+            input_data={
+                'compression_settings': compression_settings,
+                'file_size': len(file_data),
+                'original_filename': file.filename
+            },
+            session_id=str(uuid.uuid4())
+        )
+        db.session.add(job)
+        db.session.commit()
         # Enqueue compression task (async processing)
         from src.tasks.tasks import compress_task
         compress_task.apply_async(
+            task_id=job_id,
             args=[job_id, file_data, compression_settings, file.filename],  # positional
             countdown=0,
             priority=0
