@@ -105,7 +105,7 @@ def convert_pdf():
                 return error_response(message="Invalid options format", status_code=400)
 
         job_id = request.form.get('job_id', str(uuid.uuid4()))
-        session_id = request.form.get('session_id', str(uuid.uuid4()))
+
 
         # Read file data
         file_data = file.read()
@@ -119,7 +119,7 @@ def convert_pdf():
                 target_format,
                 options,
                 file.filename,
-                session_id
+
             )
 
             logger.info(f"Conversion job {job_id} enqueued (format: {target_format}, task_id: {task.id})")
@@ -156,7 +156,7 @@ def get_conversion_preview():
                 return error_response(message="Invalid options format", status_code=400)
 
         job_id = request.form.get('job_id', str(uuid.uuid4()))
-        session_id = request.form.get('session_id', str(uuid.uuid4()))
+
 
         file_data = file.read()
 
@@ -167,8 +167,7 @@ def get_conversion_preview():
             file_data,
             format,
             options,
-            job_id=job_id,
-            session_id=session_id
+
         )
 
         logger.info(f"Conversion preview job {job_id} enqueued (task_id: {task.id})")
@@ -204,7 +203,7 @@ def process_ocr():
 
 
         job_id = request.form.get('job_id', str(uuid.uuid4()))
-        session_id = request.form.get('session_id', str(uuid.uuid4()))
+
         file_data = file.read()
 
         # Enqueue OCR task using .delay() pattern
@@ -243,7 +242,7 @@ def get_ocr_preview():
                 return error_response(message="Invalid options format", status_code=400)
 
         job_id = request.form.get('job_id', str(uuid.uuid4()))
-        session_id = request.form.get('session_id', str(uuid.uuid4()))
+
 
         file_data = file.read()
 
@@ -253,8 +252,7 @@ def get_ocr_preview():
             job_id,
             file_data,
             options,
-            job_id=job_id,
-            session_id=session_id
+
         )
 
         logger.info(f"OCR preview job {job_id} enqueued (task_id: {task.id})")
@@ -287,7 +285,7 @@ def summarize_pdf():
 
         options = data.get('options', {})
         job_id = request.form.get('job_id', str(uuid.uuid4()))
-        session_id = request.form.get('session_id', str(uuid.uuid4()))
+
 
 
         # Enqueue AI summarization task using .delay() pattern
@@ -296,8 +294,7 @@ def summarize_pdf():
             job_id,
             text,
             options,
-            job_id=job_id,
-            session_id=session_id
+
         )
 
         logger.info(f"AI summarization job {job_id} enqueued (task_id: {task.id})")
@@ -327,7 +324,7 @@ def translate_text():
         target_language = data.get('target_language', 'en')
         options = data.get('options', {})
         job_id = request.form.get('job_id', str(uuid.uuid4()))
-        session_id = request.form.get('session_id', str(uuid.uuid4()))
+
 
         # Enqueue AI translation task using .delay() pattern
         from src.tasks.tasks import ai_translate_task
@@ -336,8 +333,7 @@ def translate_text():
             text,
             target_language,
             options,
-            job_id=job_id,
-            session_id=session_id
+
         )
 
         logger.info(f"AI translation job {job_id} enqueued (task_id: {task.id})")
@@ -375,8 +371,7 @@ def extract_text():
             job_id,
             file_data,
             file.filename,
-            job_id=job_id,
-            session_id=session_id
+
         )
 
         logger.info(f"Text extraction job {job_id} enqueued (task_id: {task.id})")

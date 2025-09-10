@@ -41,9 +41,7 @@ bulk_service = BulkCompressionService(config.UPLOAD_FOLDER)
 # ------------------------------------------------------
 #  helper – unchanged
 # ------------------------------------------------------
-def create_session_id() -> str:
-    import uuid
-    return str(uuid.uuid4())
+
 
 # ------------------------------------------------------
 #  COMPRESSION TASKS  (logic 100 % preserved)
@@ -64,7 +62,7 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
                     'file_size': len(file_data),
                     'original_filename': original_filename
                 },
-                session_id=create_session_id()
+
             )
             db.session.add(job)
 
@@ -117,7 +115,7 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
                     'file_count': len(file_data_list),
                     'total_size': sum(len(d) for d in file_data_list)
                 },
-                session_id=create_session_id()
+
             )
             db.session.add(job)
 
@@ -203,7 +201,7 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
 @celery_app.task(bind=True, name='tasks.convert_pdf_task')
 def convert_pdf_task(self, job_id: str, file_data: bytes, target_format: str,
                      options: Dict[str, Any], original_filename: str | None = None,
-                     session_id: str | None = None) -> Dict[str, Any]:
+) -> Dict[str, Any]:
     """Convert PDF to specified format asynchronously – identical behaviour."""
     try:
         logger.info(f"Starting conversion task for job {job_id} (format: {target_format})")

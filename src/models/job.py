@@ -15,7 +15,7 @@ class Job(BaseModel):
     # Primary key - client-provided ID
 
 
-    session_id = db.Column(db.String(255))  # Optional client session tracking
+
     # Celery task tracking
     task_id = db.Column(db.String(255))  # Celery task ID
     # Job details
@@ -27,11 +27,10 @@ class Job(BaseModel):
     # Error handling
     error = db.Column(db.Text)  # Error message if job failed
 
-    def __init__(self, task_type=None, input_data=None, job_id=None, session_id=None):
+    def __init__(self, task_type=None, input_data=None, job_id=None):
         self.job_id = job_id  # Now required since it's the primary key
         self.task_type = task_type
         self.input_data = input_data or {}
-        self.session_id = session_id
         self.status = JobStatus.PENDING.value
 
     # ... rest of your methods remain the same ...
@@ -44,7 +43,7 @@ class Job(BaseModel):
             'status': self.status,
             'input_data': self.input_data,
             'result': self.result,
-            'session_id': self.session_id,  # Fixed this line (was client_session_id)
+
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'error': self.error,
