@@ -1,7 +1,7 @@
 import logging
 import os
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from sqlalchemy import text
 
 

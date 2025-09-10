@@ -1,3 +1,4 @@
+from bz2 import compress
 from enum import Enum
 from .base import db, BaseModel
 
@@ -8,6 +9,13 @@ class JobStatus(Enum):
     COMPLETED = 'completed'
     FAILED = 'failed'
 
+class TaskType(Enum):
+    """Task Types Enum"""
+    COMPRESS = 'compress'
+    CONVERT = 'convert'
+    OCR = 'ocr'
+    AI = 'ai'
+    
 class Job(BaseModel):
     """Generic job tracking model"""
     __tablename__ = 'jobs'
@@ -33,13 +41,13 @@ class Job(BaseModel):
         """Mark job as currently processing"""
         from datetime import datetime
         self.status = JobStatus.PROCESSING.value
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(datetime.timezone.utc)
     
     def mark_as_completed(self, result=None):
         """Mark job as successfully completed"""
         from datetime import datetime
         self.status = JobStatus.COMPLETED.value
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(datetime.timezone.utc)
         if result:
             self.result = result
     
@@ -47,7 +55,7 @@ class Job(BaseModel):
         """Mark job as failed with optional error message"""
         from datetime import datetime
         self.status = JobStatus.FAILED.value
-        self.updated_at = datetime.utcnow()
+        self.updated_at = datetime.now(datetime.timezone.utc)
         if error:
             self.error = error
     
@@ -66,7 +74,6 @@ class Job(BaseModel):
             'status': self.status,
             'input_data': self.input_data,
             'result': self.result,
-
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
             'error': self.error,

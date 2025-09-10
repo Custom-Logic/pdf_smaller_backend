@@ -40,11 +40,10 @@ def download_job_result(job_id):
     job = Job.query.filter_by(job_id=job_id).first()
     if not job:
         return error_response(message="Job not found", status_code=404)
-    if job.status != JobStatus.COMPLETED:
+    if not job.is_completed():
         return error_response(message="Job not completed yet", status_code=400)
     if not job.result or "output_path" not in job.result:
         return error_response(message="No result file available", status_code=404)
-
     path = job.result["output_path"]
     if not os.path.exists(path):
         return error_response(message="Result file not found on disk", status_code=404)
