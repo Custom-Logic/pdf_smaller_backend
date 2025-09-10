@@ -21,7 +21,7 @@ class SecureCORS:
         self.app = app
         
         # Get allowed origins from config
-        allowed_origins = app.config.get('ALLOWED_ORIGINS', [])
+        allowed_origins = ["https://wwww.pdfsmaller.site", 'https://pdfsmaller.site']
         
         # Configure CORS with security-focused settings
         cors_config = {
@@ -60,7 +60,7 @@ class SecureCORS:
         origin = request.headers.get('Origin')
         
         if origin:
-            allowed_origins = self.app.config.get('ALLOWED_ORIGINS', [])
+            allowed_origins = ["https://wwww.pdfsmaller.site", 'https://pdfsmaller.site']
             
             # Check if origin is allowed
             if origin not in allowed_origins:

@@ -113,19 +113,18 @@ def initialize_extensions(app):
 
 
 def initialize_security(app):
-    """Initialize CORS
-    CORS is configured on the route level.
+    """Initialize CORS    
     """
     pass    
-    # # Configure secure CORS
-    # try:
-    #     allowed_origins = app.config.get('ALLOWED_ORIGINS', [])
-    #     secure_cors = configure_secure_cors(app, allowed_origins)
-    #     app.secure_cors = secure_cors
-    #     app.logger.info(f"CORS configured for origins: {allowed_origins}")
-    # except Exception as e:
-    #     app.logger.error(f"CORS configuration failed: {e}")
-    #     raise
+    # Configure secure CORS
+    try:
+        allowed_origins = ["https://www.pdfsmaller.site", "https://pdfsmaller.site"]
+        secure_cors = configure_secure_cors(app, allowed_origins)
+        app.secure_cors = secure_cors
+        app.logger.info(f"CORS configured for origins: {allowed_origins}")
+    except Exception as e:
+        app.logger.error(f"CORS configuration failed: {e}")
+        raise
 
 
 def register_blueprints(app):
