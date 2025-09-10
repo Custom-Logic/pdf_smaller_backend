@@ -1,11 +1,9 @@
 import os
 from flask import Blueprint, send_file
-from flask_cors import CORS
 from src.models.job import Job, JobStatus
 from src.utils.response_helpers import error_response, success_response
 
 jobs_bp = Blueprint('jobs', __name__)
-# CORS(jobs_bp, resources={r"/api": {"origins": ["https://www.pdfsmaller.site"]}})
 
 # ----------------------------  status  ----------------------------
 @jobs_bp.route('/jobs/<job_id>', methods=['GET'])
@@ -50,10 +48,10 @@ def download_job_result(job_id):
 
     fname = job.result.get("original_filename", "result")
     mime  = job.result.get("mime_type", "application/octet-stream")
-
-    return send_file(
-        path,
-        as_attachment=True,
-        download_name=fname,
-        mimetype=mime
-    )
+    return error_response(message=f"DEBUG : MIME: {mime} FNAME : {fname} - {path}", status_code=404)
+    # return send_file(
+    #     path,
+    #     as_attachment=True,
+    #     download_name=fname,
+    #     mimetype=mime
+    # )
