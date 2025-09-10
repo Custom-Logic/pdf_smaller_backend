@@ -76,7 +76,7 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
             original_filename=original_filename)
         logger.debug(f"File processed for job {job_id}, result: {result}")
 
-        job.status = JobStatus.COMPLETED.value
+        job.mark_as_completed(result=result)
         db.session.commit()
         logger.info(f"Compression job {job_id} completed successfully")
         return result
@@ -167,10 +167,10 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
         if errors and not processed_files:
             job.mark_as_failed(f"All files failed: {len(errors)} errors")
         elif errors:
-            job.mark_as_completed(result_data)
+            job.mark_as_completed(result=result_data)
             job.result['warning'] = f"Completed with {len(errors)} errors"
         else:
-            job.mark_as_completed(result_data)
+            job.mark_as_completed(result=result_data)
 
         db.session.commit()
 
