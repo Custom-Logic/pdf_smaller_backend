@@ -114,12 +114,12 @@ def convert_pdf():
         try:
             from src.tasks.tasks import convert_pdf_task
             task = convert_pdf_task.delay(
-                job_id=job_id,
-                file_data=file_data,
-                target_format=target_format,
-                options=options,
-                original_filename=file.filename,
-                session_id=session_id
+                job_id,
+                file_data,
+                target_format,
+                options,
+                file.filename,
+                session_id
             )
 
             logger.info(f"Conversion job {job_id} enqueued (format: {target_format}, task_id: {task.id})")

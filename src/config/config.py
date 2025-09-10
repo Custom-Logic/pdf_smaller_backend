@@ -45,7 +45,7 @@ class BaseConfig:
     # Security settings
     ALLOWED_EXTENSIONS = {'pdf'}
     ALLOWED_ORIGINS = [origin.strip() for origin in 
-                      os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,https://pdfsmaller.site').split(',')]
+                      os.environ.get('ALLOWED_ORIGINS', 'http://localhost:3000,https://www.pdfsmaller.site').split(',')]
     SECURITY_HEADERS = {
         'X-Content-Type-Options': 'nosniff',
         'X-Frame-Options': 'DENY',
