@@ -42,6 +42,7 @@ def compress_task(self, job_id, file_data, compression_settings, original_filena
 
         # Get or create job
         job = Job.query.filter_by(job_id=job_id).first()
+        logger.debug(f"Starting compression task for job {job_id}")
         if not job:
             job = Job(
                 job_id=job_id,
@@ -55,17 +56,18 @@ def compress_task(self, job_id, file_data, compression_settings, original_filena
             )
             db.session.add(job)
 
+
         job.mark_as_processing()
         db.session.commit()
-
+        logger.debug(f"Job {job_id} marked as processing")
         # Get compression service
-        compression_service = CompressionService(os.environ.get('UPLOAD_FOLDER', '/uploads/dev'))
+
         # Process the file
         result = compression_service.process_file_data(
             file_data=file_data,
             settings=compression_settings,
             original_filename=original_filename)
-
+        logger.debug(f"File processed for job {job_id}, result: {result}")
         # Update job with results
         job.mark_as_completed(result)
         db.session.commit()
