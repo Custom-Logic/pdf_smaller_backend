@@ -5,89 +5,39 @@ This guide provides comprehensive examples and best practices for using the PDF 
 ## Table of Contents
 
 1. [Getting Started](#getting-started)
-2. [Authentication](#authentication)
-3. [Single File Compression](#single-file-compression)
-4. [Bulk File Compression](#bulk-file-compression)
-5. [Subscription Management](#subscription-management)
-6. [Error Handling](#error-handling)
-7. [Rate Limiting](#rate-limiting)
-8. [Best Practices](#best-practices)
-9. [Code Examples](#code-examples)
+2. [Single File Compression](#single-file-compression)
+3. [Bulk File Compression](#bulk-file-compression)
+4. [Job Management](#job-management)
+5. [Error Handling](#error-handling)
+6. [Rate Limiting](#rate-limiting)
+7. [Best Practices](#best-practices)
+8. [Code Examples](#code-examples)
 
 ## Getting Started
 
-### Base URLs
+### Base URL
 
-- **Production**: `https://api.pdfsmaller.site`
-- **Staging**: `https://staging-api.pdfsmaller.site`
 - **Development**: `http://localhost:5000`
 
 ### Content Types
 
-- **JSON requests**: `Content-Type: application/json`
+- **JSON responses**: `Content-Type: application/json`
 - **File uploads**: `Content-Type: multipart/form-data`
-- **Authentication**: `Authorization: Bearer <jwt_token>`
+- **File downloads**: `Content-Type: application/pdf` or `application/zip`
 
-## Authentication
-
-### User Registration
+### Health Check
 
 ```bash
-curl -X POST https://api.pdfsmaller.site/api/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "user@example.com",
-    "password": "SecurePass123!",
-    "name": "John Doe"
-  }'
+curl -X GET http://localhost:5000/api/health
 ```
 
 **Response:**
 ```json
 {
-  "success": true,
-  "message": "User registered successfully",
-  "user": {
-    "id": 1,
-    "email": "user@example.com",
-    "name": "John Doe",
-    "created_at": "2024-01-15T10:30:00Z",
-    "is_active": true
-  },
-  "tokens": {
-    "access_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
-    "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9...",
-    "expires_in": 900
-  }
+  "status": "healthy",
+  "database": "connected",
+  "database_type": "sqlite"
 }
-```
-
-### User Login
-
-```bash
-curl -X POST https://api.pdfsmaller.site/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "user@example.com",
-    "password": "SecurePass123!"
-  }'
-```
-
-### Token Refresh
-
-```bash
-curl -X POST https://api.pdfsmaller.site/api/auth/refresh \
-  -H "Content-Type: application/json" \
-  -d '{
-    "refresh_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
-  }'
-```
-
-### Get User Profile
-
-```bash
-curl -X GET https://api.pdfsmaller.site/api/auth/profile \
-  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
 ```
 
 ## Single File Compression
@@ -95,58 +45,36 @@ curl -X GET https://api.pdfsmaller.site/api/auth/profile \
 ### Basic Compression
 
 ```bash
-curl -X POST https://api.pdfsmaller.site/api/compress \
-  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..." \
+curl -X POST http://localhost:5000/api/compress \
   -F "file=@document.pdf" \
   -F "compressionLevel=medium" \
-  -F "imageQuality=80" \
-  --output compressed_document.pdf
-```
-
-### Anonymous Compression (Limited)
-
-```bash
-curl -X POST https://api.pdfsmaller.site/api/compress \
-  -F "file=@document.pdf" \
-  -F "compressionLevel=medium" \
-  --output compressed_document.pdf
-```
-
-### Get PDF Information
-
-```bash
-curl -X POST https://api.pdfsmaller.site/api/compress/info \
-  -F "file=@document.pdf"
+  -F "imageQuality=80"
 ```
 
 **Response:**
 ```json
 {
-  "Title": "Sample Document",
-  "Author": "John Doe",
-  "Creator": "Microsoft Word",
-  "Producer": "Microsoft: Print To PDF",
-  "CreationDate": "Mon Jan 15 10:30:00 2024",
-  "ModDate": "Mon Jan 15 10:30:00 2024",
-  "Pages": "5",
-  "File size": "1024 bytes"
+  "success": true,
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "pending",
+  "message": "Compression job queued successfully"
 }
 ```
 
-### Check Usage Statistics
+### Compression Parameters
 
-```bash
-curl -X GET https://api.pdfsmaller.site/api/compress/usage \
-  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
-```
+| Parameter | Type | Values | Default | Description |
+|-----------|------|--------|---------|-------------|
+| `file` | binary | - | Required | PDF file to compress |
+| `compressionLevel` | string | `low`, `medium`, `high`, `maximum` | `medium` | Compression intensity |
+| `imageQuality` | integer | 10-100 | 80 | Image quality percentage |
 
 ## Bulk File Compression
 
 ### Start Bulk Compression Job
 
 ```bash
-curl -X POST https://api.pdfsmaller.site/api/compress/bulk \
-  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..." \
+curl -X POST http://localhost:5000/api/compress/bulk \
   -F "files=@document1.pdf" \
   -F "files=@document2.pdf" \
   -F "files=@document3.pdf" \
@@ -158,127 +86,77 @@ curl -X POST https://api.pdfsmaller.site/api/compress/bulk \
 ```json
 {
   "success": true,
-  "job_id": 456,
-  "task_id": "task_789abc",
-  "file_count": 3,
-  "total_size_mb": 15.2,
-  "status": "queued",
-  "message": "Bulk compression job created with 3 files"
+  "job_id": "550e8400-e29b-41d4-a716-446655440001",
+  "status": "pending",
+  "message": "Bulk compression job queued successfully",
+  "file_count": 3
 }
 ```
+
+## Job Management
 
 ### Check Job Status
 
 ```bash
-curl -X GET https://api.pdfsmaller.site/api/compress/bulk/jobs/456/status \
-  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+curl -X GET http://localhost:5000/api/jobs/550e8400-e29b-41d4-a716-446655440000
 ```
 
-**Response:**
+**Response (Pending):**
 ```json
 {
-  "job_id": 456,
-  "status": "processing",
-  "job_type": "bulk",
-  "file_count": 3,
-  "completed_count": 2,
-  "progress_percentage": 66.7,
-  "created_at": "2024-01-15T10:30:00Z",
-  "started_at": "2024-01-15T10:31:00Z",
-  "is_completed": false,
-  "is_successful": false,
-  "error_message": null
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "pending",
+  "task_type": "compression",
+  "created_at": "2023-06-15T10:30:00.000Z",
+  "updated_at": "2023-06-15T10:30:00.000Z"
 }
 ```
 
-### Download Bulk Results
-
-```bash
-curl -X GET https://api.pdfsmaller.site/api/compress/bulk/jobs/456/download \
-  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..." \
-  --output compressed_files.zip
-```
-
-### Get Bulk Job History
-
-```bash
-curl -X GET https://api.pdfsmaller.site/api/compress/bulk/jobs?limit=20 \
-  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
-```
-
-## Subscription Management
-
-### Get Available Plans
-
-```bash
-curl -X GET https://api.pdfsmaller.site/api/subscriptions/plans
-```
-
-**Response:**
+**Response (Completed):**
 ```json
 {
-  "plans": [
-    {
-      "id": 1,
-      "name": "free",
-      "display_name": "Free Plan",
-      "description": "Basic compression with daily limits",
-      "price_monthly": 0.00,
-      "price_yearly": 0.00,
-      "features": {
-        "daily_compressions": 10,
-        "bulk_processing": false,
-        "max_file_size_mb": 25,
-        "max_bulk_files": 0,
-        "api_access": false,
-        "priority_processing": false
-      }
-    },
-    {
-      "id": 2,
-      "name": "premium",
-      "display_name": "Premium Plan",
-      "description": "Advanced compression with bulk processing",
-      "price_monthly": 9.99,
-      "price_yearly": 99.99,
-      "features": {
-        "daily_compressions": 500,
-        "bulk_processing": true,
-        "max_file_size_mb": 100,
-        "max_bulk_files": 20,
-        "api_access": true,
-        "priority_processing": true
-      }
-    }
-  ]
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "completed",
+  "task_type": "compression",
+  "created_at": "2023-06-15T10:30:00.000Z",
+  "updated_at": "2023-06-15T10:31:00.000Z",
+  "result": {
+    "original_size": 1048576,
+    "compressed_size": 524288,
+    "compression_ratio": 50.0,
+    "output_path": "/path/to/compressed/file.pdf",
+    "original_filename": "document.pdf"
+  },
+  "download_url": "/api/jobs/550e8400-e29b-41d4-a716-446655440000/download"
 }
 ```
 
-### Create Subscription
-
-```bash
-curl -X POST https://api.pdfsmaller.site/api/subscriptions/create \
-  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..." \
-  -H "Content-Type: application/json" \
-  -d '{
-    "plan_id": 2,
-    "payment_method_id": "pm_1234567890",
-    "billing_cycle": "monthly"
-  }'
+**Response (Failed):**
+```json
+{
+  "job_id": "550e8400-e29b-41d4-a716-446655440000",
+  "status": "failed",
+  "task_type": "compression",
+  "created_at": "2023-06-15T10:30:00.000Z",
+  "updated_at": "2023-06-15T10:31:00.000Z",
+  "error": "Failed to process PDF: Invalid file format"
+}
 ```
 
-### Get Subscription Info
+### Job Status Values
+
+| Status | Description |
+|--------|-------------|
+| `pending` | Job is queued and waiting to be processed |
+| `processing` | Job is currently being processed |
+| `completed` | Job completed successfully |
+| `failed` | Job failed with an error |
+
+### Download Compressed File
 
 ```bash
-curl -X GET https://api.pdfsmaller.site/api/subscriptions \
-  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
-```
-
-### Cancel Subscription
-
-```bash
-curl -X POST https://api.pdfsmaller.site/api/subscriptions/cancel \
-  -H "Authorization: Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9..."
+curl -X GET http://localhost:5000/api/jobs/550e8400-e29b-41d4-a716-446655440000/download \
+  --output compressed_document.pdf
 ```
 
 ## Error Handling
@@ -289,140 +167,74 @@ All API errors follow this consistent format:
 
 ```json
 {
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Invalid input provided",
-    "details": {
-      "missing_fields": ["email", "password"]
-    }
-  },
-  "timestamp": "2024-01-15T10:30:00Z",
-  "request_id": "req_123456789"
+  "error": "Invalid request"
 }
 ```
 
 ### Common Error Codes
 
-| Code | HTTP Status | Description |
-|------|-------------|-------------|
-| `VALIDATION_ERROR` | 400 | Invalid input or missing required fields |
-| `UNAUTHORIZED` | 401 | Authentication required or invalid token |
-| `FORBIDDEN` | 403 | Insufficient permissions |
-| `NOT_FOUND` | 404 | Resource not found |
-| `RATE_LIMIT_EXCEEDED` | 429 | Rate limit exceeded |
-| `USAGE_LIMIT_EXCEEDED` | 403 | Daily/monthly usage limit exceeded |
-| `FILE_TOO_LARGE` | 413 | File exceeds size limit |
-| `INVALID_FILE_TYPE` | 400 | File is not a valid PDF |
-| `SUBSCRIPTION_REQUIRED` | 403 | Premium subscription required |
-| `INTERNAL_SERVER_ERROR` | 500 | Unexpected server error |
+| HTTP Status | Description |
+|-------------|-------------|
+| `400` | Bad request - invalid input or missing required fields |
+| `404` | Resource not found (job or file) |
+| `410` | File has been cleaned up and is no longer available |
+| `413` | File too large |
+| `429` | Rate limit exceeded |
+| `500` | Internal server error |
 
 ### Error Handling Examples
 
 #### Handle Rate Limiting
 
 ```bash
-# Response includes Retry-After header
+# Response includes rate limit information
 HTTP/1.1 429 Too Many Requests
-Retry-After: 60
 
 {
-  "error": {
-    "code": "RATE_LIMIT_EXCEEDED",
-    "message": "Rate limit exceeded",
-    "details": {
-      "limit": "10 per minute",
-      "retry_after": 60
-    }
-  },
-  "timestamp": "2024-01-15T10:30:00Z",
-  "request_id": "req_123456789"
+  "error": "Rate limit exceeded"
 }
 ```
 
-#### Handle Usage Limits
+#### Handle File Not Found
 
 ```json
 {
-  "error": {
-    "code": "USAGE_LIMIT_EXCEEDED",
-    "message": "Daily compression limit exceeded",
-    "details": {
-      "limit": 10,
-      "used": 10,
-      "reset_time": "2024-01-16T00:00:00Z"
-    }
-  },
-  "timestamp": "2024-01-15T10:30:00Z",
-  "request_id": "req_123456789"
+  "error": "Job not found"
+}
+```
+
+#### Handle Invalid File
+
+```json
+{
+  "error": "Invalid file type. Only PDF files are allowed."
 }
 ```
 
 ## Rate Limiting
 
-### Rate Limits by User Tier
+### Rate Limits
 
-| User Tier | Rate Limit | Compression Limit |
-|-----------|------------|-------------------|
-| Anonymous | 10/minute | 5/day |
-| Free | 20/minute | 10/day |
-| Premium | 100/minute | 500/day |
-| Pro | 500/minute | Unlimited |
+All endpoints are rate-limited to **100 requests per hour** for all users.
 
-### Rate Limit Headers
+### Rate Limit Best Practices
 
-The API includes rate limit information in response headers:
-
-```
-X-RateLimit-Limit: 100
-X-RateLimit-Remaining: 95
-X-RateLimit-Reset: 1642248000
-```
+- Implement exponential backoff for 429 responses
+- Cache job status responses to reduce API calls
+- Poll job status at reasonable intervals (5-10 seconds)
 
 ## Best Practices
 
-### 1. Authentication Management
-
-- **Store tokens securely**: Never expose JWT tokens in client-side code
-- **Implement token refresh**: Use refresh tokens to maintain sessions
-- **Handle token expiration**: Implement automatic token refresh logic
-
-```javascript
-// Example token refresh logic
-async function refreshTokenIfNeeded(token) {
-  try {
-    // Check if token is close to expiration
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    const now = Date.now() / 1000;
-    
-    if (payload.exp - now < 300) { // Refresh if expires in 5 minutes
-      const response = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: refreshToken })
-      });
-      
-      const data = await response.json();
-      return data.tokens.access_token;
-    }
-    
-    return token;
-  } catch (error) {
-    // Handle refresh error
-    throw new Error('Token refresh failed');
-  }
-}
-```
-
-### 2. File Upload Optimization
+### 1. File Upload Optimization
 
 - **Validate files client-side**: Check file type and size before upload
 - **Use appropriate compression levels**: Balance quality vs. file size
-- **Handle large files**: Consider chunked uploads for very large files
+- **Handle large files**: Be aware of server file size limits
 
 ```javascript
 // File validation example
 function validatePDFFile(file) {
-  const maxSize = 100 * 1024 * 1024; // 100MB
+  const maxSize = 100 * 1024 * 1024; // 100MB (adjust based on server limits)
   const allowedTypes = ['application/pdf'];
   
   if (!allowedTypes.includes(file.type)) {
@@ -430,69 +242,50 @@ function validatePDFFile(file) {
   }
   
   if (file.size > maxSize) {
-    throw new Error('File size exceeds 100MB limit');
+    throw new Error('File size exceeds limit');
   }
   
   return true;
 }
 ```
 
-### 3. Bulk Processing Workflow
+### 2. Job Status Polling
 
-- **Check permissions first**: Verify bulk processing is available
-- **Monitor job progress**: Poll status endpoint for updates
-- **Handle job failures**: Implement retry logic for failed jobs
+- **Use reasonable intervals**: Poll every 5-10 seconds
+- **Implement timeout**: Don't poll indefinitely
+- **Handle all status states**: pending, processing, completed, failed
 
 ```javascript
-// Bulk processing workflow
-async function processBulkFiles(files) {
-  // 1. Validate permissions
-  const permissions = await checkPermissions();
-  if (!permissions.can_bulk_compress) {
-    throw new Error('Bulk processing requires premium subscription');
-  }
+// Job monitoring with timeout
+async function monitorJob(jobId, timeoutMs = 300000) { // 5 minute timeout
+  const startTime = Date.now();
+  const pollInterval = 5000; // 5 seconds
   
-  // 2. Start bulk job
-  const job = await startBulkJob(files);
-  
-  // 3. Monitor progress
-  const result = await monitorJobProgress(job.job_id);
-  
-  // 4. Download results
-  if (result.is_successful) {
-    return await downloadBulkResult(job.job_id);
-  } else {
-    throw new Error(result.error_message);
-  }
-}
-
-async function monitorJobProgress(jobId) {
-  const maxAttempts = 60; // 5 minutes with 5-second intervals
-  let attempts = 0;
-  
-  while (attempts < maxAttempts) {
-    const status = await getBulkJobStatus(jobId);
+  while (Date.now() - startTime < timeoutMs) {
+    const response = await fetch(`/api/jobs/${jobId}`);
+    const job = await response.json();
     
-    if (status.is_completed) {
-      return status;
+    if (job.status === 'completed') {
+      return job;
+    } else if (job.status === 'failed') {
+      throw new Error(job.error || 'Job failed');
     }
     
-    await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
-    attempts++;
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
   }
   
   throw new Error('Job monitoring timeout');
 }
 ```
 
-### 4. Error Handling Strategy
+### 3. Error Handling Strategy
 
-- **Implement exponential backoff**: For rate limit and server errors
-- **Log request IDs**: Use request IDs for debugging and support
-- **Provide user-friendly messages**: Convert technical errors to user-friendly text
+- **Implement retry logic**: For rate limits and temporary errors
+- **Provide user-friendly messages**: Convert technical errors to readable text
+- **Log errors appropriately**: For debugging and monitoring
 
 ```javascript
-// Exponential backoff retry logic
+// Retry logic with exponential backoff
 async function apiRequestWithRetry(url, options, maxRetries = 3) {
   let attempt = 0;
   
@@ -501,15 +294,15 @@ async function apiRequestWithRetry(url, options, maxRetries = 3) {
       const response = await fetch(url, options);
       
       if (response.status === 429) {
-        const retryAfter = response.headers.get('Retry-After') || Math.pow(2, attempt);
-        await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+        const delay = Math.pow(2, attempt) * 1000; // Exponential backoff
+        await new Promise(resolve => setTimeout(resolve, delay));
         attempt++;
         continue;
       }
       
       if (!response.ok) {
         const error = await response.json();
-        throw new Error(error.error.message);
+        throw new Error(error.error);
       }
       
       return response;
@@ -518,7 +311,7 @@ async function apiRequestWithRetry(url, options, maxRetries = 3) {
         throw error;
       }
       
-      const delay = Math.pow(2, attempt) * 1000; // Exponential backoff
+      const delay = Math.pow(2, attempt) * 1000;
       await new Promise(resolve => setTimeout(resolve, delay));
       attempt++;
     }
@@ -526,53 +319,36 @@ async function apiRequestWithRetry(url, options, maxRetries = 3) {
 }
 ```
 
-### 5. Usage Monitoring
+### 4. Bulk Processing Workflow
 
-- **Track usage proactively**: Monitor daily/monthly limits
-- **Cache usage data**: Reduce API calls by caching usage statistics
-- **Implement usage warnings**: Warn users before hitting limits
+- **Monitor job progress**: Poll status endpoint for updates
+- **Handle job failures**: Implement appropriate error handling
+- **Download results promptly**: Files may be cleaned up after a period
 
 ```javascript
-// Usage monitoring example
-class UsageMonitor {
-  constructor() {
-    this.usageCache = null;
-    this.cacheExpiry = null;
-  }
+// Complete bulk processing workflow
+async function processBulkFiles(files) {
+  // 1. Start bulk job
+  const formData = new FormData();
+  files.forEach(file => formData.append('files', file));
+  formData.append('compressionLevel', 'medium');
   
-  async getUsageStats(forceRefresh = false) {
-    const now = Date.now();
-    
-    if (!forceRefresh && this.usageCache && this.cacheExpiry > now) {
-      return this.usageCache;
-    }
-    
-    const response = await fetch('/api/compress/usage', {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
-    
-    const usage = await response.json();
-    
-    this.usageCache = usage;
-    this.cacheExpiry = now + (5 * 60 * 1000); // Cache for 5 minutes
-    
-    return usage;
-  }
+  const response = await fetch('/api/compress/bulk', {
+    method: 'POST',
+    body: formData
+  });
   
-  async checkUsageBeforeCompression() {
-    const usage = await this.getUsageStats();
-    
-    const remaining = usage.usage.daily_limit - usage.usage.compressions_today;
-    
-    if (remaining <= 0) {
-      throw new Error('Daily compression limit exceeded');
-    }
-    
-    if (remaining <= 2) {
-      console.warn(`Only ${remaining} compressions remaining today`);
-    }
-    
-    return true;
+  const job = await response.json();
+  
+  // 2. Monitor progress
+  const result = await monitorJob(job.job_id);
+  
+  // 3. Download results
+  if (result.status === 'completed') {
+    const downloadResponse = await fetch(`/api/jobs/${job.job_id}/download`);
+    return await downloadResponse.blob();
+  } else {
+    throw new Error(result.error);
   }
 }
 ```
@@ -583,34 +359,16 @@ class UsageMonitor {
 
 ```python
 import requests
-import json
+import time
 from typing import Optional
 
 class PDFSmallerClient:
-    def __init__(self, base_url: str = "https://api.pdfsmaller.site"):
+    def __init__(self, base_url: str = "http://localhost:5000"):
         self.base_url = base_url
-        self.access_token: Optional[str] = None
-        self.refresh_token: Optional[str] = None
-    
-    def login(self, email: str, password: str) -> dict:
-        """Login and store tokens"""
-        response = requests.post(
-            f"{self.base_url}/api/auth/login",
-            json={"email": email, "password": password}
-        )
-        response.raise_for_status()
-        
-        data = response.json()
-        self.access_token = data["tokens"]["access_token"]
-        self.refresh_token = data["tokens"]["refresh_token"]
-        
-        return data
     
     def compress_file(self, file_path: str, compression_level: str = "medium", 
-                     image_quality: int = 80) -> bytes:
-        """Compress a single PDF file"""
-        headers = {"Authorization": f"Bearer {self.access_token}"}
-        
+                     image_quality: int = 80) -> dict:
+        """Start compression job for a single PDF file"""
         with open(file_path, "rb") as f:
             files = {"file": f}
             data = {
@@ -620,19 +378,16 @@ class PDFSmallerClient:
             
             response = requests.post(
                 f"{self.base_url}/api/compress",
-                headers=headers,
                 files=files,
                 data=data
             )
             response.raise_for_status()
             
-            return response.content
+            return response.json()
     
     def start_bulk_compression(self, file_paths: list, compression_level: str = "medium",
                               image_quality: int = 80) -> dict:
         """Start bulk compression job"""
-        headers = {"Authorization": f"Bearer {self.access_token}"}
-        
         files = [("files", open(path, "rb")) for path in file_paths]
         data = {
             "compressionLevel": compression_level,
@@ -642,7 +397,6 @@ class PDFSmallerClient:
         try:
             response = requests.post(
                 f"{self.base_url}/api/compress/bulk",
-                headers=headers,
                 files=files,
                 data=data
             )
@@ -654,61 +408,62 @@ class PDFSmallerClient:
             for _, file_handle in files:
                 file_handle.close()
     
-    def get_bulk_job_status(self, job_id: int) -> dict:
-        """Get bulk job status"""
-        headers = {"Authorization": f"Bearer {self.access_token}"}
-        
-        response = requests.get(
-            f"{self.base_url}/api/compress/bulk/jobs/{job_id}/status",
-            headers=headers
-        )
+    def get_job_status(self, job_id: str) -> dict:
+        """Get job status"""
+        response = requests.get(f"{self.base_url}/api/jobs/{job_id}")
         response.raise_for_status()
-        
         return response.json()
     
-    def download_bulk_result(self, job_id: int) -> bytes:
-        """Download bulk compression results"""
-        headers = {"Authorization": f"Bearer {self.access_token}"}
-        
-        response = requests.get(
-            f"{self.base_url}/api/compress/bulk/jobs/{job_id}/download",
-            headers=headers
-        )
+    def download_file(self, job_id: str) -> bytes:
+        """Download compressed file"""
+        response = requests.get(f"{self.base_url}/api/jobs/{job_id}/download")
         response.raise_for_status()
-        
         return response.content
+    
+    def monitor_job(self, job_id: str, timeout: int = 300) -> dict:
+        """Monitor job until completion or timeout"""
+        start_time = time.time()
+        
+        while time.time() - start_time < timeout:
+            status = self.get_job_status(job_id)
+            
+            if status["status"] == "completed":
+                return status
+            elif status["status"] == "failed":
+                raise Exception(f"Job failed: {status.get('error', 'Unknown error')}")
+            
+            time.sleep(5)  # Wait 5 seconds before checking again
+        
+        raise TimeoutError("Job monitoring timeout")
 
 # Usage example
 client = PDFSmallerClient()
-client.login("user@example.com", "password123")
 
 # Single file compression
-compressed_data = client.compress_file("document.pdf", "high", 70)
+job = client.compress_file("document.pdf", "high", 70)
+print(f"Job started: {job['job_id']}")
+
+# Monitor job
+result = client.monitor_job(job["job_id"])
+print(f"Compression completed. Ratio: {result['result']['compression_ratio']}%")
+
+# Download compressed file
+compressed_data = client.download_file(job["job_id"])
 with open("compressed_document.pdf", "wb") as f:
     f.write(compressed_data)
 
 # Bulk compression
-job = client.start_bulk_compression(["doc1.pdf", "doc2.pdf", "doc3.pdf"])
-print(f"Bulk job started: {job['job_id']}")
+bulk_job = client.start_bulk_compression(["doc1.pdf", "doc2.pdf", "doc3.pdf"])
+print(f"Bulk job started: {bulk_job['job_id']} with {bulk_job['file_count']} files")
 
-# Monitor job progress
-import time
-while True:
-    status = client.get_bulk_job_status(job["job_id"])
-    print(f"Progress: {status['progress_percentage']:.1f}%")
-    
-    if status["is_completed"]:
-        if status["is_successful"]:
-            # Download results
-            result_data = client.download_bulk_result(job["job_id"])
-            with open("bulk_results.zip", "wb") as f:
-                f.write(result_data)
-            print("Bulk compression completed successfully!")
-        else:
-            print(f"Bulk compression failed: {status['error_message']}")
-        break
-    
-    time.sleep(5)  # Wait 5 seconds before checking again
+# Monitor bulk job
+bulk_result = client.monitor_job(bulk_job["job_id"])
+print("Bulk compression completed!")
+
+# Download bulk results (ZIP file)
+bulk_data = client.download_file(bulk_job["job_id"])
+with open("bulk_results.zip", "wb") as f:
+    f.write(bulk_data)
 ```
 
 ### JavaScript/Node.js Example
@@ -719,26 +474,8 @@ const FormData = require('form-data');
 const fs = require('fs');
 
 class PDFSmallerClient {
-  constructor(baseUrl = 'https://api.pdfsmaller.site') {
+  constructor(baseUrl = 'http://localhost:5000') {
     this.baseUrl = baseUrl;
-    this.accessToken = null;
-    this.refreshToken = null;
-  }
-
-  async login(email, password) {
-    try {
-      const response = await axios.post(`${this.baseUrl}/api/auth/login`, {
-        email,
-        password
-      });
-
-      this.accessToken = response.data.tokens.access_token;
-      this.refreshToken = response.data.tokens.refresh_token;
-
-      return response.data;
-    } catch (error) {
-      throw new Error(`Login failed: ${error.response?.data?.error?.message || error.message}`);
-    }
   }
 
   async compressFile(filePath, compressionLevel = 'medium', imageQuality = 80) {
@@ -749,16 +486,12 @@ class PDFSmallerClient {
 
     try {
       const response = await axios.post(`${this.baseUrl}/api/compress`, formData, {
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
-          ...formData.getHeaders()
-        },
-        responseType: 'arraybuffer'
+        headers: formData.getHeaders()
       });
 
       return response.data;
     } catch (error) {
-      throw new Error(`Compression failed: ${error.response?.data?.error?.message || error.message}`);
+      throw new Error(`Compression failed: ${error.response?.data?.error || error.message}`);
     }
   }
 
@@ -774,75 +507,53 @@ class PDFSmallerClient {
 
     try {
       const response = await axios.post(`${this.baseUrl}/api/compress/bulk`, formData, {
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
-          ...formData.getHeaders()
-        }
+        headers: formData.getHeaders()
       });
 
       return response.data;
     } catch (error) {
-      throw new Error(`Bulk compression failed: ${error.response?.data?.error?.message || error.message}`);
+      throw new Error(`Bulk compression failed: ${error.response?.data?.error || error.message}`);
     }
   }
 
-  async getBulkJobStatus(jobId) {
+  async getJobStatus(jobId) {
     try {
-      const response = await axios.get(`${this.baseUrl}/api/compress/bulk/jobs/${jobId}/status`, {
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`
-        }
-      });
-
+      const response = await axios.get(`${this.baseUrl}/api/jobs/${jobId}`);
       return response.data;
     } catch (error) {
-      throw new Error(`Failed to get job status: ${error.response?.data?.error?.message || error.message}`);
+      throw new Error(`Failed to get job status: ${error.response?.data?.error || error.message}`);
     }
   }
 
-  async downloadBulkResult(jobId) {
+  async downloadFile(jobId) {
     try {
-      const response = await axios.get(`${this.baseUrl}/api/compress/bulk/jobs/${jobId}/download`, {
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`
-        },
+      const response = await axios.get(`${this.baseUrl}/api/jobs/${jobId}/download`, {
         responseType: 'arraybuffer'
       });
 
       return response.data;
     } catch (error) {
-      throw new Error(`Failed to download results: ${error.response?.data?.error?.message || error.message}`);
+      throw new Error(`Failed to download file: ${error.response?.data?.error || error.message}`);
     }
   }
 
-  async monitorBulkJob(jobId, onProgress = null) {
-    return new Promise((resolve, reject) => {
-      const checkStatus = async () => {
-        try {
-          const status = await this.getBulkJobStatus(jobId);
-          
-          if (onProgress) {
-            onProgress(status);
-          }
-
-          if (status.is_completed) {
-            if (status.is_successful) {
-              resolve(status);
-            } else {
-              reject(new Error(status.error_message));
-            }
-            return;
-          }
-
-          // Check again in 5 seconds
-          setTimeout(checkStatus, 5000);
-        } catch (error) {
-          reject(error);
-        }
-      };
-
-      checkStatus();
-    });
+  async monitorJob(jobId, timeoutMs = 300000) {
+    const startTime = Date.now();
+    const pollInterval = 5000; // 5 seconds
+    
+    while (Date.now() - startTime < timeoutMs) {
+      const status = await this.getJobStatus(jobId);
+      
+      if (status.status === 'completed') {
+        return status;
+      } else if (status.status === 'failed') {
+        throw new Error(status.error || 'Job failed');
+      }
+      
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    }
+    
+    throw new Error('Job monitoring timeout');
   }
 }
 
@@ -851,28 +562,31 @@ async function main() {
   const client = new PDFSmallerClient();
   
   try {
-    // Login
-    await client.login('user@example.com', 'password123');
-    console.log('Logged in successfully');
-
     // Single file compression
-    const compressedData = await client.compressFile('document.pdf', 'high', 70);
+    const job = await client.compressFile('document.pdf', 'high', 70);
+    console.log(`Job started: ${job.job_id}`);
+
+    // Monitor job
+    const result = await client.monitorJob(job.job_id);
+    console.log(`Compression completed. Ratio: ${result.result.compression_ratio}%`);
+
+    // Download compressed file
+    const compressedData = await client.downloadFile(job.job_id);
     fs.writeFileSync('compressed_document.pdf', compressedData);
-    console.log('Single file compressed successfully');
+    console.log('File downloaded successfully');
 
     // Bulk compression
-    const job = await client.startBulkCompression(['doc1.pdf', 'doc2.pdf', 'doc3.pdf']);
-    console.log(`Bulk job started: ${job.job_id}`);
+    const bulkJob = await client.startBulkCompression(['doc1.pdf', 'doc2.pdf', 'doc3.pdf']);
+    console.log(`Bulk job started: ${bulkJob.job_id} with ${bulkJob.file_count} files`);
 
-    // Monitor progress
-    const finalStatus = await client.monitorBulkJob(job.job_id, (status) => {
-      console.log(`Progress: ${status.progress_percentage.toFixed(1)}%`);
-    });
+    // Monitor bulk job
+    const bulkResult = await client.monitorJob(bulkJob.job_id);
+    console.log('Bulk compression completed!');
 
-    // Download results
-    const resultData = await client.downloadBulkResult(job.job_id);
-    fs.writeFileSync('bulk_results.zip', resultData);
-    console.log('Bulk compression completed successfully!');
+    // Download bulk results
+    const bulkData = await client.downloadFile(bulkJob.job_id);
+    fs.writeFileSync('bulk_results.zip', bulkData);
+    console.log('Bulk results downloaded successfully');
 
   } catch (error) {
     console.error('Error:', error.message);
@@ -882,4 +596,170 @@ async function main() {
 main();
 ```
 
-This comprehensive API usage guide provides developers with everything they need to integrate with the PDF Smaller API effectively, including authentication, file compression, bulk processing, subscription management, and robust error handling strategies.
+### Browser JavaScript Example
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PDF Smaller Client</title>
+</head>
+<body>
+    <input type="file" id="fileInput" accept=".pdf" multiple>
+    <button onclick="compressFiles()">Compress Files</button>
+    <div id="status"></div>
+    <div id="results"></div>
+
+    <script>
+        class PDFSmallerClient {
+            constructor(baseUrl = 'http://localhost:5000') {
+                this.baseUrl = baseUrl;
+            }
+
+            async compressFile(file, compressionLevel = 'medium', imageQuality = 80) {
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('compressionLevel', compressionLevel);
+                formData.append('imageQuality', imageQuality);
+
+                const response = await fetch(`${this.baseUrl}/api/compress`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error);
+                }
+
+                return response.json();
+            }
+
+            async startBulkCompression(files, compressionLevel = 'medium', imageQuality = 80) {
+                const formData = new FormData();
+                
+                files.forEach(file => {
+                    formData.append('files', file);
+                });
+                
+                formData.append('compressionLevel', compressionLevel);
+                formData.append('imageQuality', imageQuality);
+
+                const response = await fetch(`${this.baseUrl}/api/compress/bulk`, {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error);
+                }
+
+                return response.json();
+            }
+
+            async getJobStatus(jobId) {
+                const response = await fetch(`${this.baseUrl}/api/jobs/${jobId}`);
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error);
+                }
+
+                return response.json();
+            }
+
+            async downloadFile(jobId) {
+                const response = await fetch(`${this.baseUrl}/api/jobs/${jobId}/download`);
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.error);
+                }
+
+                return response.blob();
+            }
+
+            async monitorJob(jobId, onProgress = null) {
+                const startTime = Date.now();
+                const timeout = 300000; // 5 minutes
+                const pollInterval = 5000; // 5 seconds
+                
+                while (Date.now() - startTime < timeout) {
+                    const status = await this.getJobStatus(jobId);
+                    
+                    if (onProgress) {
+                        onProgress(status);
+                    }
+                    
+                    if (status.status === 'completed') {
+                        return status;
+                    } else if (status.status === 'failed') {
+                        throw new Error(status.error || 'Job failed');
+                    }
+                    
+                    await new Promise(resolve => setTimeout(resolve, pollInterval));
+                }
+                
+                throw new Error('Job monitoring timeout');
+            }
+        }
+
+        const client = new PDFSmallerClient();
+
+        async function compressFiles() {
+            const fileInput = document.getElementById('fileInput');
+            const statusDiv = document.getElementById('status');
+            const resultsDiv = document.getElementById('results');
+            
+            const files = Array.from(fileInput.files);
+            
+            if (files.length === 0) {
+                alert('Please select at least one PDF file');
+                return;
+            }
+
+            try {
+                statusDiv.innerHTML = 'Starting compression...';
+                
+                let job;
+                if (files.length === 1) {
+                    job = await client.compressFile(files[0]);
+                } else {
+                    job = await client.startBulkCompression(files);
+                }
+                
+                statusDiv.innerHTML = `Job started: ${job.job_id}`;
+                
+                // Monitor job progress
+                const result = await client.monitorJob(job.job_id, (status) => {
+                    statusDiv.innerHTML = `Status: ${status.status}`;
+                });
+                
+                statusDiv.innerHTML = 'Compression completed! Downloading...';
+                
+                // Download result
+                const blob = await client.downloadFile(job.job_id);
+                const url = URL.createObjectURL(blob);
+                
+                const downloadLink = document.createElement('a');
+                downloadLink.href = url;
+                downloadLink.download = files.length === 1 ? 'compressed.pdf' : 'compressed_files.zip';
+                downloadLink.textContent = 'Download Compressed File(s)';
+                
+                resultsDiv.innerHTML = '';
+                resultsDiv.appendChild(downloadLink);
+                
+                statusDiv.innerHTML = 'Ready for download!';
+                
+            } catch (error) {
+                statusDiv.innerHTML = `Error: ${error.message}`;
+                console.error('Compression error:', error);
+            }
+        }
+    </script>
+</body>
+</html>
+```
+
+This comprehensive API usage guide provides developers with everything they need to integrate with the PDF Smaller API effectively, including file compression, job monitoring, bulk processing, and robust error handling strategies.

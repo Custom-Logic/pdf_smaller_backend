@@ -43,7 +43,7 @@ sequenceDiagram
     participant Worker
     participant Storage
 
-    Frontend->>Backend: POST /api/compress (with file + client_job_id)
+    Frontend->>Backend: POST /api/compress (with file)
     Backend->>Backend: Validate request & create job record
     Backend->>Queue: Enqueue compression task
     Backend->>Frontend: Return 202 Accepted with job_id
@@ -74,18 +74,17 @@ Pending → Processing → (Completed | Failed)
 ### Compression Endpoints
 | Endpoint | Method | Description | Parameters |
 |----------|--------|-------------|------------|
-| `/api/compress` | POST | Compress PDF | `file`, `compressionLevel`, `imageQuality`, `client_job_id` |
-| `/api/compress/bulk` | POST | Bulk compress | `files[]`, `compressionLevel`, `client_job_id` |
+| `/api/compress` | POST | Compress PDF | `file`, `compressionLevel`, `imageQuality` |
+| `/api/compress/bulk` | POST | Bulk compress | `files[]`, `compressionLevel` |
 | `/api/compress/preview` | POST | Get preview | `file`, `compressionLevel` |
 
 ## Data Models
 
 ### Job Model
 ```python
-class CompressionJob(BaseModel):
+class Job(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     status: JobStatus = JobStatus.PENDING
-    client_job_id: Optional[str] = None
     original_filename: str
     original_size: int
     compressed_size: Optional[int] = None
@@ -135,27 +134,22 @@ class CompressionJob(BaseModel):
 
 ### Environment Variables
 ```bash
-# OpenRouter AI Configuration
-OPENROUTER_API_KEY=your_openrouter_api_key
-OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
-OPENROUTER_DEFAULT_MODEL=openai/gpt-3.5-turbo
-
 # File Processing
 UPLOAD_FOLDER=/tmp/pdf_uploads
 MAX_FILE_SIZE=100000000  # 100MB
 
 # Redis Queue
 REDIS_URL=redis://localhost:6379
+
+# Database
+DATABASE_URL=sqlite:///pdf_smaller.db
 ```
 
 ### Rate Limiting
 ```python
-# Tier-based rate limits
+# Simple rate limits for all users
 RATE_LIMITS = {
-    'anonymous': '10/hour',
-    'free': '50/hour',
-    'premium': '1000/hour',
-    'pro': '5000/hour'
+    'default': '100/hour'
 }
 ```
 
@@ -175,7 +169,7 @@ RATE_LIMITS = {
     "level": "INFO",
     "service": "compression",
     "job_id": "job_123",
-    "client_job_id": "user_123",
+
     "event": "job_completed",
     "duration": 2.5,
     "file_size": 1024000,
@@ -195,12 +189,12 @@ RATE_LIMITS = {
 - CORS configuration
 - Rate limiting
 - Input validation
-- Authentication (JWT optional)
+- File type validation
 
 ### 3. Data Privacy
 - Temporary file cleanup
 - No persistent user data storage
-- Secure AI API communications
+- Secure file processing
 
 ## 🚀 Deployment Considerations
 

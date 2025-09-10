@@ -29,7 +29,6 @@ POST /compress
 - `file` (required): The PDF file to compress
 - `compressionLevel` (optional): Compression level - `low`, `medium`, `high`, or `maximum` (default: `medium`)
 - `imageQuality` (optional): Image quality for compression, 10-100 (default: 80)
-- `client_job_id` (optional): Client-provided job identifier for tracking
 
 **Response**:
 ```json
@@ -60,7 +59,6 @@ GET /jobs/{job_id}
   "job_id": "550e8400-e29b-41d4-a716-446655440000",
   "status": "processing",
   "task_type": "compression",
-  "client_job_id": "client-123",
   "created_at": "2023-06-15T10:30:00.000Z",
   "updated_at": "2023-06-15T10:30:05.000Z"
 }
@@ -72,7 +70,6 @@ GET /jobs/{job_id}
   "job_id": "550e8400-e29b-41d4-a716-446655440000",
   "status": "completed",
   "task_type": "compression",
-  "client_job_id": "client-123",
   "created_at": "2023-06-15T10:30:00.000Z",
   "updated_at": "2023-06-15T10:31:00.000Z",
   "result": {
@@ -92,7 +89,6 @@ GET /jobs/{job_id}
   "job_id": "550e8400-e29b-41d4-a716-446655440000",
   "status": "failed",
   "task_type": "compression",
-  "client_job_id": "client-123",
   "created_at": "2023-06-15T10:30:00.000Z",
   "updated_at": "2023-06-15T10:30:30.000Z",
   "error": "Failed to process PDF: Invalid file format"
@@ -131,7 +127,6 @@ POST /bulk
 - `files` (required): Multiple PDF files to compress
 - `compressionLevel` (optional): Compression level - `low`, `medium`, `high`, or `maximum` (default: `medium`)
 - `imageQuality` (optional): Image quality for compression, 10-100 (default: 80)
-- `client_job_id` (optional): Client-provided job identifier for tracking
 
 **Response**:
 ```json

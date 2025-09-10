@@ -1,6 +1,6 @@
-# PDF Smaller Backend - Complete Deployment Guide
+# PDF Smaller Backend - Deployment Guide
 
-This comprehensive guide covers deployment of the PDF Smaller backend with all implemented features including user authentication, subscription management, bulk processing, and enhanced security.
+This guide covers deployment of the PDF Smaller backend for PDF compression processing with job management and file handling.
 
 ## Table of Contents
 
@@ -65,6 +65,7 @@ DATABASE_URL=sqlite:///pdf_smaller_dev.db
 UPLOAD_FOLDER=./uploads/dev
 MAX_FILE_SIZE=52428800  # 50MB
 MAX_FILE_AGE_HOURS=24
+CLEANUP_ENABLED=true
 
 # Redis & Celery
 REDIS_URL=redis://localhost:6379/0
@@ -80,16 +81,7 @@ LOG_FILE=app.log
 
 # Rate Limiting
 RATE_LIMIT_ENABLED=true
-
-# Stripe (Test Keys)
-STRIPE_PUBLISHABLE_KEY=pk_test_your_test_key
-STRIPE_SECRET_KEY=sk_test_your_test_key
-STRIPE_WEBHOOK_SECRET=whsec_test_your_webhook_secret
-
-# Email (Optional for development)
-MAIL_SERVER=localhost
-MAIL_PORT=1025
-MAIL_USE_TLS=false
+RATE_LIMIT_DEFAULT=100 per hour
 ```
 
 #### Production (.env.production)
@@ -97,7 +89,6 @@ MAIL_USE_TLS=false
 # Application Settings
 FLASK_ENV=production
 SECRET_KEY=your-super-secure-64-character-production-secret-key-here
-JWT_SECRET_KEY=your-super-secure-jwt-secret-key-different-from-above
 DEBUG=false
 
 # Database (SQLite)
@@ -116,11 +107,12 @@ CELERY_RESULT_BACKEND=redis://localhost:6379/0
 CELERY_WORKER_CONCURRENCY=4
 
 # CORS
-ALLOWED_ORIGINS=https://pdfsmaller.site,https://www.pdfsmaller.site
+ALLOWED_ORIGINS=https://yourfrontend.com,https://www.yourfrontend.com
 
 # Security
 SECURITY_HEADERS_ENABLED=true
 RATE_LIMIT_ENABLED=true
+RATE_LIMIT_DEFAULT=100 per hour
 RATE_LIMIT_STORAGE_URL=redis://localhost:6379/1
 
 # Logging
@@ -128,19 +120,6 @@ LOG_LEVEL=WARNING
 LOG_FILE=/var/log/pdfsmaller/app.log
 LOG_MAX_BYTES=10485760  # 10MB
 LOG_BACKUP_COUNT=5
-
-# Stripe (Live Keys)
-STRIPE_PUBLISHABLE_KEY=pk_live_your_live_publishable_key
-STRIPE_SECRET_KEY=sk_live_your_live_secret_key
-STRIPE_WEBHOOK_SECRET=whsec_your_live_webhook_secret
-
-# Email
-MAIL_SERVER=smtp.your-provider.com
-MAIL_PORT=587
-MAIL_USE_TLS=true
-MAIL_USERNAME=your-email@domain.com
-MAIL_PASSWORD=your-email-password
-MAIL_DEFAULT_SENDER=noreply@pdfsmaller.site
 
 # Monitoring
 HEALTH_CHECK_ENABLED=true
@@ -176,62 +155,9 @@ DATABASE_URL=sqlite:///pdf_smaller_dev.db
 
 # Production
 DATABASE_URL=sqlite:////var/app/pdfsmaller/pdf_smaller_prod.db
-sudo yum install postgresql-server postgresql-contrib
-sudo postgresql-setup initdb
 ```
 
-#### Create Database and User
-```bash
-sudo -u postgres psql
-
--- Create database
-CREATE DATABASE pdf_smaller_prod;
-
--- Create user with secure password
-CREATE USER pdf_user WITH PASSWORD 'your_secure_password_here';
-
--- Grant privileges
-GRANT ALL PRIVILEGES ON DATABASE pdf_smaller_prod TO pdf_user;
-
--- Enable required extensions
-\c pdf_smaller_prod
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
-\q
-```
-
-#### Configure PostgreSQL
-Edit `/etc/postgresql/13/main/postgresql.conf`:
-```ini
-# Connection settings
-listen_addresses = 'localhost'
-port = 5432
-max_connections = 100
-
-# Memory settings
-shared_buffers = 256MB
-effective_cache_size = 1GB
-work_mem = 4MB
-
-# Logging
-log_statement = 'mod'
-log_min_duration_statement = 1000
-```
-
-Edit `/etc/postgresql/13/main/pg_hba.conf`:
-```
-# Local connections
-local   pdf_smaller_prod    pdf_user                     md5
-host    pdf_smaller_prod    pdf_user    127.0.0.1/32     md5
-```
-
-Restart PostgreSQL:
-```bash
-sudo systemctl restart postgresql
-sudo systemctl enable postgresql
-```
-
-### 2. Database Initialization
+#### Database Initialization
 
 ```bash
 # Navigate to application directory
@@ -247,29 +173,30 @@ python manage_db.py init
 python manage_db.py status
 ```
 
-### 3. Database Backup Configuration
+#### Database Backup Configuration
 
 Create backup script `/usr/local/bin/backup_pdfsmaller_db.sh`:
 ```bash
 #!/bin/bash
 BACKUP_DIR="/var/backups/pdfsmaller"
 DATE=$(date +%Y%m%d_%H%M%S)
-DB_NAME="pdf_smaller_prod"
-DB_USER="pdf_user"
+DB_FILE="/var/app/pdfsmaller/pdf_smaller_prod.db"
 
 mkdir -p $BACKUP_DIR
 
 # Create backup
-pg_dump -h localhost -U $DB_USER $DB_NAME | gzip > $BACKUP_DIR/backup_$DATE.sql.gz
+cp $DB_FILE $BACKUP_DIR/backup_$DATE.db
+gzip $BACKUP_DIR/backup_$DATE.db
 
 # Keep only last 7 days of backups
-find $BACKUP_DIR -name "backup_*.sql.gz" -mtime +7 -delete
+find $BACKUP_DIR -name "backup_*.db.gz" -mtime +7 -delete
 
-echo "Database backup completed: backup_$DATE.sql.gz"
+echo "Database backup completed: backup_$DATE.db.gz"
 ```
 
-Add to crontab:
+Make executable and add to crontab:
 ```bash
+sudo chmod +x /usr/local/bin/backup_pdfsmaller_db.sh
 sudo crontab -e
 # Add line for daily backup at 2 AM
 0 2 * * * /usr/local/bin/backup_pdfsmaller_db.sh
@@ -296,19 +223,19 @@ services:
     volumes:
       - /var/app/uploads:/app/uploads
       - /var/log/pdfsmaller:/app/logs
+      - sqlite_data:/app/data
     depends_on:
-      - postgres
       - redis
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 3
 
   celery-worker:
     build: .
-    command: celery -A celery_worker.celery worker --loglevel=info --concurrency=4
+    command: celery -A celery_worker.celery worker --loglevel=info --concurrency=4 --queues=compression,cleanup
     environment:
       - FLASK_ENV=production
     env_file:
@@ -316,8 +243,8 @@ services:
     volumes:
       - /var/app/uploads:/app/uploads
       - /var/log/pdfsmaller:/app/logs
+      - sqlite_data:/app/data
     depends_on:
-      - postgres
       - redis
     restart: unless-stopped
 
@@ -328,20 +255,10 @@ services:
       - FLASK_ENV=production
     env_file:
       - .env.production
-    depends_on:
-      - postgres
-      - redis
-    restart: unless-stopped
-
-  postgres:
-    image: postgres:13
-    environment:
-      POSTGRES_DB: pdf_smaller_prod
-      POSTGRES_USER: pdf_user
-      POSTGRES_PASSWORD: your_secure_password_here
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./backups:/backups
+      - sqlite_data:/app/data
+    depends_on:
+      - redis
     restart: unless-stopped
 
   redis:
@@ -364,7 +281,7 @@ services:
     restart: unless-stopped
 
 volumes:
-  postgres_data:
+  sqlite_data:
   redis_data:
 ```
 
@@ -387,7 +304,6 @@ docker-compose -f docker-compose.prod.yml ps
 # Ubuntu/Debian
 sudo apt-get update
 sudo apt-get install python3.11 python3.11-venv python3-pip
-sudo apt-get install postgresql postgresql-contrib
 sudo apt-get install redis-server
 sudo apt-get install ghostscript
 sudo apt-get install nginx
@@ -395,7 +311,6 @@ sudo apt-get install supervisor
 
 # CentOS/RHEL
 sudo yum install python3.11 python3.11-venv python3-pip
-sudo yum install postgresql postgresql-server
 sudo yum install redis
 sudo yum install ghostscript
 sudo yum install nginx
@@ -435,8 +350,8 @@ Create `/etc/systemd/system/pdfsmaller.service`:
 ```ini
 [Unit]
 Description=PDF Smaller Web Application
-After=network.target postgresql.service redis.service
-Wants=postgresql.service redis.service
+After=network.target redis.service
+Wants=redis.service
 
 [Service]
 Type=exec
@@ -553,7 +468,7 @@ sudo systemctl enable redis-server
 Create `/etc/supervisor/conf.d/pdfsmaller-celery.conf`:
 ```ini
 [program:pdfsmaller-celery-worker]
-command=/var/app/pdfsmaller/venv/bin/celery -A celery_worker.celery worker --loglevel=info --concurrency=4
+command=/var/app/pdfsmaller/venv/bin/celery -A celery_worker.celery worker --loglevel=info --concurrency=4 --queues=compression,cleanup
 directory=/var/app/pdfsmaller
 user=pdfsmaller
 autostart=true
@@ -588,7 +503,6 @@ Create `/etc/nginx/sites-available/pdfsmaller`:
 ```nginx
 # Rate limiting
 limit_req_zone $binary_remote_addr zone=api:10m rate=10r/s;
-limit_req_zone $binary_remote_addr zone=auth:10m rate=5r/s;
 
 # Upstream servers
 upstream pdfsmaller_app {
@@ -598,18 +512,18 @@ upstream pdfsmaller_app {
 # HTTP to HTTPS redirect
 server {
     listen 80;
-    server_name pdfsmaller.site www.pdfsmaller.site;
+    server_name yourserver.com www.yourserver.com;
     return 301 https://$server_name$request_uri;
 }
 
 # HTTPS server
 server {
     listen 443 ssl http2;
-    server_name pdfsmaller.site www.pdfsmaller.site;
+    server_name yourserver.com www.yourserver.com;
 
     # SSL Configuration
-    ssl_certificate /etc/ssl/certs/pdfsmaller.site.crt;
-    ssl_certificate_key /etc/ssl/private/pdfsmaller.site.key;
+    ssl_certificate /etc/ssl/certs/yourserver.com.crt;
+    ssl_certificate_key /etc/ssl/private/yourserver.com.key;
     
     # SSL Security
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -652,20 +566,8 @@ server {
         limit_req zone=api burst=20 nodelay;
     }
 
-    # Authentication endpoints with stricter rate limiting
-    location ~ ^/api/auth/(login|register|refresh) {
-        proxy_pass http://pdfsmaller_app;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # Stricter rate limiting for auth
-        limit_req zone=auth burst=5 nodelay;
-    }
-
     # Health check endpoint (no rate limiting)
-    location /health {
+    location /api/health {
         proxy_pass http://pdfsmaller_app;
         access_log off;
     }
@@ -682,7 +584,7 @@ server {
         deny all;
     }
     
-    location ~ \.(env|log|conf)$ {
+    location ~ \.(env|log|conf|db)$ {
         deny all;
     }
 }
@@ -699,28 +601,23 @@ sudo systemctl reload nginx
 
 #### Using Let's Encrypt (Recommended)
 ```bash
-# Install Certbot
+# Install certbot
 sudo apt-get install certbot python3-certbot-nginx
 
 # Obtain certificate
-sudo certbot --nginx -d pdfsmaller.site -d www.pdfsmaller.site
+sudo certbot --nginx -d yourserver.com -d www.yourserver.com
 
-# Test renewal
-sudo certbot renew --dry-run
-
-# Setup auto-renewal
-echo "0 12 * * * /usr/bin/certbot renew --quiet" | sudo crontab -
+# Auto-renewal
+sudo crontab -e
+# Add line:
+0 12 * * * /usr/bin/certbot renew --quiet
 ```
 
 ### 3. Firewall Configuration
 
 ```bash
-# Install UFW
-sudo apt-get install ufw
-
-# Default policies
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
+# Enable UFW
+sudo ufw enable
 
 # Allow SSH
 sudo ufw allow ssh
@@ -729,74 +626,67 @@ sudo ufw allow ssh
 sudo ufw allow 80/tcp
 sudo ufw allow 443/tcp
 
-# Allow PostgreSQL (local only)
-sudo ufw allow from 127.0.0.1 to any port 5432
-
-# Allow Redis (local only)
-sudo ufw allow from 127.0.0.1 to any port 6379
-
-# Enable firewall
-sudo ufw enable
-
 # Check status
-sudo ufw status verbose
+sudo ufw status
 ```
 
 ## Monitoring and Logging
 
 ### 1. Application Logging
 
-Configure structured logging in `src/config/config.py`:
+Configure logging in your application:
 ```python
-LOGGING_CONFIG = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'detailed': {
-            'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
-        },
-        'json': {
-            'format': '{"timestamp": "%(asctime)s", "level": "%(levelname)s", "logger": "%(name)s", "message": "%(message)s"}'
-        }
-    },
-    'handlers': {
-        'file': {
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': '/var/log/pdfsmaller/app.log',
-            'maxBytes': 10485760,  # 10MB
-            'backupCount': 5,
-            'formatter': 'detailed'
-        },
-        'security': {
-            'class': 'logging.handlers.RotatingFileHandler',
-            'filename': '/var/log/pdfsmaller/security.log',
-            'maxBytes': 10485760,
-            'backupCount': 10,
-            'formatter': 'json'
-        }
-    },
-    'loggers': {
-        'pdfsmaller': {
-            'handlers': ['file'],
-            'level': 'INFO',
-            'propagate': False
-        },
-        'security': {
-            'handlers': ['security'],
-            'level': 'WARNING',
-            'propagate': False
-        }
-    }
-}
+# logging_config.py
+import logging
+from logging.handlers import RotatingFileHandler
+import os
+
+def setup_logging(app):
+    if not app.debug:
+        if not os.path.exists('logs'):
+            os.mkdir('logs')
+        
+        file_handler = RotatingFileHandler(
+            'logs/pdfsmaller.log', 
+            maxBytes=10240000, 
+            backupCount=10
+        )
+        file_handler.setFormatter(logging.Formatter(
+            '%(asctime)s %(levelname)s: %(message)s [in %(pathname)s:%(lineno)d]'
+        ))
+        file_handler.setLevel(logging.INFO)
+        app.logger.addHandler(file_handler)
+        
+        app.logger.setLevel(logging.INFO)
+        app.logger.info('PDF Smaller startup')
 ```
 
-### 2. Health Check Endpoints
+### 2. Health Check Endpoint
 
-The application includes comprehensive health checks:
-- `/health` - Basic application health
-- `/health/db` - Database connectivity
-- `/health/redis` - Redis connectivity
-- `/health/celery` - Celery worker status
+Ensure your application has a health check endpoint:
+```python
+@app.route('/api/health')
+def health_check():
+    try:
+        # Check database connection
+        db.session.execute('SELECT 1')
+        
+        # Check Redis connection
+        redis_client.ping()
+        
+        return jsonify({
+            'status': 'healthy',
+            'database': 'connected',
+            'redis': 'connected',
+            'timestamp': datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'unhealthy',
+            'error': str(e),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 500
+```
 
 ### 3. Log Rotation
 
@@ -805,7 +695,7 @@ Create `/etc/logrotate.d/pdfsmaller`:
 /var/log/pdfsmaller/*.log {
     daily
     missingok
-    rotate 30
+    rotate 52
     compress
     delaycompress
     notifempty
@@ -816,369 +706,183 @@ Create `/etc/logrotate.d/pdfsmaller`:
 }
 ```
 
-### 4. Monitoring with Prometheus (Optional)
-
-Install Prometheus and Grafana:
-```bash
-# Add Prometheus user
-sudo useradd --no-create-home --shell /bin/false prometheus
-
-# Download and install Prometheus
-wget https://github.com/prometheus/prometheus/releases/download/v2.40.0/prometheus-2.40.0.linux-amd64.tar.gz
-tar xvf prometheus-2.40.0.linux-amd64.tar.gz
-sudo cp prometheus-2.40.0.linux-amd64/prometheus /usr/local/bin/
-sudo cp prometheus-2.40.0.linux-amd64/promtool /usr/local/bin/
-
-# Create directories
-sudo mkdir /etc/prometheus
-sudo mkdir /var/lib/prometheus
-sudo chown prometheus:prometheus /etc/prometheus
-sudo chown prometheus:prometheus /var/lib/prometheus
-```
-
-Create Prometheus configuration `/etc/prometheus/prometheus.yml`:
-```yaml
-global:
-  scrape_interval: 15s
-
-scrape_configs:
-  - job_name: 'pdfsmaller'
-    static_configs:
-      - targets: ['localhost:5000']
-    metrics_path: '/metrics'
-    scrape_interval: 30s
-```
-
 ## Maintenance Procedures
 
-### 1. Regular Maintenance Tasks
+### 1. Application Updates
 
-Create maintenance script `/usr/local/bin/pdfsmaller_maintenance.sh`:
+```bash
+#!/bin/bash
+# update_app.sh
+
+set -e
+
+echo "Starting application update..."
+
+# Stop services
+sudo systemctl stop pdfsmaller pdfsmaller-celery pdfsmaller-beat
+
+# Backup database
+/usr/local/bin/backup_pdfsmaller_db.sh
+
+# Update code
+cd /var/app/pdfsmaller
+sudo -u pdfsmaller git pull origin main
+
+# Update dependencies
+sudo -u pdfsmaller /var/app/pdfsmaller/venv/bin/pip install -r requirements.txt
+
+# Run database migrations (if any)
+sudo -u pdfsmaller /var/app/pdfsmaller/venv/bin/python manage_db.py upgrade
+
+# Start services
+sudo systemctl start pdfsmaller pdfsmaller-celery pdfsmaller-beat
+
+# Check status
+sudo systemctl status pdfsmaller
+
+echo "Application update completed successfully!"
+```
+
+### 2. File Cleanup
+
+Create cleanup script `/usr/local/bin/cleanup_old_files.sh`:
 ```bash
 #!/bin/bash
 
-LOG_FILE="/var/log/pdfsmaller/maintenance.log"
-DATE=$(date '+%Y-%m-%d %H:%M:%S')
+# Remove files older than 24 hours from uploads directory
+find /var/app/uploads -type f -mtime +1 -delete
 
-echo "[$DATE] Starting maintenance tasks" >> $LOG_FILE
+# Remove empty directories
+find /var/app/uploads -type d -empty -delete
 
-# 1. Clean up expired files
-cd /var/app/pdfsmaller
-source venv/bin/activate
-python -c "
-from src.services.cleanup_service import CleanupService
-result = CleanupService.cleanup_expired_jobs()
-print(f'Cleaned up {result[\"jobs_cleaned\"]} expired jobs')
-result = CleanupService.cleanup_temp_files('/var/app/uploads')
-print(f'Cleaned up {result[\"files_cleaned\"]} temporary files')
-" >> $LOG_FILE 2>&1
+# Clean up old log files
+find /var/log/pdfsmaller -name "*.log.*" -mtime +30 -delete
 
-# 2. Database maintenance
-sudo -u postgres psql pdf_smaller_prod -c "VACUUM ANALYZE;" >> $LOG_FILE 2>&1
-
-# 3. Log rotation check
-logrotate -f /etc/logrotate.d/pdfsmaller >> $LOG_FILE 2>&1
-
-# 4. Check disk space
-df -h /var/app/uploads >> $LOG_FILE 2>&1
-
-echo "[$DATE] Maintenance tasks completed" >> $LOG_FILE
+echo "File cleanup completed"
 ```
 
 Add to crontab:
 ```bash
 sudo crontab -e
-# Daily maintenance at 3 AM
-0 3 * * * /usr/local/bin/pdfsmaller_maintenance.sh
+# Add line for hourly cleanup
+0 * * * * /usr/local/bin/cleanup_old_files.sh
 ```
 
-### 2. Update Procedures
+### 3. System Monitoring
 
-Create update script `/usr/local/bin/update_pdfsmaller.sh`:
+Create monitoring script `/usr/local/bin/monitor_pdfsmaller.sh`:
 ```bash
 #!/bin/bash
 
-APP_DIR="/var/app/pdfsmaller"
-BACKUP_DIR="/var/backups/pdfsmaller"
-DATE=$(date +%Y%m%d_%H%M%S)
+# Check if services are running
+services=("pdfsmaller" "pdfsmaller-celery" "pdfsmaller-beat" "redis-server" "nginx")
 
-echo "Starting PDF Smaller update process..."
+for service in "${services[@]}"; do
+    if ! systemctl is-active --quiet $service; then
+        echo "WARNING: $service is not running"
+        # Optionally send alert email or notification
+    fi
+done
 
-# 1. Create backup
-mkdir -p $BACKUP_DIR
-cp -r $APP_DIR $BACKUP_DIR/app_backup_$DATE
-
-# 2. Stop services
-sudo systemctl stop pdfsmaller pdfsmaller-celery pdfsmaller-beat
-
-# 3. Update code
-cd $APP_DIR
-git pull origin main
-
-# 4. Update dependencies
-source venv/bin/activate
-pip install -r requirements.txt
-
-# 5. Run database migrations (if any)
-python manage_db.py upgrade
-
-# 6. Start services
-sudo systemctl start pdfsmaller pdfsmaller-celery pdfsmaller-beat
-
-# 7. Verify deployment
-sleep 10
-curl -f http://localhost:5000/health || {
-    echo "Health check failed, rolling back..."
-    sudo systemctl stop pdfsmaller pdfsmaller-celery pdfsmaller-beat
-    rm -rf $APP_DIR
-    cp -r $BACKUP_DIR/app_backup_$DATE $APP_DIR
-    sudo systemctl start pdfsmaller pdfsmaller-celery pdfsmaller-beat
-    exit 1
-}
-
-echo "Update completed successfully"
-```
-
-### 3. Backup Procedures
-
-Create comprehensive backup script `/usr/local/bin/full_backup_pdfsmaller.sh`:
-```bash
-#!/bin/bash
-
-BACKUP_ROOT="/var/backups/pdfsmaller"
-DATE=$(date +%Y%m%d_%H%M%S)
-BACKUP_DIR="$BACKUP_ROOT/full_backup_$DATE"
-
-mkdir -p $BACKUP_DIR
-
-# 1. Database backup
-pg_dump -h localhost -U pdf_user pdf_smaller_prod | gzip > $BACKUP_DIR/database.sql.gz
-
-# 2. Application files backup
-tar -czf $BACKUP_DIR/application.tar.gz -C /var/app pdfsmaller
-
-# 3. Configuration backup
-cp /var/app/pdfsmaller/.env $BACKUP_DIR/
-cp -r /etc/nginx/sites-available/pdfsmaller $BACKUP_DIR/nginx.conf
-cp -r /etc/systemd/system/pdfsmaller* $BACKUP_DIR/
-
-# 4. Upload files backup (if not too large)
-UPLOAD_SIZE=$(du -s /var/app/uploads | cut -f1)
-if [ $UPLOAD_SIZE -lt 1048576 ]; then  # Less than 1GB
-    tar -czf $BACKUP_DIR/uploads.tar.gz -C /var/app uploads
+# Check disk space
+disk_usage=$(df /var/app | tail -1 | awk '{print $5}' | sed 's/%//')
+if [ $disk_usage -gt 80 ]; then
+    echo "WARNING: Disk usage is at ${disk_usage}%"
 fi
 
-# 5. Clean old backups (keep 7 days)
-find $BACKUP_ROOT -name "full_backup_*" -mtime +7 -exec rm -rf {} \;
+# Check application health
+health_response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/api/health)
+if [ $health_response -ne 200 ]; then
+    echo "WARNING: Health check failed with status $health_response"
+fi
+```
 
-echo "Full backup completed: $BACKUP_DIR"
+Add to crontab:
+```bash
+sudo crontab -e
+# Add line for monitoring every 5 minutes
+*/5 * * * * /usr/local/bin/monitor_pdfsmaller.sh
 ```
 
 ## Troubleshooting Guide
 
-### Common Issues and Solutions
+### Common Issues
 
 #### 1. Application Won't Start
-
-**Symptoms:**
-- Service fails to start
-- Connection refused errors
-- Import errors
-
-**Diagnosis:**
 ```bash
-# Check service status
-sudo systemctl status pdfsmaller
-
 # Check logs
 sudo journalctl -u pdfsmaller -f
 
-# Test configuration
-cd /var/app/pdfsmaller
-source venv/bin/activate
-python -c "from src.config.config import validate_current_config; validate_current_config()"
+# Check configuration
+sudo -u pdfsmaller /var/app/pdfsmaller/venv/bin/python -c "from app import app; print('Config OK')"
+
+# Check database
+sudo -u pdfsmaller /var/app/pdfsmaller/venv/bin/python manage_db.py status
 ```
 
-**Solutions:**
-- Verify environment variables are set correctly
-- Check database connectivity
-- Ensure all dependencies are installed
-- Verify file permissions
-
-#### 2. Database Connection Issues
-
-**Symptoms:**
-- Database connection errors
-- Authentication failures
-- Timeout errors
-
-**Diagnosis:**
+#### 2. Celery Workers Not Processing Jobs
 ```bash
-# Test database connection
-sudo -u postgres psql pdf_smaller_prod
-
-# Check PostgreSQL status
-sudo systemctl status postgresql
-
-# Test from application
-cd /var/app/pdfsmaller
-source venv/bin/activate
-python -c "
-from src.models.base import db
-from src.main.main import create_app
-app = create_app()
-with app.app_context():
-    db.session.execute('SELECT 1')
-    print('Database connection successful')
-"
-```
-
-**Solutions:**
-- Verify DATABASE_URL format
-- Check PostgreSQL is running
-- Verify user permissions
-- Check network connectivity
-
-#### 3. Celery Tasks Not Processing
-
-**Symptoms:**
-- Tasks stuck in pending state
-- No worker processes
-- Redis connection errors
-
-**Diagnosis:**
-```bash
-# Check Celery worker status
-celery -A celery_worker.celery inspect active
+# Check worker status
+sudo systemctl status pdfsmaller-celery
 
 # Check Redis connection
 redis-cli ping
 
-# Check task queue
-redis-cli llen celery
+# Monitor celery logs
+sudo tail -f /var/log/pdfsmaller/celery-worker.log
 ```
 
-**Solutions:**
-- Restart Celery workers
-- Check Redis connectivity
-- Verify task routing configuration
-- Check worker logs for errors
-
-#### 4. File Upload Issues
-
-**Symptoms:**
-- File upload failures
-- Permission denied errors
-- Disk space errors
-
-**Diagnosis:**
+#### 3. File Upload Issues
 ```bash
 # Check upload directory permissions
 ls -la /var/app/uploads
 
 # Check disk space
-df -h /var/app/uploads
+df -h /var/app
 
-# Check file size limits
-grep MAX_FILE_SIZE /var/app/pdfsmaller/.env
-```
-
-**Solutions:**
-- Fix directory permissions
-- Free up disk space
-- Adjust file size limits
-- Check Nginx client_max_body_size
-
-#### 5. High Memory Usage
-
-**Symptoms:**
-- Out of memory errors
-- Slow performance
-- Process killed by OOM killer
-
-**Diagnosis:**
-```bash
-# Check memory usage
-free -h
-ps aux | grep -E "(python|celery)" | sort -k4 -nr
-
-# Check for memory leaks
-top -p $(pgrep -f "python.*app.py")
-```
-
-**Solutions:**
-- Reduce Celery worker concurrency
-- Implement file processing limits
-- Add swap space
-- Optimize database queries
-- Enable automatic cleanup
-
-#### 6. SSL/TLS Issues
-
-**Symptoms:**
-- Certificate errors
-- Mixed content warnings
-- HTTPS redirect loops
-
-**Diagnosis:**
-```bash
-# Test SSL certificate
-openssl s_client -connect pdfsmaller.site:443
-
-# Check certificate expiry
-openssl x509 -in /etc/ssl/certs/pdfsmaller.site.crt -text -noout | grep "Not After"
-
-# Test Nginx configuration
+# Check nginx configuration
 sudo nginx -t
 ```
 
-**Solutions:**
-- Renew SSL certificates
-- Fix Nginx configuration
-- Check certificate chain
-- Verify DNS settings
+#### 4. High Memory Usage
+```bash
+# Check process memory usage
+ps aux --sort=-%mem | head
+
+# Monitor Redis memory
+redis-cli info memory
+
+# Check for memory leaks in application
+sudo -u pdfsmaller /var/app/pdfsmaller/venv/bin/python -c "import psutil; print(f'Memory: {psutil.virtual_memory().percent}%')"
+```
 
 ### Performance Optimization
 
 #### 1. Database Optimization
+```bash
+# Vacuum SQLite database
+sudo -u pdfsmaller sqlite3 /var/app/pdfsmaller/pdf_smaller_prod.db "VACUUM;"
 
-```sql
--- Add indexes for common queries
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_subscriptions_user_id ON subscriptions(user_id);
-CREATE INDEX idx_compression_jobs_user_id ON compression_jobs(user_id);
-CREATE INDEX idx_compression_jobs_status ON compression_jobs(status);
-CREATE INDEX idx_compression_jobs_created_at ON compression_jobs(created_at);
-
--- Analyze tables
-ANALYZE users;
-ANALYZE subscriptions;
-ANALYZE compression_jobs;
+# Analyze database
+sudo -u pdfsmaller sqlite3 /var/app/pdfsmaller/pdf_smaller_prod.db "ANALYZE;"
 ```
 
-#### 2. Application Optimization
+#### 2. Redis Optimization
+```bash
+# Check Redis performance
+redis-cli --latency-history
 
-```python
-# Enable connection pooling
-SQLALCHEMY_ENGINE_OPTIONS = {
-    'pool_size': 20,
-    'max_overflow': 30,
-    'pool_recycle': 3600,
-    'pool_pre_ping': True
-}
-
-# Enable query optimization
-SQLALCHEMY_RECORD_QUERIES = False
-SQLALCHEMY_TRACK_MODIFICATIONS = False
+# Monitor Redis operations
+redis-cli monitor
 ```
 
-#### 3. Caching Configuration
+#### 3. Application Performance
+```bash
+# Monitor application metrics
+curl http://localhost:5000/api/health
 
-```python
-# Redis caching for rate limiting and sessions
-CACHE_TYPE = 'redis'
-CACHE_REDIS_URL = 'redis://localhost:6379/1'
-CACHE_DEFAULT_TIMEOUT = 300
+# Check response times
+time curl -s http://localhost:5000/api/health > /dev/null
 ```
 
-This comprehensive deployment guide covers all aspects of deploying the PDF Smaller backend in production, including security, monitoring, and maintenance procedures. Follow the sections relevant to your deployment method and environment.
+This deployment guide provides comprehensive instructions for deploying the PDF Smaller backend in both development and production environments, focusing on the core PDF processing functionality without authentication complexity.

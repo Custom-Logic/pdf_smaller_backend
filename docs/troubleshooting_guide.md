@@ -1,19 +1,19 @@
 # PDF Smaller Backend - Troubleshooting Guide
 
-This guide provides solutions to common issues encountered when deploying and running the PDF Smaller backend application.
+This guide helps diagnose and resolve common issues with the PDF Smaller backend service.
 
 ## Table of Contents
 
 1. [General Diagnostics](#general-diagnostics)
 2. [Application Startup Issues](#application-startup-issues)
 3. [Database Problems](#database-problems)
-4. [Authentication Issues](#authentication-issues)
-5. [File Processing Problems](#file-processing-problems)
-6. [Celery and Background Tasks](#celery-and-background-tasks)
-7. [Performance Issues](#performance-issues)
-8. [Security and Rate Limiting](#security-and-rate-limiting)
-9. [Deployment Issues](#deployment-issues)
-10. [Monitoring and Logging](#monitoring-and-logging)
+4. [File Processing Issues](#file-processing-issues)
+5. [Celery Worker Issues](#celery-worker-issues)
+6. [Performance Issues](#performance-issues)
+7. [Security and Rate Limiting](#security-and-rate-limiting)
+8. [Deployment Issues](#deployment-issues)
+9. [Monitoring and Logging](#monitoring-and-logging)
+10. [Emergency Procedures](#emergency-procedures)
 
 ## General Diagnostics
 
@@ -21,16 +21,18 @@ This guide provides solutions to common issues encountered when deploying and ru
 
 ```bash
 # Check application health
-curl -f http://localhost:5000/health
+curl http://localhost:5000/health
 
-# Check database health
-curl -f http://localhost:5000/health/db
+# Check database connectivity
+curl http://localhost:5000/health/db
 
-# Check Redis health
-curl -f http://localhost:5000/health/redis
+# Check Redis connectivity
+curl http://localhost:5000/health/redis
 
-# Check all services status
-sudo systemctl status pdfsmaller pdfsmaller-celery pdfsmaller-beat
+# Check service status
+sudo systemctl status pdfsmaller
+sudo systemctl status pdfsmaller-celery
+sudo systemctl status redis-server
 ```
 
 ### Log Analysis
@@ -39,465 +41,227 @@ sudo systemctl status pdfsmaller pdfsmaller-celery pdfsmaller-beat
 # Application logs
 tail -f /var/log/pdfsmaller/app.log
 
-# System service logs
+# Celery worker logs
+tail -f /var/log/pdfsmaller/celery-worker.log
+
+# System logs
 sudo journalctl -u pdfsmaller -f
 sudo journalctl -u pdfsmaller-celery -f
 
-# Nginx logs
-sudo tail -f /var/log/nginx/error.log
-sudo tail -f /var/log/nginx/access.log
-
-# PostgreSQL logs
-sudo tail -f /var/log/postgresql/postgresql-13-main.log
+# SQLite database logs (if using WAL mode)
+ls -la /var/app/pdfsmaller/data/
 ```
 
 ### Configuration Validation
 
 ```bash
+# Check environment variables
 cd /var/app/pdfsmaller
 source venv/bin/activate
+python -c "from src.config import Config; print('Config loaded successfully')"
 
-# Validate configuration
-python -c "
-from src.config.config import validate_current_config
-try:
-    validate_current_config()
-    print('✓ Configuration is valid')
-except Exception as e:
-    print(f'✗ Configuration error: {e}')
-"
-
-# Check environment variables
-python -c "
-import os
-required_vars = ['SECRET_KEY', 'DATABASE_URL', 'REDIS_URL']
-for var in required_vars:
-    value = os.environ.get(var)
-    if value:
-        print(f'✓ {var}: {value[:20]}...')
-    else:
-        print(f'✗ {var}: Not set')
-"
+# Validate required environment variables
+grep -E '^(FLASK_|DATABASE_|REDIS_|UPLOAD_)' .env
 ```
 
 ## Application Startup Issues
 
-### Issue: Service Fails to Start
+### Symptoms
+- Application fails to start
+- "Connection refused" errors
+- Import errors in logs
 
-**Symptoms:**
-- `systemctl start pdfsmaller` fails
-- "Failed to start" error messages
-- Service immediately exits
+### Diagnosis
 
-**Diagnosis:**
 ```bash
-# Check service status
-sudo systemctl status pdfsmaller
+# Check if port is in use
+sudo netstat -tlnp | grep :5000
 
-# Check detailed logs
-sudo journalctl -u pdfsmaller --no-pager
-
-# Test manual startup
+# Check Python path and imports
 cd /var/app/pdfsmaller
 source venv/bin/activate
-python app.py
+python -c "import src; print('Imports successful')"
+
+# Check database file permissions
+ls -la data/pdf_smaller.db
 ```
 
-**Common Causes & Solutions:**
+### Solutions
 
 1. **Missing Environment Variables**
    ```bash
-   # Check .env file exists and is readable
-   ls -la /var/app/pdfsmaller/.env
-   
-   # Verify critical variables
-   grep -E "SECRET_KEY|DATABASE_URL" /var/app/pdfsmaller/.env
+   # Check required variables
+   echo "FLASK_APP=src.app:create_app" >> .env
+   echo "FLASK_ENV=production" >> .env
+   echo "DATABASE_URL=sqlite:///data/pdf_smaller.db" >> .env
+   echo "REDIS_URL=redis://localhost:6379/0" >> .env
    ```
 
 2. **Python Path Issues**
    ```bash
-   # Verify virtual environment
-   /var/app/pdfsmaller/venv/bin/python --version
+   # Add current directory to Python path
+   export PYTHONPATH=/var/app/pdfsmaller:$PYTHONPATH
    
-   # Check installed packages
-   /var/app/pdfsmaller/venv/bin/pip list | grep -E "flask|sqlalchemy"
+   # Or update systemd service
+   sudo systemctl edit pdfsmaller
+   # Add: Environment="PYTHONPATH=/var/app/pdfsmaller"
    ```
 
 3. **Port Already in Use**
    ```bash
-   # Check what's using port 5000
-   sudo netstat -tlnp | grep :5000
+   # Find process using port 5000
+   sudo lsof -i :5000
    
-   # Kill conflicting process if needed
-   sudo kill $(sudo lsof -t -i:5000)
+   # Kill process or change port
+   echo "PORT=5001" >> .env
    ```
 
-### Issue: Import Errors
-
-**Symptoms:**
-- `ModuleNotFoundError` or `ImportError`
-- "No module named 'src'" errors
-
-**Solutions:**
-```bash
-# Reinstall dependencies
-cd /var/app/pdfsmaller
-source venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-
-# Check Python path
-python -c "import sys; print('\n'.join(sys.path))"
-
-# Verify package structure
-ls -la src/
-```
-
-### Issue: Permission Errors
-
-**Symptoms:**
-- "Permission denied" errors
-- Cannot write to log files or upload directories
-
-**Solutions:**
-```bash
-# Fix ownership
-sudo chown -R pdfsmaller:pdfsmaller /var/app/pdfsmaller
-sudo chown -R pdfsmaller:pdfsmaller /var/app/uploads
-sudo chown -R pdfsmaller:pdfsmaller /var/log/pdfsmaller
-
-# Fix permissions
-chmod 755 /var/app/pdfsmaller
-chmod 755 /var/app/uploads
-chmod 644 /var/app/pdfsmaller/.env
-```
+4. **Permission Errors**
+   ```bash
+   # Fix file permissions
+   sudo chown -R pdfsmaller:pdfsmaller /var/app/pdfsmaller
+   sudo chmod -R 755 /var/app/pdfsmaller
+   sudo chmod 644 /var/app/pdfsmaller/.env
+   ```
 
 ## Database Problems
 
-### Issue: Database Connection Failed
+### Issue: Database Connection Failures
 
 **Symptoms:**
-- "Connection refused" errors
-- "Authentication failed" errors
-- Timeout errors
-
-**Diagnosis:**
-```bash
-# Test PostgreSQL connection
-sudo -u postgres psql -c "SELECT version();"
-
-# Test application database connection
-sudo -u postgres psql pdf_smaller_prod -c "SELECT COUNT(*) FROM users;"
-
-# Check PostgreSQL status
-sudo systemctl status postgresql
-```
+- "Database locked" errors
+- "No such file or directory" for database
+- Connection timeout errors
 
 **Solutions:**
 
-1. **PostgreSQL Not Running**
+1. **SQLite Database Issues**
    ```bash
-   sudo systemctl start postgresql
-   sudo systemctl enable postgresql
-   ```
-
-2. **Wrong Connection String**
-   ```bash
-   # Check DATABASE_URL format
-   echo $DATABASE_URL
-   # Should be: postgresql://username:password@host:port/database
-   ```
-
-3. **Authentication Issues**
-   ```bash
-   # Reset user password
-   sudo -u postgres psql
-   ALTER USER pdf_user WITH PASSWORD 'new_secure_password';
-   \q
+   # Check database file exists and is accessible
+   ls -la /var/app/pdfsmaller/data/pdf_smaller.db
    
-   # Update .env file with new password
+   # Test database connection
+   sqlite3 /var/app/pdfsmaller/data/pdf_smaller.db ".tables"
+   
+   # Fix permissions
+   sudo chown pdfsmaller:pdfsmaller /var/app/pdfsmaller/data/pdf_smaller.db
+   sudo chmod 664 /var/app/pdfsmaller/data/pdf_smaller.db
    ```
 
-4. **Database Doesn't Exist**
+2. **Database Initialization**
    ```bash
-   # Create database
-   sudo -u postgres createdb pdf_smaller_prod
-   
-   # Initialize tables
    cd /var/app/pdfsmaller
    source venv/bin/activate
-   python manage_db.py init
+   flask db upgrade
    ```
 
-### Issue: Database Migration Errors
-
-**Symptoms:**
-- "Table already exists" errors
-- "Column does not exist" errors
-- Schema mismatch errors
-
-**Solutions:**
-```bash
-# Check current database schema
-sudo -u postgres psql pdf_smaller_prod -c "\dt"
-
-# Reset database (⚠️ This will delete all data)
-cd /var/app/pdfsmaller
-source venv/bin/activate
-python manage_db.py reset
-
-# Or manually fix schema issues
-sudo -u postgres psql pdf_smaller_prod
--- Add missing columns, indexes, etc.
-```
-
-### Issue: Database Performance Problems
-
-**Symptoms:**
-- Slow query responses
-- High CPU usage from PostgreSQL
-- Connection pool exhaustion
-
-**Diagnosis:**
-```bash
-# Check active connections
-sudo -u postgres psql pdf_smaller_prod -c "
-SELECT count(*) as active_connections 
-FROM pg_stat_activity 
-WHERE state = 'active';
-"
-
-# Check slow queries
-sudo -u postgres psql pdf_smaller_prod -c "
-SELECT query, mean_time, calls 
-FROM pg_stat_statements 
-ORDER BY mean_time DESC 
-LIMIT 10;
-"
-```
-
-**Solutions:**
-```bash
-# Optimize database
-sudo -u postgres psql pdf_smaller_prod -c "VACUUM ANALYZE;"
-
-# Add missing indexes
-sudo -u postgres psql pdf_smaller_prod -c "
-CREATE INDEX CONCURRENTLY idx_compression_jobs_user_created 
-ON compression_jobs(user_id, created_at);
-"
-
-# Adjust connection pool settings in .env
-echo "DB_POOL_SIZE=10" >> .env
-echo "DB_MAX_OVERFLOW=20" >> .env
-```
-
-## Authentication Issues
-
-### Issue: JWT Token Problems
-
-**Symptoms:**
-- "Invalid token" errors
-- "Token expired" errors
-- Authentication randomly fails
-
-**Diagnosis:**
-```bash
-# Check JWT configuration
-python -c "
-import os
-print('JWT_SECRET_KEY set:', bool(os.environ.get('JWT_SECRET_KEY')))
-print('JWT_ACCESS_TOKEN_MINUTES:', os.environ.get('JWT_ACCESS_TOKEN_MINUTES', '15'))
-"
-
-# Test token generation
-python -c "
-from src.services.auth_service import AuthService
-from src.main.main import create_app
-app = create_app()
-with app.app_context():
-    # Test token creation (requires valid user)
-    pass
-"
-```
-
-**Solutions:**
-
-1. **Missing or Weak JWT Secret**
+3. **Database Backup and Recovery**
    ```bash
-   # Generate strong JWT secret
-   python -c "import secrets; print(secrets.token_urlsafe(64))"
+   # Backup database
+   cp /var/app/pdfsmaller/data/pdf_smaller.db /var/backups/pdf_smaller_$(date +%Y%m%d_%H%M%S).db
    
-   # Update .env file
-   echo "JWT_SECRET_KEY=your_generated_secret_here" >> .env
+   # Restore from backup
+   cp /var/backups/pdf_smaller_20231201_120000.db /var/app/pdfsmaller/data/pdf_smaller.db
    ```
 
-2. **Clock Synchronization Issues**
-   ```bash
-   # Check system time
-   date
-   
-   # Sync time if needed
-   sudo ntpdate -s time.nist.gov
-   ```
+## File Processing Issues
 
-3. **Token Expiration Too Short**
-   ```bash
-   # Increase token lifetime in .env
-   echo "JWT_ACCESS_TOKEN_MINUTES=60" >> .env
-   echo "JWT_REFRESH_TOKEN_DAYS=30" >> .env
-   ```
-
-### Issue: Password Hashing Problems
-
-**Symptoms:**
-- Login always fails with correct password
-- "Invalid credentials" errors
-- Password reset doesn't work
-
-**Solutions:**
-```bash
-# Test password hashing
-python -c "
-from werkzeug.security import generate_password_hash, check_password_hash
-password = 'test123'
-hash_val = generate_password_hash(password)
-print('Hash generated:', bool(hash_val))
-print('Verification works:', check_password_hash(hash_val, password))
-"
-
-# Reset user password manually
-python -c "
-from src.models import User
-from src.models.base import db
-from src.main.main import create_app
-app = create_app()
-with app.app_context():
-    user = User.query.filter_by(email='user@example.com').first()
-    if user:
-        user.set_password('newpassword123')
-        db.session.commit()
-        print('Password updated')
-    else:
-        print('User not found')
-"
-```
-
-## File Processing Problems
-
-### Issue: File Upload Failures
+### Issue: Upload Failures
 
 **Symptoms:**
 - "File too large" errors
 - Upload timeouts
-- "Invalid file type" errors
+- "Permission denied" errors
 
 **Diagnosis:**
 ```bash
 # Check upload directory
 ls -la /var/app/uploads/
+
+# Check disk space
 df -h /var/app/uploads/
 
-# Check file size limits
-grep -E "MAX_FILE_SIZE|MAX_CONTENT_LENGTH" /var/app/pdfsmaller/.env
-
-# Check Nginx limits
-grep client_max_body_size /etc/nginx/sites-available/pdfsmaller
+# Check file permissions
+ls -la /var/app/uploads/temp/
 ```
 
 **Solutions:**
 
-1. **Increase File Size Limits**
+1. **File Size Limits**
    ```bash
    # Update application limits
-   echo "MAX_FILE_SIZE=104857600" >> .env  # 100MB
-   echo "MAX_CONTENT_LENGTH=104857600" >> .env
+   echo "MAX_CONTENT_LENGTH=104857600" >> .env  # 100MB
    
    # Update Nginx limits
-   sudo sed -i 's/client_max_body_size.*/client_max_body_size 100M;/' /etc/nginx/sites-available/pdfsmaller
-   sudo systemctl reload nginx
+   sudo nano /etc/nginx/sites-available/pdfsmaller
+   # Add: client_max_body_size 100M;
+   sudo nginx -t && sudo systemctl reload nginx
    ```
 
-2. **Fix Upload Directory Permissions**
+2. **Permission Issues**
    ```bash
-   sudo mkdir -p /var/app/uploads
-   sudo chown -R pdfsmaller:pdfsmaller /var/app/uploads
-   sudo chmod 755 /var/app/uploads
+   # Fix upload directory permissions
+   sudo chown -R pdfsmaller:pdfsmaller /var/app/uploads/
+   sudo chmod -R 755 /var/app/uploads/
    ```
 
-3. **Free Up Disk Space**
+3. **Disk Space Issues**
    ```bash
-   # Clean old uploads
-   find /var/app/uploads -type f -mtime +1 -delete
-   
-   # Clean logs
-   sudo logrotate -f /etc/logrotate.d/pdfsmaller
+   # Clean old files
+   find /var/app/uploads/temp/ -type f -mtime +1 -delete
+   find /var/app/uploads/processed/ -type f -mtime +7 -delete
    ```
 
 ### Issue: PDF Compression Failures
 
 **Symptoms:**
-- "Ghostscript error" messages
-- Compression jobs fail
-- Output files are corrupted
-
-**Diagnosis:**
-```bash
-# Test Ghostscript installation
-gs --version
-
-# Test basic PDF processing
-gs -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/screen -dNOPAUSE -dQUIET -dBATCH -sOutputFile=test_output.pdf test_input.pdf
-
-# Check compression service logs
-grep -i "compression" /var/log/pdfsmaller/app.log
-```
+- Ghostscript errors in logs
+- "Command not found" errors
+- Compressed files larger than originals
 
 **Solutions:**
 
-1. **Install/Update Ghostscript**
+1. **Ghostscript Installation**
    ```bash
-   # Ubuntu/Debian
-   sudo apt-get update
-   sudo apt-get install ghostscript
+   # Install Ghostscript
+   sudo apt update
+   sudo apt install ghostscript
    
    # Verify installation
+   gs --version
    which gs
-   gs --help
    ```
 
-2. **Fix Ghostscript Permissions**
+2. **Ghostscript Permissions**
    ```bash
    # Check Ghostscript policy
-   cat /etc/ImageMagick-6/policy.xml | grep -i pdf
+   sudo nano /etc/ImageMagick-6/policy.xml
+   # Ensure PDF policy allows read/write
    
-   # If PDF processing is disabled, enable it
-   sudo sed -i 's/rights="none" pattern="PDF"/rights="read|write" pattern="PDF"/' /etc/ImageMagick-6/policy.xml
+   # Test Ghostscript
+   gs -dNOPAUSE -dBATCH -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -sOutputFile=test_output.pdf test_input.pdf
    ```
 
-3. **Test with Different Settings**
+3. **Compression Settings**
    ```bash
-   # Test different compression levels
-   python -c "
-   from src.services.compression_service import CompressionService
-   service = CompressionService('/tmp')
-   # Test with a sample PDF file
-   "
+   # Test compression settings
+   echo "PDF_COMPRESSION_QUALITY=medium" >> .env
+   echo "PDF_COMPRESSION_DPI=150" >> .env
    ```
 
-## Celery and Background Tasks
+## Celery Worker Issues
 
-### Issue: Celery Workers Not Starting
+### Issue: Workers Not Starting
 
 **Symptoms:**
-- No active workers
-- Tasks remain in pending state
+- No worker processes running
+- Tasks stuck in pending state
 - "No workers available" errors
 
 **Diagnosis:**
 ```bash
 # Check Celery worker status
-celery -A celery_worker.celery inspect active
+sudo systemctl status pdfsmaller-celery
 
 # Check Redis connection
 redis-cli ping
@@ -548,18 +312,6 @@ ps aux | grep celery
 - No error messages in logs
 - Results not saved
 
-**Diagnosis:**
-```bash
-# Check task results
-celery -A celery_worker.celery result task_id_here
-
-# Check worker logs
-tail -f /var/log/pdfsmaller/celery-worker.log
-
-# Inspect failed tasks
-celery -A celery_worker.celery events
-```
-
 **Solutions:**
 
 1. **Enable Detailed Logging**
@@ -574,17 +326,12 @@ celery -A celery_worker.celery events
 2. **Check Task Implementation**
    ```python
    # Test task directly
-   from src.tasks.compression_tasks import process_bulk_compression
-   result = process_bulk_compression.delay(job_id)
+   from src.tasks.compression_tasks import process_pdf_compression
+   result = process_pdf_compression.delay(file_path, settings)
    print(result.get())
    ```
 
 ### Issue: Memory Leaks in Workers
-
-**Symptoms:**
-- Workers consuming increasing memory
-- Out of memory errors
-- Workers being killed by system
 
 **Solutions:**
 ```bash
@@ -603,11 +350,6 @@ sudo systemctl restart pdfsmaller-celery
 
 ### Issue: Slow Response Times
 
-**Symptoms:**
-- API requests taking too long
-- Timeouts in frontend
-- High server load
-
 **Diagnosis:**
 ```bash
 # Check system resources
@@ -616,26 +358,21 @@ htop
 iotop
 
 # Check database performance
-sudo -u postgres psql pdf_smaller_prod -c "
-SELECT query, mean_time, calls 
-FROM pg_stat_statements 
-ORDER BY mean_time DESC 
-LIMIT 5;
-"
+sqlite3 /var/app/pdfsmaller/data/pdf_smaller.db ".timer on" ".explain query plan SELECT * FROM compression_jobs LIMIT 10;"
 
 # Check application metrics
-curl http://localhost:5000/metrics
+curl http://localhost:5000/health
 ```
 
 **Solutions:**
 
 1. **Database Optimization**
    ```sql
-   -- Add missing indexes
-   CREATE INDEX CONCURRENTLY idx_users_email ON users(email);
-   CREATE INDEX CONCURRENTLY idx_jobs_user_status ON compression_jobs(user_id, status);
+   -- Add missing indexes (run in SQLite)
+   CREATE INDEX IF NOT EXISTS idx_jobs_status ON compression_jobs(status);
+   CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON compression_jobs(created_at);
    
-   -- Update statistics
+   -- Analyze database
    ANALYZE;
    ```
 
@@ -644,10 +381,6 @@ curl http://localhost:5000/metrics
    # Increase Gunicorn workers
    echo "GUNICORN_WORKERS=4" >> .env
    echo "GUNICORN_WORKER_CLASS=gevent" >> .env
-   
-   # Enable connection pooling
-   echo "DB_POOL_SIZE=20" >> .env
-   echo "DB_MAX_OVERFLOW=30" >> .env
    ```
 
 3. **Caching Implementation**
@@ -658,11 +391,6 @@ curl http://localhost:5000/metrics
    ```
 
 ### Issue: High Memory Usage
-
-**Symptoms:**
-- System running out of memory
-- Processes being killed
-- Swap usage high
 
 **Solutions:**
 ```bash
@@ -686,18 +414,13 @@ echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 
 ### Issue: Rate Limiting Not Working
 
-**Symptoms:**
-- Users can exceed rate limits
-- No rate limit headers in responses
-- Rate limiting errors in logs
-
 **Diagnosis:**
 ```bash
 # Check Redis connection for rate limiting
 redis-cli -n 1 ping
 
 # Test rate limiting
-for i in {1..20}; do curl -I http://localhost:5000/api/auth/login; done
+for i in {1..20}; do curl -I http://localhost:5000/api/compress; done
 
 # Check rate limit configuration
 grep -i rate /var/app/pdfsmaller/.env
@@ -722,11 +445,6 @@ grep -i rate /var/app/pdfsmaller/.env
 
 ### Issue: CORS Errors
 
-**Symptoms:**
-- "CORS policy" errors in browser
-- Cross-origin requests blocked
-- OPTIONS requests failing
-
 **Solutions:**
 ```bash
 # Update CORS origins
@@ -743,11 +461,6 @@ sudo systemctl restart pdfsmaller nginx
 
 ### Issue: Docker Container Problems
 
-**Symptoms:**
-- Containers failing to start
-- Build errors
-- Network connectivity issues
-
 **Diagnosis:**
 ```bash
 # Check container status
@@ -758,7 +471,6 @@ docker-compose logs app
 docker-compose logs celery-worker
 
 # Check network connectivity
-docker-compose exec app ping postgres
 docker-compose exec app ping redis
 ```
 
@@ -784,11 +496,6 @@ docker-compose exec app ping redis
 
 ### Issue: SSL Certificate Problems
 
-**Symptoms:**
-- Certificate expired warnings
-- "Not secure" in browser
-- SSL handshake failures
-
 **Solutions:**
 ```bash
 # Check certificate expiry
@@ -805,11 +512,6 @@ openssl s_client -connect pdfsmaller.site:443
 ## Monitoring and Logging
 
 ### Issue: Logs Not Being Generated
-
-**Symptoms:**
-- Empty log files
-- No application logs
-- Missing error information
 
 **Solutions:**
 ```bash
@@ -830,11 +532,6 @@ print('Log test completed')
 ```
 
 ### Issue: Log Files Growing Too Large
-
-**Symptoms:**
-- Disk space running out
-- Large log files
-- System performance degraded
 
 **Solutions:**
 ```bash
@@ -866,19 +563,17 @@ If the system is completely broken:
 
 ```bash
 # 1. Stop all services
-sudo systemctl stop pdfsmaller pdfsmaller-celery pdfsmaller-beat nginx
+sudo systemctl stop pdfsmaller pdfsmaller-celery nginx
 
 # 2. Restore from backup
 sudo cp -r /var/backups/pdfsmaller/latest_backup/* /var/app/pdfsmaller/
 
 # 3. Restore database
-sudo -u postgres psql -c "DROP DATABASE IF EXISTS pdf_smaller_prod;"
-sudo -u postgres psql -c "CREATE DATABASE pdf_smaller_prod;"
-gunzip -c /var/backups/pdfsmaller/database.sql.gz | sudo -u postgres psql pdf_smaller_prod
+cp /var/backups/pdfsmaller/pdf_smaller.db /var/app/pdfsmaller/data/
 
 # 4. Start services
-sudo systemctl start postgresql redis-server
-sudo systemctl start pdfsmaller pdfsmaller-celery pdfsmaller-beat nginx
+sudo systemctl start redis-server
+sudo systemctl start pdfsmaller pdfsmaller-celery nginx
 
 # 5. Verify recovery
 curl -f http://localhost:5000/health
@@ -895,7 +590,7 @@ echo "Date: $(date)"
 echo
 
 echo "=== Service Status ==="
-systemctl is-active pdfsmaller pdfsmaller-celery pdfsmaller-beat postgresql redis-server nginx
+systemctl is-active pdfsmaller pdfsmaller-celery redis-server nginx
 
 echo
 echo "=== Disk Space ==="
@@ -907,7 +602,7 @@ free -h
 
 echo
 echo "=== Process Status ==="
-ps aux | grep -E "(python|celery|nginx|postgres|redis)" | grep -v grep
+ps aux | grep -E "(python|celery|nginx|redis)" | grep -v grep
 
 echo
 echo "=== Network Connectivity ==="
@@ -926,4 +621,4 @@ sudo chmod +x /usr/local/bin/pdfsmaller_diagnostics.sh
 /usr/local/bin/pdfsmaller_diagnostics.sh
 ```
 
-This troubleshooting guide should help resolve most common issues. For persistent problems, check the application logs and consider reaching out to the development team with specific error messages and system information.
+This troubleshooting guide focuses on core PDF processing functionality and should help resolve most common issues with the simplified backend service.
