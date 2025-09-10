@@ -64,8 +64,8 @@ def compress_pdf():
                 'compression_settings': compression_settings,
                 'file_size': len(file_data),
                 'original_filename': file.filename
-            },
-            session_id=str(uuid.uuid4())
+            }
+            
         )
         db.session.add(job)
         db.session.commit()

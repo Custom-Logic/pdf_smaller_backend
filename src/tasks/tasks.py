@@ -217,8 +217,8 @@ def convert_pdf_task(self, job_id: str, file_data: bytes, target_format: str,
                     'options': options,
                     'file_size': len(file_data),
                     'original_filename': original_filename
-                },
-                session_id=session_id
+                }
+                
             )
             db.session.add(job)
 
@@ -259,8 +259,8 @@ def conversion_preview_task(self, job_id: str, file_data: bytes,
                     'target_format': target_format,
                     'options': options,
                     'file_size': len(file_data)
-                },
-                session_id=create_session_id()
+                }
+                
             )
             db.session.add(job)
 
@@ -298,8 +298,8 @@ def ocr_process_task(self, job_id: str, file_data: bytes, options: Dict[str, Any
                     'options': options,
                     'file_size': len(file_data),
                     'original_filename': original_filename
-                },
-                session_id=create_session_id()
+                }
+            
             )
             db.session.add(job)
 
@@ -335,8 +335,7 @@ def ocr_preview_task(self, job_id: str, file_data: bytes, options: Dict[str, Any
                 input_data={
                     'options': options,
                     'file_size': len(file_data)
-                },
-                session_id=create_session_id()
+                }                
             )
             db.session.add(job)
 
@@ -369,8 +368,8 @@ def ai_summarize_task(self, job_id: str, text: str, options: Dict[str, Any]) -> 
             job = Job(
                 job_id=job_id,
                 task_type='ai_summarize',
-                input_data={'text_length': len(text), 'options': options},
-                session_id=create_session_id()
+                input_data={'text_length': len(text), 'options': options}
+                
             )
             db.session.add(job)
 
@@ -405,8 +404,8 @@ def ai_translate_task(self, job_id: str, text: str, target_language: str,
                     'target_language': target_language,
                     'text_length': len(text),
                     'options': options
-                },
-                session_id=create_session_id()
+                }
+                
             )
             db.session.add(job)
 
@@ -437,8 +436,8 @@ def extract_text_task(self, job_id: str, file_data: bytes,
             job = Job(
                 job_id=job_id,
                 task_type='extract_text',
-                input_data={'file_size': len(file_data), 'original_filename': original_filename},
-                session_id=create_session_id()
+                input_data={'file_size': len(file_data), 'original_filename': original_filename}
+                
             )
             db.session.add(job)
 

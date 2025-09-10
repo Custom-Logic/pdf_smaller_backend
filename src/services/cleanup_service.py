@@ -290,8 +290,7 @@ class CleanupService:
                 'estimated_space_to_free_mb': 0
             }
 
-    @staticmethod
-    def force_cleanup_jobs_by_session(session_id: str) -> Dict[str, Any]:
+
         """
         Force cleanup of all jobs for a specific session
         """

@@ -574,22 +574,20 @@ class OCRService:
         
         return recommendations
     
-    async def create_ocr_job(self, file_data: bytes, options: Dict[str, Any] = None,
-                           original_filename: str = None, client_job_id: str = None,
-                           client_session_id: str = None) -> Dict[str, Any]:
+    async def create_ocr_job(self, file_data: bytes,  job_id: str = None, options: Dict[str, Any] = None,
+                           original_filename: str = None) -> Dict[str, Any]:
         """
         Create an OCR job for async processing
         """
         try:
-            job_id = str(uuid.uuid4())
+            if job_id is None:
+                job_id = str(uuid.uuid4())
             
             # In a real implementation, you'd save this to a database
             job_info = {
                 'job_id': job_id,
                 'options': options or {},
                 'original_filename': original_filename,
-                'client_job_id': client_job_id,
-                'client_session_id': client_session_id,
                 'status': 'pending',
                 'created_at': datetime.utcnow().isoformat()
             }

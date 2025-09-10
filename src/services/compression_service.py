@@ -142,8 +142,7 @@ class CompressionService:
 
     @staticmethod
     def create_compression_job(file_data: bytes, settings: Dict[str, Any],
-                               original_filename: str = None, job_id: str = None,
-                               session_id: str = None) -> Job:
+                               original_filename: str = None, job_id: str = None) -> Job:
         """
         Create a compression job record for async processing
         """
