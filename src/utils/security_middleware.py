@@ -146,7 +146,21 @@ class SecurityMiddleware:
         if response.status_code >= 400:
             self.check_error_patterns(response)
         
+        # Add CORS headers
+        origin = request.headers.get('Origin')
+        if origin in self.allowed_origins:
+            response.headers['Access-Control-Allow-Origin'] = origin
+            response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, PUT, DELETE'
+            response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
+        
+        # Add request ID header
+        if hasattr(g, 'request_id'):
+            response.headers['X-Request-ID'] = g.request_id
+        
         return response
+
+    
     
     def teardown_request(self, exception):
         """Cleanup after request processing"""
