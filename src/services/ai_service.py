@@ -462,7 +462,7 @@ class AIService:
     
     async def create_ai_job(self, task_type: Literal["summarize", "translate"], 
                           text: str, options: Dict[str, Any] = None,
-                          client_job_id: str = None, client_session_id: str = None) -> Dict[str, Any]:
+                          client_job_id: str = None) -> Dict[str, Any]:
         """
         Create an AI job for async processing
         
@@ -471,7 +471,6 @@ class AIService:
             text: Text to process
             options: Task-specific options
             client_job_id: Client-provided job ID
-            client_session_id: Client-provided session ID
             
         Returns:
             Job information
@@ -485,7 +484,6 @@ class AIService:
                 'text_length': len(text),
                 'options': options or {},
                 'client_job_id': client_job_id,
-                'client_session_id': client_session_id,
                 'status': 'pending',
                 'created_at': datetime.utcnow().isoformat(),
                 'model': options.get('model', self.config['openrouter']['default_model']),

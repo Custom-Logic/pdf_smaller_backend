@@ -66,7 +66,7 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
             )
             db.session.add(job)
 
-        job.mark_as_processing()
+        job.status = JobStatus.PROCESSING.value
         db.session.commit()
         logger.debug(f"Job {job_id} marked as processing")
 
@@ -76,7 +76,7 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
             original_filename=original_filename)
         logger.debug(f"File processed for job {job_id}, result: {result}")
 
-        job.mark_as_completed(result)
+        job.status = JobStatus.COMPLETED.value
         db.session.commit()
         logger.info(f"Compression job {job_id} completed successfully")
         return result
@@ -86,7 +86,8 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
         try:
             job = Job.query.filter_by(job_id=job_id).first()
             if job:
-                job.mark_as_failed(str(e))
+                job.status = JobStatus.FAILED.value
+                job.error = str(e)
                 db.session.commit()
         except Exception as db_err:
             logger.error(f"Failed to update job status: {db_err}")
@@ -119,7 +120,7 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
             )
             db.session.add(job)
 
-        job.mark_as_processing()
+        job.status = JobStatus.PROCESSING.value
         db.session.commit()
 
         total_files = len(file_data_list)
@@ -445,7 +446,7 @@ def extract_text_task(self, job_id: str, file_data: bytes,
         current_task.update_state(state='PROGRESS', meta={'progress': 10, 'status': 'Starting text extraction'})
         text_content = ai_service.extract_text_from_pdf_data(file_data)
         result = {'text': text_content, 'length': len(text_content), 'original_filename': original_filename}
-        job.mark_as_completed(result)
+        job.status = JobStatus.COMPLETED.value
         db.session.commit()
         current_task.update_state(state='SUCCESS', meta={'progress': 100, 'status': 'Text extraction completed'})
         logger.info(f"Text-extraction task completed for job {job_id}")
@@ -454,7 +455,8 @@ def extract_text_task(self, job_id: str, file_data: bytes,
     except Exception as e:
         logger.error(f"Error in text-extraction task {job_id}: {str(e)}")
         if 'job' in locals() and job:
-            job.mark_as_failed(str(e))
+            job.status = JobStatus.FAILED.value
+            job.error = str(e)
             db.session.commit()
         current_task.update_state(state='FAILURE', meta={'error': str(e), 'job_id': job_id})
         raise

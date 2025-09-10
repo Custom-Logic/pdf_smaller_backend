@@ -12,10 +12,6 @@ class Job(BaseModel):
     """Generic job tracking model"""
     __tablename__ = 'jobs'
 
-    # Primary key - client-provided ID
-
-
-
     # Celery task tracking
     task_id = db.Column(db.String(255))  # Celery task ID
     # Job details
@@ -33,8 +29,35 @@ class Job(BaseModel):
         self.input_data = input_data or {}
         self.status = JobStatus.PENDING.value
 
-    # ... rest of your methods remain the same ...
-
+    def mark_as_processing(self):
+        """Mark job as currently processing"""
+        from datetime import datetime
+        self.status = JobStatus.PROCESSING.value
+        self.updated_at = datetime.utcnow()
+    
+    def mark_as_completed(self, result=None):
+        """Mark job as successfully completed"""
+        from datetime import datetime
+        self.status = JobStatus.COMPLETED.value
+        self.updated_at = datetime.utcnow()
+        if result:
+            self.result = result
+    
+    def mark_as_failed(self, error=None):
+        """Mark job as failed with optional error message"""
+        from datetime import datetime
+        self.status = JobStatus.FAILED.value
+        self.updated_at = datetime.utcnow()
+        if error:
+            self.error = error
+    
+    def is_completed(self):
+        """Check if job is completed (successfully or with error)"""
+        return self.status in [JobStatus.COMPLETED.value, JobStatus.FAILED.value]
+    
+    def is_successful(self):
+        """Check if job completed successfully"""
+        return self.status == JobStatus.COMPLETED.value
     def to_dict(self):
         """Convert job to dictionary for JSON serialization"""
         return {

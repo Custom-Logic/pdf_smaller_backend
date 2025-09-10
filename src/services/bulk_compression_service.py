@@ -185,8 +185,7 @@ class BulkCompressionService:
             }
     
     def create_bulk_job(self, file_data_list: List[bytes], filenames: List[str], 
-                       compression_settings: Dict[str, Any], client_job_id: str = None,
-                       client_session_id: str = None) -> Job:
+                       compression_settings: Dict[str, Any], client_job_id: str = None) -> Job:
         """
         Create a bulk compression job (user-agnostic)
         
@@ -195,7 +194,6 @@ class BulkCompressionService:
             filenames: List of original filenames
             compression_settings: Compression settings to apply
             client_job_id: Client-provided job ID for tracking
-            client_session_id: Client-provided session ID
             
         Returns:
             Created Job instance
@@ -241,8 +239,7 @@ class BulkCompressionService:
                     'input_files': input_files,
                     'job_directory': job_dir
                 },
-                client_job_id=client_job_id,
-                client_session_id=client_session_id
+                client_job_id=client_job_id
             )
 
             db.session.add(job)

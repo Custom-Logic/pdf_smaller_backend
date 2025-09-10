@@ -30,7 +30,6 @@ POST /compress
 - `compressionLevel` (optional): Compression level - `low`, `medium`, `high`, or `maximum` (default: `medium`)
 - `imageQuality` (optional): Image quality for compression, 10-100 (default: 80)
 - `client_job_id` (optional): Client-provided job identifier for tracking
-- `client_session_id` (optional): Client-provided session identifier for tracking
 
 **Response**:
 ```json
@@ -133,7 +132,6 @@ POST /bulk
 - `compressionLevel` (optional): Compression level - `low`, `medium`, `high`, or `maximum` (default: `medium`)
 - `imageQuality` (optional): Image quality for compression, 10-100 (default: 80)
 - `client_job_id` (optional): Client-provided job identifier for tracking
-- `client_session_id` (optional): Client-provided session identifier for tracking
 
 **Response**:
 ```json
