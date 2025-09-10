@@ -189,7 +189,7 @@ def register_health_checks(app):
             return jsonify({
                 'status': 'healthy',
                 'database': 'connected',
-                'database_type': 'sqlite' if 'sqlite' in app.config['SQLALCHEMY_DATABASE_URI'] else 'postgresql'
+                'database_type': 'sqlite'
             })
         except Exception as e:
             app.logger.error(f"Database health check failed: {e}")

@@ -184,7 +184,7 @@ class TestEnvironmentConfigs:
         assert config.DEBUG is False
         assert config.TESTING is False
         assert config.LOG_LEVEL == 'WARNING'
-        assert 'postgresql' in config.SQLALCHEMY_DATABASE_URI
+        assert 'sqlite' in config.SQLALCHEMY_DATABASE_URI
         assert len(config.SECURITY_HEADERS) > 0
     
     def test_production_config_validation(self, monkeypatch):
@@ -196,8 +196,7 @@ class TestEnvironmentConfigs:
         config = ProductionConfig()
         errors = config.validate_config()
         
-        # Should have errors for SQLite and test Stripe key
-        assert any('PostgreSQL' in error for error in errors)
+        # Should have errors for test Stripe key
         assert any('STRIPE_SECRET_KEY' in error for error in errors)
 
 

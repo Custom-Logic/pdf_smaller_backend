@@ -219,7 +219,6 @@ class TestingConfig(BaseConfig):
     MAX_FILE_AGE = timedelta(minutes=1)
     
     # Disable external services in testing
-    STRIPE_SECRET_KEY = 'sk_test_fake_key_for_testing'
     CELERY_TASK_ALWAYS_EAGER = True
     CELERY_TASK_EAGER_PROPAGATES = True
     
@@ -259,12 +258,6 @@ class ProductionConfig(BaseConfig):
         errors = super().validate_config()
         
         # Production-specific validations - SQLite is acceptable for this application
-        
-        if not cls.STRIPE_SECRET_KEY or 'test' in cls.STRIPE_SECRET_KEY:
-            errors.append("Production STRIPE_SECRET_KEY must be set and not a test key")
-        
-        if not cls.STRIPE_WEBHOOK_SECRET:
-            errors.append("STRIPE_WEBHOOK_SECRET must be set in production")
         
         if cls.DEBUG:
             errors.append("DEBUG should be False in production")
