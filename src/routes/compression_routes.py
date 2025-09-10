@@ -55,15 +55,19 @@ def compress_pdf():
         # Create job and enqueue for processing
         # Enqueue compression task (async processing)
         from src.tasks.tasks import compress_task
-        compress_task.delay(
-            job_id=job_id,
-            file_data=file_data,
-            compression_settings={
-                'compression_level': compression_level,
-                'image_quality': image_quality},
-            original_filename=file.filename,
+        compress_task.apply_async(
+            kwargs={
+                'job_id': job_id,
+                'file_data': file_data,
+                'compression_settings': {
+                    'compression_level': compression_level,
+                    'image_quality': image_quality,
+                },
+                'original_filename': file.filename,
+            },
+            countdown=0,  # start as soon as a worker is free
+            priority=0,  # highest priority queue
         )
-
         logger.info(f"Compression job {job_id} enqueued (job_id: {job_id})")
         
         data = {

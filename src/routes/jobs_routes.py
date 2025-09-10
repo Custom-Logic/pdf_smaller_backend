@@ -15,7 +15,7 @@ def get_job_status(job_id):
 
     data = {
         "job_id":   job.job_id,
-        "status":   job.status.value,
+        "status":   job.status,
         "task_type": job.task_type,
         "created_at": job.created_at.isoformat(),
         "updated_at": job.updated_at.isoformat(),
