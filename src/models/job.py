@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from bz2 import compress
 from enum import Enum
 from .base import db, BaseModel
@@ -39,23 +40,20 @@ class Job(BaseModel):
 
     def mark_as_processing(self):
         """Mark job as currently processing"""
-        from datetime import datetime
         self.status = JobStatus.PROCESSING.value
-        self.updated_at = datetime.now(datetime.timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
     
     def mark_as_completed(self, result=None):
         """Mark job as successfully completed"""
-        from datetime import datetime
         self.status = JobStatus.COMPLETED.value
-        self.updated_at = datetime.now(datetime.timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
         if result:
             self.result = result
     
     def mark_as_failed(self, error=None):
         """Mark job as failed with optional error message"""
-        from datetime import datetime
         self.status = JobStatus.FAILED.value
-        self.updated_at = datetime.now(datetime.timezone.utc)
+        self.updated_at = datetime.now(timezone.utc)
         if error:
             self.error = error
     
