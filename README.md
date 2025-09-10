@@ -4,6 +4,12 @@
 
 PDF Smaller Backend API is a Flask-based service that provides PDF compression functionality. It allows clients to upload PDF files, process them asynchronously, and download the compressed results.
 
+**Technology Stack:**
+- **Database**: SQLite (for both development and production)
+- **Task Queue**: Redis + Celery
+- **Storage**: Local disk (by design)
+- **Framework**: Flask + SQLAlchemy
+
 ## System Architecture
 
 ### High-Level Architecture Diagram
@@ -200,18 +206,20 @@ RATE_LIMITS = {
 
 ### Infrastructure Requirements
 - Python 3.9+ environment
-- Redis for task queue
-- Sufficient disk space for temporary files
-- Network access to OpenRouter API
+- SQLite database (no external database server required)
+- Redis for task queue and caching
+- Sufficient disk space for temporary files and SQLite database
+- Ghostscript for PDF processing
 
 ### Scaling Strategies
-- Horizontal scaling of worker processes
+- Horizontal scaling of Celery worker processes
 - Redis cluster for distributed queues
-- CDN for file downloads
+- Local disk storage with proper cleanup policies
 - Load balancer for API instances
+- SQLite handles concurrent reads efficiently for this use case
 
 ### Health Checks
 ```bash
 GET /api/health
-# Returns: {"status": "healthy", "services": {"redis": true, "openrouter": true}}
+# Returns: {"status": "healthy", "database": "connected", "database_type": "sqlite"}
 ```

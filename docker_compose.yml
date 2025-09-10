@@ -13,7 +13,7 @@ services:
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-your-jwt-secret-key}
       
       # Database configuration
-      - DATABASE_URL=postgresql://pdf_user:pdf_password@postgres:5432/pdf_smaller
+      - DATABASE_URL=sqlite:///app/data/pdf_smaller.db
       
       # File handling
       - UPLOAD_FOLDER=/app/uploads
@@ -46,8 +46,8 @@ services:
     volumes:
       - pdf_uploads:/app/uploads
       - app_logs:/app/logs
+      - sqlite_data:/app/data
     depends_on:
-      - postgres
       - redis
     restart: unless-stopped
     healthcheck:
@@ -55,24 +55,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # PostgreSQL database
-  postgres:
-    image: postgres:15-alpine
-    environment:
-      - POSTGRES_DB=pdf_smaller
-      - POSTGRES_USER=pdf_user
-      - POSTGRES_PASSWORD=pdf_password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pdf_user -d pdf_smaller"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   # Redis for caching and task queue
   redis:
@@ -99,7 +81,7 @@ services:
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
       
       # Database configuration
-      - DATABASE_URL=postgresql://pdf_user:pdf_password@postgres:5432/pdf_smaller
+      - DATABASE_URL=sqlite:///app/data/pdf_smaller.db
       
       # File handling
       - UPLOAD_FOLDER=/app/uploads
@@ -117,8 +99,8 @@ services:
     volumes:
       - pdf_uploads:/app/uploads
       - app_logs:/app/logs
+      - sqlite_data:/app/data
     depends_on:
-      - postgres
       - redis
     restart: unless-stopped
     healthcheck:
@@ -137,7 +119,7 @@ services:
       - SECRET_KEY=${SECRET_KEY:-your-secret-key-change-in-production}
       
       # Database configuration
-      - DATABASE_URL=postgresql://pdf_user:pdf_password@postgres:5432/pdf_smaller
+      - DATABASE_URL=sqlite:///app/data/pdf_smaller.db
       
       # Logging
       - LOG_LEVEL=INFO
@@ -149,8 +131,8 @@ services:
       
     volumes:
       - app_logs:/app/logs
+      - sqlite_data:/app/data
     depends_on:
-      - postgres
       - redis
     restart: unless-stopped
 
@@ -172,7 +154,7 @@ services:
 volumes:
   pdf_uploads:
     driver: local
-  postgres_data:
+  sqlite_data:
     driver: local
   redis_data:
     driver: local

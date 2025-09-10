@@ -34,7 +34,7 @@ This comprehensive guide covers deployment of the PDF Smaller backend with all i
 
 **Core Requirements:**
 - Python 3.11+
-- PostgreSQL 13+ (SQLite for development)
+- SQLite (built-in, no external database server required)
 - Redis 6+
 - Nginx (production)
 - Ghostscript 9.50+
@@ -59,7 +59,7 @@ SECRET_KEY=dev-secret-key-change-in-production
 JWT_SECRET_KEY=dev-jwt-secret-key-change-in-production
 DEBUG=true
 
-# Database
+# Database (SQLite)
 DATABASE_URL=sqlite:///pdf_smaller_dev.db
 
 # File Storage
@@ -101,11 +101,8 @@ SECRET_KEY=your-super-secure-64-character-production-secret-key-here
 JWT_SECRET_KEY=your-super-secure-jwt-secret-key-different-from-above
 DEBUG=false
 
-# Database
-DATABASE_URL=postgresql://pdf_user:secure_password@localhost:5432/pdf_smaller_prod
-DB_POOL_SIZE=20
-DB_MAX_OVERFLOW=30
-DB_POOL_RECYCLE=3600
+# Database (SQLite)
+DATABASE_URL=sqlite:////var/app/pdfsmaller/pdf_smaller_prod.db
 
 # File Storage
 UPLOAD_FOLDER=/var/app/uploads
@@ -169,15 +166,17 @@ sudo chown -R pdfsmaller:pdfsmaller /var/log/pdfsmaller
 
 ## Database Configuration
 
-### 1. PostgreSQL Setup (Production)
+### SQLite Database Setup
 
-#### Install PostgreSQL
+The application uses SQLite for both development and production environments. No external database server is required.
+
+#### Database File Location
 ```bash
-# Ubuntu/Debian
-sudo apt-get update
-sudo apt-get install postgresql postgresql-contrib
+# Development
+DATABASE_URL=sqlite:///pdf_smaller_dev.db
 
-# CentOS/RHEL
+# Production
+DATABASE_URL=sqlite:////var/app/pdfsmaller/pdf_smaller_prod.db
 sudo yum install postgresql-server postgresql-contrib
 sudo postgresql-setup initdb
 ```

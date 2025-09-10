@@ -10,7 +10,7 @@ from src.database import init_database
 from src.models.base import db
 from src.routes import compression_bp, extended_features_bp, jobs_bp
 from src.utils import setup_logging
-from src.utils.cors_config import configure_secure_cors
+
 from src.utils.error_handlers import register_error_handlers
 from src.utils.scheduler import start_background_scheduler
 
@@ -73,7 +73,7 @@ def create_app(config_name=None, config_override=None):
         register_error_handlers(app)
         
         # Initialize security and middleware
-        initialize_security(app)
+        # initialize_security(app)
         
         # Register blueprints
         register_blueprints(app)
@@ -110,21 +110,6 @@ def initialize_extensions(app):
     # Initialize database tables
     init_database(app)
 
-
-
-def initialize_security(app):
-    """Initialize CORS    
-    """
-    pass    
-    # Configure secure CORS
-    try:
-        allowed_origins = ["https://www.pdfsmaller.site", "https://pdfsmaller.site"]
-        secure_cors = configure_secure_cors(app, allowed_origins)
-        app.secure_cors = secure_cors
-        app.logger.info(f"CORS configured for origins: {allowed_origins}")
-    except Exception as e:
-        app.logger.error(f"CORS configuration failed: {e}")
-        raise
 
 
 def register_blueprints(app):
