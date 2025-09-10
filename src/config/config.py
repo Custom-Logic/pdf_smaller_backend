@@ -29,7 +29,7 @@ class BaseConfig:
 
     
     # File handling
-    UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', '/root/app/pdf_smaller_backend/uploads/dev')
+    UPLOAD_FOLDER = os.environ.get('UPLOAD_FOLDER', './uploads/dev')
     MAX_FILE_AGE = timedelta(hours=int(os.environ.get('MAX_FILE_AGE_HOURS', 1)))
     MAX_FILE_SIZE = int(os.environ.get('MAX_FILE_SIZE', 50 * 1024 * 1024))  # 50MB default
     
@@ -215,7 +215,7 @@ class TestingConfig(BaseConfig):
     WTF_CSRF_ENABLED = False
       
     # Test file settings
-    UPLOAD_FOLDER = '/root/app/pdf_smaller_backend/uploads/dev'
+    UPLOAD_FOLDER = './uploads/dev'
     MAX_FILE_AGE = timedelta(minutes=1)
     
     # Disable external services in testing
@@ -247,7 +247,7 @@ class ProductionConfig(BaseConfig):
     SQLALCHEMY_DATABASE_URI = "sqlite:////root/app/pdf_smaller_backend/pdf_smaller_prod.db"
     
     # Production file settings
-    UPLOAD_FOLDER = "/root/app/pdf_smaller_backend/uploads/prod"
+    UPLOAD_FOLDER = "./uploads/dev"
     
     # Stricter rate limiting in production
     RATE_LIMIT_DEFAULT = "50 per hour"

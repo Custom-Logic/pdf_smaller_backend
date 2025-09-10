@@ -148,7 +148,7 @@ def initialize_background_tasks(app):
         app.logger.info("Skipping background tasks in testing mode")
         return
     try:
-        upload_folder = app.config.get('UPLOAD_FOLDER', '/uploads/dev')
+        upload_folder = app.config.get('UPLOAD_FOLDER', './uploads/dev')
         
         # Ensure upload folder exists
         os.makedirs(upload_folder, exist_ok=True)
