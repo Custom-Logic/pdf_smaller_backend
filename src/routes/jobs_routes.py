@@ -1,6 +1,6 @@
 import os
 from flask import Blueprint, send_file
-
+from flask_cors import CORS
 from src.models.job import Job, JobStatus
 from src.utils.response_helpers import error_response, success_response
 
