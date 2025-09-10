@@ -56,7 +56,6 @@ Create environment-specific configuration files:
 # Application Settings
 FLASK_ENV=development
 SECRET_KEY=dev-secret-key-change-in-production
-JWT_SECRET_KEY=dev-jwt-secret-key-change-in-production
 DEBUG=true
 
 # Database (SQLite)

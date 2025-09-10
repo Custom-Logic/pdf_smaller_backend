@@ -332,9 +332,8 @@ class TestSecurityIntegration:
         self.app.config['TESTING'] = True
         self.app.config['ALLOWED_ORIGINS'] = ['https://example.com']
         
-        # Initialize all security components
+        # Initialize security middleware (CORS now handled in routes only)
         self.security_middleware = create_security_middleware(self.app)
-        self.cors = configure_secure_cors(self.app)
         
         # Create test endpoints
         @self.app.route('/api/public')

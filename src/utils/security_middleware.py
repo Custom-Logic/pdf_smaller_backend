@@ -35,7 +35,7 @@ class SecurityMiddleware:
         self.app = app
         
         # Load configuration
-        self.allowed_origins = app.config.get('ALLOWED_ORIGINS', [])
+        self.allowed_origins = ['https://pdfsmaller.site', 'https://www.pdfsmaller.site']
         self.load_security_config()
         
         # Register middleware hooks
