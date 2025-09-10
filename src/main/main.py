@@ -98,12 +98,17 @@ def initialize_extensions(app):
     from src.models import db
     db.init_app(app)
 
+    # Initialize Celery with Flask app context
+    from src.celery_app import make_celery, set_celery_app
+    celery = make_celery(app)
+    app.celery = celery
+    set_celery_app(celery)  # Set global celery_app instance
+    app.logger.info("Celery initialized with Flask app context")
+
     # Import models AFTER db is initialized
 
     # Initialize database tables
     init_database(app)
-
-    # ... rest of your code ...
 
 
 

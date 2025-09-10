@@ -70,22 +70,25 @@ def compress_pdf():
         db.session.add(job)
         db.session.commit()
         # Enqueue compression task (async processing)
-        from src.tasks.tasks import compress_task
-        compress_task.apply_async(
-            task_id=job_id,
-            args=[job_id, file_data, compression_settings, file.filename],  # positional
-            countdown=0,
-            priority=0
-        )
-        logger.info(f"Compression job {job_id} enqueued (job_id: {job_id})")
-        
-        data = {
-            'success': True,
-            'job_id': job_id,
-            'status': JobStatus.PENDING.value,
-            'message': 'Compression job queued successfully'
-        }
-        return success_response(data=data, message='Compression job created', status_code=202)
+        try:
+            from src.tasks.tasks import compress_task
+            compress_task.delay(job_id, file_data, compression_settings, file.filename)
+            logger.info(f"Compression job {job_id} enqueued (job_id: {job_id})")
+            
+            data = {
+                'success': True,
+                'job_id': job_id,
+                'status': JobStatus.PENDING.value,
+                'message': 'Compression job queued successfully'
+            }
+            return success_response(data=data, message='Compression job created', status_code=202)
+        except Exception as task_error:
+            logger.error(f"Failed to enqueue compression task {job_id}: {str(task_error)}")
+            # Update job status to failed
+            job.status = JobStatus.FAILED.value
+            job.error_message = f"Task enqueueing failed: {str(task_error)}"
+            db.session.commit()
+            return error_response(message='Failed to queue compression job', status_code=500)
         
     except Exception as e:
         logger.error(f"Error creating compression job: {str(e)}")
@@ -119,7 +122,6 @@ def bulk_compress():
         
         # Get client-provided tracking IDs
         job_id = request.form.get('job_id', str(uuid.uuid4()))
-        session_id = request.form.get('session_id', str(uuid.uuid4()))
 
         # Read all files
         file_data_list = []
@@ -186,7 +188,8 @@ def compression_health_check():
         # Check Redis connection (for job queue)
         redis_available = False
         try:
-            from src.celery_app import celery_app
+            from src.celery_app import get_celery_app
+            celery_app = get_celery_app()
             redis_available = celery_app.control.ping(timeout=1.0) is not None
         except:
             pass

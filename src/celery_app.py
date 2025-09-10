@@ -6,7 +6,6 @@ import os
 from celery import Celery
 from src.config import Config
 # DO NOT REMOVE: This import is necessary to register tasks with Celery
-from .tasks import tasks
 
 def make_celery(app=None):
     """
@@ -19,6 +18,8 @@ def make_celery(app=None):
         Configured Celery instance
     """
     # Get configuration
+    from .tasks import tasks
+
     config = Config()
     
     # Create Celery instance
@@ -92,5 +93,18 @@ def make_celery(app=None):
     return celery
 
 
-# Create default Celery instance
-celery_app = make_celery()
+# Create default Celery instance (will be replaced by Flask app integration)
+celery_app = None
+
+def get_celery_app():
+    """Get the current Celery app instance"""
+    global celery_app
+    if celery_app is None:
+        # Fallback for testing or standalone usage
+        celery_app = make_celery()
+    return celery_app
+
+def set_celery_app(app):
+    """Set the Celery app instance (called from Flask app factory)"""
+    global celery_app
+    celery_app = app

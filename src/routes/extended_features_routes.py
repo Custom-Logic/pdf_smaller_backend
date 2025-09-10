@@ -111,24 +111,28 @@ def convert_pdf():
         file_data = file.read()
 
         # Enqueue conversion task using .delay() pattern
-        from src.tasks.tasks import convert_pdf_task
-        task = convert_pdf_task.delay(
-            job_id=job_id,
-            file_data=file_data,
-            target_format=target_format,
-            options=options,
-            original_filename=file.filename,
-            session_id=session_id
-        )
+        try:
+            from src.tasks.tasks import convert_pdf_task
+            task = convert_pdf_task.delay(
+                job_id=job_id,
+                file_data=file_data,
+                target_format=target_format,
+                options=options,
+                original_filename=file.filename,
+                session_id=session_id
+            )
 
-        logger.info(f"Conversion job {job_id} enqueued (format: {target_format}, task_id: {task.id})")
+            logger.info(f"Conversion job {job_id} enqueued (format: {target_format}, task_id: {task.id})")
 
-        return success_response(message="Conversion job queued successfully", data={
-            'job_id': job_id,
-            'task_id': task.id,
-            'status': JobStatus.PENDING.value,
-            'format': target_format
-        }, status_code=202)
+            return success_response(message="Conversion job queued successfully", data={
+                'job_id': job_id,
+                'task_id': task.id,
+                'status': JobStatus.PENDING.value,
+                'format': target_format
+            }, status_code=202)
+        except Exception as task_error:
+             logger.error(f"Failed to enqueue conversion task {job_id}: {str(task_error)}")
+             return error_response(message='Failed to queue conversion job', status_code=500)
 
     except Exception as e:
         logger.error(f"PDF conversion job creation failed: {str(e)}")
@@ -440,7 +444,8 @@ def get_extended_features_status():
         # Check Redis availability
         redis_available = False
         try:
-            from src.celery_app import celery_app
+            from src.celery_app import get_celery_app
+            celery_app = get_celery_app()
             redis_available = celery_app.control.ping(timeout=1.0) is not None
         except:
             pass

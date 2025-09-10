@@ -13,6 +13,7 @@ from datetime import datetime
 from flask_cors import CORS
 from src.services.enhanced_compression_service import EnhancedCompressionService
 
+# DEPRECATED ROUTE PLEASE IGNORE
 
 logger = logging.getLogger(__name__)
 

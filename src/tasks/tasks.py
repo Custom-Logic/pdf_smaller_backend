@@ -8,7 +8,10 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List
 
 from celery import current_task
-from src.celery_app import celery_app
+from src.celery_app import get_celery_app
+
+# Get the Celery app instance
+celery_app = get_celery_app()
 from src.config.config import Config
 from src.models import Job, JobStatus
 from src.models.base import db
