@@ -273,16 +273,10 @@ class OCRService:
             return self._create_json_output(ocr_text, pdf_path)
         # default = plain text
         return self._create_text_output(ocr_text, pdf_path)
-        
+
     def _process_image_ocr(self, img_path: Path, opts: Dict[str, Any]) -> Dict[str, Any]:
         """Image → text / json on disk."""
-        if not OCR_LIBS_AVAILABLE:
-            raise RuntimeError("OCR libraries unavailable")
-
-        output_format = opts.get("outputFormat", "text")
-        lang = opts.get("language", self.default_lang)
-        quality = opts.get("quality", self.default_quality)
-
+        ...
         ocr_text = self._perform_image_ocr_bytes(img_path.read_bytes(), lang, quality)
 
         if output_format == "json":
@@ -313,9 +307,7 @@ class OCRService:
     # output helpers – disk only
     # --------------------------------------------------------------------------
     def _create_text_output(self, text: str, original: Path) -> Dict[str, Any]:
-        filename = f"ocr_{original.stem}.txt"
-        out_path = self.upload_folder / filename
-        out_path.write_text(text, encoding="utf-8")
+        ...
         return {"output_path": str(out_path), "filename": filename, "mime_type": "text/plain", "output_format": "text"}
 
     def _create_json_output(self, text: str, original: Path) -> Dict[str, Any]:
