@@ -34,19 +34,26 @@ except ImportError:  # pragma: no cover
     logging.warning("python-docx unavailable – DOCX export disabled")
 
 try:
+    import openpyxl
+    OPENPYXL_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    OPENPYXL_AVAILABLE = False
+    logging.warning("openpyxl unavailable – Excel export disabled")
+
+try:
     from PIL import Image
     PIL_AVAILABLE = True
 except ImportError:  # pragma: no cover
     PIL_AVAILABLE = False
 
-
+    
 # ------------------------------------------------------------------------------
 class ConversionService:
     """Convert PDFs to docx / txt / html / images – crash-hardened."""
     def __init__(self, upload_folder: Optional[str] = None):
         self.upload_folder = Path(upload_folder or tempfile.mkdtemp(prefix="pdf_conv_"))
         self.upload_folder.mkdir(parents=True, exist_ok=True)
-        self.supported_formats = ("docx", "txt", "html", "images")
+        self.supported_formats = ("docx", "txt", "html", "images", "xlsx")
 
     # --------------------------------------------------------------------------
     # PUBLIC ENTRY POINTS
@@ -73,10 +80,12 @@ class ConversionService:
 
             converter = {
                 "docx": self._convert_to_docx,
-                "txt": self._convert_to_txt,
+                "txt" : self._convert_to_txt,
                 "html": self._convert_to_html,
                 "images": self._convert_to_images,
+                "xlsx": self._convert_to_xlsx,
             }[target_format]
+            
 
             payload = converter(pdf_content, options)  # may raise
             # guarantee keys that callers / frontend always read
@@ -263,6 +272,52 @@ class ConversionService:
             "output_path": str(out_path),
             "filename": filename,
             "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "file_size": out_path.stat().st_size,
+        }
+
+    def _convert_to_xlsx(self, content: Dict[str, Any], opts: Dict[str, Any]) -> Dict[str, Any]:
+        """PDF → Excel (one worksheet per page that contains a table)."""
+        if not OPENPYXL_AVAILABLE:
+            raise RuntimeError("openpyxl not installed – Excel export unavailable")
+
+        from openpyxl import Workbook
+        from openpyxl.utils import get_column_letter
+
+        wb = Workbook()
+        # remove default empty sheet
+        wb.remove(wb.active)
+
+        file_prefix = content.get("metadata", {}).get("title", "document") or "document"
+        any_table = False
+
+        for page in content["pages"]:
+            if not page["tables"]:
+                continue
+            any_table = True
+            ws = wb.create_sheet(title=f"Page_{page['page_num']}")
+            for tbl_idx, tbl in enumerate(page["tables"], start=1):
+                start_row = ws.max_row + (2 if ws.max_row > 1 else 0)  # blank line between tables
+                for r_idx, row_data in enumerate(tbl, start=start_row):
+                    for c_idx, cell_val in enumerate(row_data, start=1):
+                        ws.cell(row=r_idx, column=c_idx, value=str(cell_val))
+
+                # auto-size columns (rough)
+                for c_idx in range(1, len(tbl[0]) + 1):
+                    ws.column_dimensions[get_column_letter(c_idx)].auto_size = True
+
+        if not any_table:
+            # Excel file with *no* tables is useless – fail fast
+            raise ValueError("No tables found in PDF – nothing to export to Excel")
+
+        filename = f"converted_{file_prefix}.xlsx"
+        out_path = self.upload_folder / filename
+        wb.save(str(out_path))
+
+        return {
+            "success": True,
+            "output_path": str(out_path),
+            "filename": filename,
+            "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "file_size": out_path.stat().st_size,
         }
 
