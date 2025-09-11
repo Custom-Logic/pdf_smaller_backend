@@ -524,56 +524,64 @@ class ConversionService:
 # ------------------------------------------------------------------
 # 3. _convert_to_docx  (lines ~322-378)
 # ------------------------------------------------------------------
-    def _convert_to_docx(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
-        if not DOCX_AVAILABLE:
-            raise RuntimeError("Word document creation not available. Install python-docx.")
+def _convert_to_docx(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert PDF content to Word document – ragged-table safe."""
+    if not DOCX_AVAILABLE:
+        raise RuntimeError("Word document creation not available. Install python-docx.")
 
-        try:
-            quality = options.get('quality', 'medium')
-            quality_settings = {
-                'low':  {'preserve_formatting': False, 'include_images': False},
-                'medium':{'preserve_formatting': True, 'include_images': True},
-                'high': {'preserve_formatting': True, 'include_images': True, 'high_quality': True}
-            }
-            qc = quality_settings.get(quality, quality_settings['medium'])
+    try:
+        quality = options.get('quality', 'medium')
+        quality_settings = {
+            'low':   {'preserve_formatting': False, 'include_images': False},
+            'medium':{'preserve_formatting': True,  'include_images': True},
+            'high':  {'preserve_formatting': True,  'include_images': True, 'high_quality': True}
+        }
+        qc = quality_settings.get(quality, quality_settings['medium'])
 
-            doc = Document()
-            if pdf_content.get('metadata', {}).get('title'):
-                title = doc.add_heading(pdf_content['metadata']['title'], 0)
-                title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        doc = Document()
+        if pdf_content.get('metadata', {}).get('title'):
+            title = doc.add_heading(pdf_content['metadata']['title'], 0)
+            title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-            for page in pdf_content['pages']:
-                if page['page_num'] > 1:
-                    doc.add_page_break()
+        for page in pdf_content['pages']:
+            if page['page_num'] > 1:
+                doc.add_page_break()
 
-                if page['text'].strip():
-                    for para in page['text'].split('\n\n'):
-                        if para.strip():
-                            doc.add_paragraph(para.strip())
+            # ---- text -------------------------------------------------
+            if page['text'].strip():
+                for para in page['text'].split('\n\n'):
+                    if para.strip():
+                        doc.add_paragraph(para.strip())
 
-                for tbl in page['tables']:
-                    if tbl and len(tbl) > 0:
-                        table = doc.add_table(rows=len(tbl), cols=len(tbl[0]))
-                        table.style = 'Table Grid'
-                        for r_idx, row in enumerate(tbl):
-                            for c_idx, cell in enumerate(row):
-                                if c_idx < len(tbl[r_idx]):
-                                    table.cell(r_idx, c_idx).text = str(cell)
+            # ---- tables (ragged-row safe) ----------------------------
+            for tbl in page['tables']:
+                if not tbl:                      # skip empty tables
+                    continue
 
-            filename = f"converted_{pdf_content.get('metadata',{}).get('title','document')}.docx"
-            out_path = Path(self.upload_folder) / filename
-            doc.save(str(out_path))
+                max_cols = max(len(r) for r in tbl) or 1   # widest row
+                table = doc.add_table(rows=len(tbl), cols=max_cols)
+                table.style = 'Table Grid'
 
-            return {
-                'success': True,
-                'output_path': str(out_path),
-                'filename': filename,
-                'mime_type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                'file_size': out_path.stat().st_size
-            }
-        except Exception as e:
-            logger.error("DOCX conversion failed: %s", e)
-            raise
+                for r_idx, row_data in enumerate(tbl):
+                    for c_idx, cell_data in enumerate(row_data):
+                        if c_idx < max_cols:     # guard against short rows
+                            table.cell(r_idx, c_idx).text = str(cell_data)
+
+        filename = f"converted_{pdf_content.get('metadata',{}).get('title','document')}.docx"
+        out_path = Path(self.upload_folder) / filename
+        doc.save(str(out_path))
+
+        return {
+            'success': True,
+            'output_path': str(out_path),
+            'filename': filename,
+            'mime_type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'file_size': out_path.stat().st_size
+        }
+
+    except Exception as e:
+        logger.error("DOCX conversion failed: %s", e)
+        raise
 
 # ------------------------------------------------------------------
 # 4. _convert_to_images  (lines ~484-502)
