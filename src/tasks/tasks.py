@@ -330,80 +330,136 @@ def conversion_preview_task(
             "recommendations": [],
             "supported_formats": conversion_service.supported_formats,
         }
-# ------------------------------------------------------
-#  OCR TASKS  (logic 100 % preserved)
-# ------------------------------------------------------
-@celery_app.task(bind=True, name='tasks.ocr_process_task', max_retries=3)
-def ocr_process_task(self, job_id: str, file_data: bytes, options: Dict[str, Any],
-                     original_filename: str | None = None) -> Dict[str, Any]:
-    """Process OCR on file data asynchronously – identical behaviour."""
+
+# --------------------------------------------------------------------------
+#  OCR TASKS – crash-hardened & context-safe
+# --------------------------------------------------------------------------
+@celery_app.task(bind=True, name="tasks.ocr_process_task", max_retries=3)
+def ocr_process_task(
+    self,
+    job_id: str,
+    file_data: bytes,
+    options: Dict[str, Any],
+    original_filename: Optional[str] = None,
+) -> Dict[str, Any]:
+    """OCR PDF/image → disk file – context & retry safe."""
+    from flask import current_app
+
     try:
-        logger.info(f"Starting OCR task for job {job_id}")
-        job = Job.query.filter_by(job_id=job_id).first()
-        if not job:
-            job = Job(
-                job_id=job_id,
-                task_type='ocr',
-                input_data={
-                    'options': options,
-                    'file_size': len(file_data),
-                    'original_filename': original_filename
-                }
-            
-            )
-            db.session.add(job)
+        with current_app.app_context():
+            job = Job.query.filter_by(job_id=job_id).first()
+            if not job:
+                job = Job(
+                    job_id=job_id,
+                    task_type="ocr",
+                    input_data={
+                        "options": options,
+                        "file_size": len(file_data),
+                        "original_filename": original_filename,
+                    },
+                )
+                db.session.add(job)
 
-        job.mark_as_processing()
-        db.session.commit()
-
-        current_task.update_state(state='PROGRESS', meta={'progress': 10, 'status': 'Starting OCR processing'})
-        result = ocr_service.process_ocr_data(file_data, options, original_filename)
-        job.mark_as_completed(result)
-        db.session.commit()
-        current_task.update_state(state='SUCCESS', meta={'progress': 100, 'status': 'OCR processing completed'})
-        logger.info(f"OCR task completed for job {job_id}")
-        return result
-
-    except Exception as e:
-        logger.error(f"Error in OCR task {job_id}: {str(e)}")
-        if 'job' in locals() and job:
-            job.mark_as_failed(str(e))
+            job.status = JobStatus.PROCESSING.value
             db.session.commit()
-        current_task.update_state(state='FAILURE', meta={'error': str(e), 'job_id': job_id})
+
+            current_task.update_state(
+                state="PROGRESS", meta={"progress": 10, "status": "Starting OCR"}
+            )
+
+            result = ocr_service.process_ocr_data(
+                file_data=file_data,
+                options=options,
+                original_filename=original_filename,
+            )
+
+            if result["success"]:
+                job.mark_as_completed(result)
+            else:
+                job.mark_as_failed(result["error"])
+            db.session.commit()
+
+            current_task.update_state(
+                state="SUCCESS", meta={"progress": 100, "status": "OCR completed"}
+            )
+            return result
+
+    except Exception as exc:
+        logger.exception("OCR task %s failed", job_id)
+        # context-safe error update
+        try:
+            with current_app.app_context():
+                job = Job.query.filter_by(job_id=job_id).first()
+                if job:
+                    job.mark_as_failed(str(exc))
+                    db.session.commit()
+        except Exception:
+            pass  # already logging
+
+        if self.request.retries < self.max_retries:
+            raise self.retry(countdown=60 * (self.request.retries + 1))
         raise
 
-@celery_app.task(bind=True, name='tasks.ocr_preview_task', max_retries=3)
-def ocr_preview_task(self, job_id: str, file_data: bytes, options: Dict[str, Any]) -> Dict[str, Any]:
-    """Generate OCR preview asynchronously – identical behaviour."""
+
+@celery_app.task(bind=True, name="tasks.ocr_preview_task", max_retries=2)
+def ocr_preview_task(
+    self,
+    job_id: str,
+    file_data: bytes,
+    options: Dict[str, Any],
+) -> Dict[str, Any]:
+    """OCR preview – context-safe, uniform payload."""
+    from flask import current_app
+
     try:
-        logger.info(f"Starting OCR preview task for job {job_id}")
-        job = Job.query.filter_by(job_id=job_id).first()
-        if not job:
-            job = Job(
-                job_id=job_id,
-                task_type='ocr_preview',
-                input_data={
-                    'options': options,
-                    'file_size': len(file_data)
-                }                
-            )
-            db.session.add(job)
+        with current_app.app_context():
+            job = Job.query.filter_by(job_id=job_id).first()
+            if not job:
+                job = Job(
+                    job_id=job_id,
+                    task_type="ocr_preview",
+                    input_data={
+                        "options": options,
+                        "file_size": len(file_data),
+                    },
+                )
+                db.session.add(job)
 
-        job.mark_as_processing()
-        db.session.commit()
-
-        preview = ocr_service.get_ocr_preview(file_data, options)
-        job.mark_as_completed(preview)
-        db.session.commit()
-        logger.info(f"OCR preview task completed for job {job_id}")
-        return preview
-
-    except Exception as e:
-        logger.error(f"Error in OCR preview task {job_id}: {str(e)}")
-        if 'job' in locals() and job:
-            job.mark_as_failed(str(e))
+            job.status = JobStatus.PROCESSING.value
             db.session.commit()
-        raise
+
+            preview = ocr_service.get_ocr_preview(file_data, options)
+            job.mark_as_completed(preview)
+            db.session.commit()
+            return preview
+
+    except Exception as exc:
+        logger.exception("OCR preview task %s failed", job_id)
+        # context-safe error update
+        try:
+            with current_app.app_context():
+                job = Job.query.filter_by(job_id=job_id).first()
+                if job:
+                    job.mark_as_failed(str(exc))
+                    db.session.commit()
+        except Exception:
+            pass
+
+        if self.request.retries < self.max_retries:
+            raise self.retry(countdown=30)
+
+        # final fallback – uniform shape
+        return {
+            "success": False,
+            "error": str(exc),
+            "original_size": len(file_data),
+            "estimated_time": 0,
+            "complexity": "unknown",
+            "estimated_accuracy": 0.0,
+            "recommendations": [],
+            "supported_formats": ocr_service.output_formats,
+            "supported_languages": ocr_service.supported_languages,
+        }
 
 # ------------------------------------------------------
 #  AI TASKS  (logic 100 % preserved)
