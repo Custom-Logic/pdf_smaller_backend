@@ -1,5 +1,5 @@
 """
-Extended Features Routes - Job-Oriented Architecture
+PDF Suite Routes - Job-Oriented Architecture
 Handles conversion, OCR, AI, and cloud integration endpoints
 Returns job IDs for async processing
 """
