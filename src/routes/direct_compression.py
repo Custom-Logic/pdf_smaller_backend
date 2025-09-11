@@ -10,8 +10,9 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 import json
 from datetime import datetime
-from flask_cors import CORS
+
 from src.services.enhanced_compression_service import EnhancedCompressionService
+from src.utils import validate_file
 
 # DEPRECATED ROUTE PLEASE IGNORE
 

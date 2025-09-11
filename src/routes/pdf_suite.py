@@ -8,17 +8,15 @@ import json
 import logging
 import uuid
 from datetime import datetime
-from enum import Enum
 
 from flask import Blueprint, request
-from flask_cors import CORS
 
+from src.models import JobStatus
 from src.services.ai_service import AIService
-from src.services.cloud_integration_service import CloudIntegrationService
 from src.services.conversion_service import ConversionService
 from src.services.ocr_service import OCRService
 from src.utils.response_helpers import success_response, error_response
-from src.models import JobStatus
+
 # Initialize blueprint
 extended_features_bp = Blueprint('extended_features', __name__)
 # CORS(extended_features_bp, resources={r"/api": {"origins": ["https://www.pdfsmaller.site"]}})
@@ -27,7 +25,7 @@ extended_features_bp = Blueprint('extended_features', __name__)
 conversion_service = ConversionService()
 ocr_service = OCRService()
 ai_service = AIService()
-cloud_service = CloudIntegrationService()
+
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -377,48 +375,6 @@ def extract_text():
     except Exception as e:
         logger.error(f"Text extraction job creation failed: {str(e)}")
         return error_response(message=f"Failed to create text extraction job: {str(e)}", status_code=500)
-
-# ============================================================================
-# CLOUD INTEGRATION ROUTES (Synchronous)
-# ============================================================================
-
-@extended_features_bp.route('/cloud/<provider>/token', methods=['POST'])
-def exchange_cloud_token(provider):
-    """Exchange authorization code for access token"""
-    try:
-        data = request.get_json()
-        if not data or 'code' not in data:
-            return error_response(message="No authorization code provided", status_code=400)
-
-        code = data['code']
-        redirect_uri = data.get('redirect_uri')
-
-        result = cloud_service.exchange_code_for_token(provider, code, redirect_uri)
-        return success_response(message="Token exchange successful", data=result)
-
-    except Exception as e:
-        logger.error(f"Cloud token exchange failed: {str(e)}")
-        return error_response(message=f"Token exchange failed: {str(e)}", status_code=500)
-
-@extended_features_bp.route('/cloud/<provider>/validate', methods=['GET'])
-def validate_cloud_token(provider):
-    """Validate cloud provider access token"""
-    try:
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return error_response(message="No valid authorization header", status_code=401)
-
-        token = auth_header.split(' ')[1]
-        is_valid = cloud_service.validate_token(provider, token)
-
-        if is_valid:
-            return success_response(message="Token is valid", data={'valid': True})
-        else:
-            return error_response(message="Token is invalid", status_code=401)
-
-    except Exception as e:
-        logger.error(f"Cloud token validation failed: {str(e)}")
-        return error_response(message=f"Token validation failed: {str(e)}", status_code=500)
 
 # ============================================================================
 # HEALTH CHECK AND STATUS ROUTES
