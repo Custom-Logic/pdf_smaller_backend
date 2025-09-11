@@ -64,27 +64,9 @@ class TestTieredRateLimiter:
             tier = self.rate_limiter.get_user_tier()
             assert tier == 'anonymous'
     
-    def test_get_user_tier_from_g(self):
-        """Test getting user tier from Flask g object"""
-        with self.app.test_request_context():
-            g.current_user_tier = 'premium'
-            tier = self.rate_limiter.get_user_tier()
-            assert tier == 'premium'
+    # User tier detection removed - only anonymous rate limiting supported
     
-    def test_get_user_tier_from_user_object(self):
-        """Test getting user tier from user object"""
-        with self.app.test_request_context():
-            # Mock user with subscription
-            mock_user = Mock()
-            mock_plan = Mock()
-            mock_plan.name = 'Pro'
-            mock_subscription = Mock()
-            mock_subscription.plan = mock_plan
-            mock_user.subscription = mock_subscription
-            
-            g.current_user = mock_user
-            tier = self.rate_limiter.get_user_tier()
-            assert tier == 'pro'
+    # User subscription tier detection removed - only anonymous rate limiting supported
     
     def test_get_rate_limit_for_tier(self):
         """Test getting rate limits for specific tier and category"""
@@ -380,19 +362,14 @@ class TestRateLimitIntegration:
             response = self.client.post('/test/compress')
             # Note: This test might not work perfectly due to Flask-Limiter's internal handling
     
-    def test_different_tiers_different_limits(self):
-        """Test that different user tiers have different rate limits"""
-        free_limits = self.rate_limiter.get_rate_limit_for_tier('free', 'compression')
-        premium_limits = self.rate_limiter.get_rate_limit_for_tier('premium', 'compression')
-        pro_limits = self.rate_limiter.get_rate_limit_for_tier('pro', 'compression')
+    def test_anonymous_rate_limits(self):
+        """Test that anonymous users get appropriate rate limits"""
+        anonymous_limits = self.rate_limiter.get_rate_limit_for_tier('anonymous', 'compression')
         
-        # Premium should have higher limits than free
-        assert premium_limits['per_hour'] > free_limits['per_hour']
-        assert premium_limits['per_day'] > free_limits['per_day']
-        
-        # Pro should have higher limits than premium
-        assert pro_limits['per_hour'] > premium_limits['per_hour']
-        assert pro_limits['per_day'] == -1  # Unlimited
+        # Verify anonymous limits exist and are reasonable
+        assert anonymous_limits['per_minute'] > 0
+        assert anonymous_limits['per_hour'] > 0
+        assert anonymous_limits['per_day'] > 0
     
     def test_rate_limit_headers_added(self):
         """Test that rate limit headers are added to responses"""

@@ -326,13 +326,7 @@ class SecurityMiddleware:
             'path': request.path
         })
     
-    def track_auth_failure(self):
-        """Track authentication failures"""
-        track_suspicious_activity('auth_failure', {
-            'ip': getattr(g, 'client_ip', 'unknown'),
-            'path': request.path,
-            'user_agent': getattr(g, 'user_agent', '')
-        })
+
     
     def track_rate_limit_violation(self):
         """Track rate limit violations"""

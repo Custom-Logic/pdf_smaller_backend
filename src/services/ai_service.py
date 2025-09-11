@@ -45,6 +45,7 @@ class AIService:
         
         # Supported models through OpenRouter
         self.supported_models = {
+            # TODO - please use deepseek models, including free variants and moonshot models.
             AIProvider.OPENROUTER: [
                 "openai/gpt-4-turbo",
                 "openai/gpt-4",
@@ -97,7 +98,7 @@ class AIService:
             }
         }
     
-    async def summarize_text(self, text: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
+    def summarize_text(self, text: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Summarize text using AI with structured response
         
@@ -120,7 +121,7 @@ class AIService:
             summary_request = self._prepare_summary_request(text, options)
             
             # Call AI provider
-            result = await self._call_openrouter_summarization(summary_request)
+            result =  self._call_openrouter_summarization(summary_request)
             
             return {
                 'success': True,
@@ -142,7 +143,7 @@ class AIService:
                 'timestamp': datetime.utcnow().isoformat()
             }
     
-    async def translate_text(self, text: str, target_language: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
+    def translate_text(self, text: str, target_language: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Translate text using AI with structured response
         
@@ -170,7 +171,7 @@ class AIService:
             translation_request = self._prepare_translation_request(text, target_language, options)
             
             # Call AI provider
-            result = await self._call_openrouter_translation(translation_request)
+            result =  self._call_openrouter_translation(translation_request)
             
             return {
                 'success': True,
@@ -270,7 +271,7 @@ class AIService:
             text="{text}"  # Placeholder for text
         )
     
-    async def _call_openrouter_summarization(self, request: Dict[str, Any]) -> Dict[str, Any]:
+    def _call_openrouter_summarization(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Call OpenRouter API for structured summarization"""
         try:
             client = self.api_clients[AIProvider.OPENROUTER]
@@ -298,7 +299,7 @@ class AIService:
             }
             
             # Make API call
-            response = await self._make_openrouter_request(api_request, client)
+            response =  self._make_openrouter_request(api_request, client)
             
             # Parse and validate response
             result = self._parse_summary_response(response)
@@ -309,7 +310,7 @@ class AIService:
             logger.error(f"OpenRouter summarization failed: {str(e)}")
             raise
     
-    async def _call_openrouter_translation(self, request: Dict[str, Any]) -> Dict[str, Any]:
+    def _call_openrouter_translation(self, request: Dict[str, Any]) -> Dict[str, Any]:
         """Call OpenRouter API for structured translation"""
         try:
             client = self.api_clients[AIProvider.OPENROUTER]
@@ -337,7 +338,7 @@ class AIService:
             }
             
             # Make API call
-            response = await self._make_openrouter_request(api_request, client)
+            response =  self._make_openrouter_request(api_request, client)
             
             # Parse and validate response
             result = self._parse_translation_response(response)
@@ -376,7 +377,7 @@ class AIService:
             text=request['text']
         )
     
-    async def _make_openrouter_request(self, api_request: Dict[str, Any], client: Dict[str, Any]) -> Dict[str, Any]:
+    def _make_openrouter_request(self, api_request: Dict[str, Any], client: Dict[str, Any]) -> Dict[str, Any]:
         """Make request to OpenRouter API"""
         try:
             response = requests.post(
@@ -460,11 +461,11 @@ class AIService:
         reading_time = word_count / 225  # 225 words per minute
         return max(1, round(reading_time))
     
-    async def create_ai_job(self, task_type: Literal["summarize", "translate"], 
+    def create_ai_job(self, task_type: Literal["summarize", "translate"], 
                           text: str, options: Dict[str, Any] = None,
                           client_job_id: str = None) -> Dict[str, Any]:
         """
-        Create an AI job for async processing
+        Create an AI job for processing
         
         Args:
             task_type: Type of AI task (summarize/translate)
@@ -508,7 +509,7 @@ class AIService:
                 'error': str(e)
             }
     
-    async def process_ai_job(self, job_id: str, task_type: str, text: str, options: Dict[str, Any]) -> Dict[str, Any]:
+    def process_ai_job(self, job_id: str, task_type: str, text: str, options: Dict[str, Any]) -> Dict[str, Any]:
         """
         Process an AI job
         
@@ -523,10 +524,10 @@ class AIService:
         """
         try:
             if task_type == "summarize":
-                result = await self.summarize_text(text, options)
+                result =  self.summarize_text(text, options)
             elif task_type == "translate":
                 target_language = options.get('target_language', 'en')
-                result = await self.translate_text(text, target_language, options)
+                result =  self.translate_text(text, target_language, options)
             else:
                 raise ValueError(f"Unsupported task type: {task_type}")
             
@@ -578,7 +579,7 @@ class AIService:
             'error': 'Model not found'
         }
     
-    async def test_connectivity(self) -> Dict[str, Any]:
+    def test_connectivity(self) -> Dict[str, Any]:
         """Test OpenRouter API connectivity"""
         try:
             if AIProvider.OPENROUTER not in self.api_clients:
@@ -631,7 +632,7 @@ class AIService:
             }
 
 
-    async def extract_text_from_pdf_data(self, pdf_data: Any):
+    def extract_text_from_pdf_data(self, pdf_data: Any):
         """
             Use AI to Extrat Text from PDF Documenta
         """

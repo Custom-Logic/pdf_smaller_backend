@@ -18,8 +18,8 @@ from src.services.ocr_service import OCRService
 from src.utils.response_helpers import success_response, error_response
 
 # Initialize blueprint
-extended_features_bp = Blueprint('extended_features', __name__)
-# CORS(extended_features_bp, resources={r"/api": {"origins": ["https://www.pdfsmaller.site"]}})
+pdf_suite_bp = Blueprint('pdf_suite', __name__)
+# CORS(pdf_suite_bp, resources={r"/api": {"origins": ["https://www.pdfsmaller.site"]}})
 
 # Initialize services
 conversion_service = ConversionService()
@@ -73,7 +73,7 @@ def get_file_and_validate(feature_type, max_size_mb=None):
 # CONVERSION ROUTES (Job-Oriented)
 # ============================================================================
 
-@extended_features_bp.route('/convert', methods=['POST'])
+@pdf_suite_bp.route('/convert', methods=['POST'])
 def convert_pdf():
     """Convert PDF to specified format - returns job ID"""
     try:
@@ -128,7 +128,7 @@ def convert_pdf():
         logger.error(f"PDF conversion job creation failed: {str(e)}")
         return error_response(message=f"Failed to create conversion job: {str(e)}", status_code=500)
 
-@extended_features_bp.route('/convert/preview', methods=['POST'])
+@pdf_suite_bp.route('/convert/preview', methods=['POST'])
 def get_conversion_preview():
     """Get conversion preview and estimates - returns job ID"""
     try:
@@ -176,7 +176,7 @@ def get_conversion_preview():
 # OCR ROUTES (Job-Oriented)
 # ============================================================================
 
-@extended_features_bp.route('/ocr', methods=['POST'])
+@pdf_suite_bp.route('/ocr', methods=['POST'])
 def process_ocr():
     """Process OCR on uploaded file - returns job ID"""
     try:
@@ -216,7 +216,7 @@ def process_ocr():
         logger.error(f"OCR job creation failed: {str(e)}")
         return error_response(message=f"Failed to create OCR job: {str(e)}", status_code=500)
 
-@extended_features_bp.route('/ocr/preview', methods=['POST'])
+@pdf_suite_bp.route('/ocr/preview', methods=['POST'])
 def get_ocr_preview():
     """Get OCR preview and estimates - returns job ID"""
     try:
@@ -261,7 +261,7 @@ def get_ocr_preview():
 # AI ROUTES (Job-Oriented)
 # ============================================================================
 
-@extended_features_bp.route('/ai/summarize', methods=['POST'])
+@pdf_suite_bp.route('/ai/summarize', methods=['POST'])
 def summarize_pdf():
     """Summarize PDF content using AI - returns job ID"""
     try:
@@ -299,7 +299,7 @@ def summarize_pdf():
         logger.error(f"AI summarization job creation failed: {str(e)}")
         return error_response(message=f"Failed to create summarization job: {str(e)}", status_code=500)
 
-@extended_features_bp.route('/ai/translate', methods=['POST'])
+@pdf_suite_bp.route('/ai/translate', methods=['POST'])
 def translate_text():
     """Translate text using AI - returns job ID"""
     try:
@@ -342,7 +342,7 @@ def translate_text():
 # TEXT EXTRACTION ROUTES (Job-Oriented)
 # ============================================================================
 
-@extended_features_bp.route('/ai/extract-text', methods=['POST'])
+@pdf_suite_bp.route('/ai/extract-text', methods=['POST'])
 def extract_text():
     """Extract text content from PDF - returns job ID"""
     try:
@@ -380,7 +380,7 @@ def extract_text():
 # HEALTH CHECK AND STATUS ROUTES
 # ============================================================================
 
-@extended_features_bp.route('/extended-features/status', methods=['GET'])
+@pdf_suite_bp.route('/extended-features/status', methods=['GET'])
 def get_extended_features_status():
     """Get status of all extended features"""
     try:
@@ -430,7 +430,7 @@ def get_extended_features_status():
         logger.error(f"Status retrieval failed: {str(e)}")
         return error_response(message=f"Status retrieval failed: {str(e)}", status_code=500)
 
-@extended_features_bp.route('/extended-features/capabilities', methods=['GET'])
+@pdf_suite_bp.route('/extended-features/capabilities', methods=['GET'])
 def get_extended_features_capabilities():
     """Get detailed capabilities of all extended features"""
     try:

@@ -76,33 +76,7 @@ class BaseConfig:
     
 
     
-    # Subscription plans configuration
-    SUBSCRIPTION_PLANS = {
-        'free': {
-            'name': 'Free',
-            'price': 0,
-            'compressions_per_day': 10,
-            'max_file_size': 10 * 1024 * 1024,  # 10MB
-            'bulk_processing': False,
-            'priority_processing': False
-        },
-        'premium': {
-            'name': 'Premium',
-            'price': 999,  # $9.99 in cents
-            'compressions_per_day': 500,
-            'max_file_size': 50 * 1024 * 1024,  # 50MB
-            'bulk_processing': True,
-            'priority_processing': False
-        },
-        'pro': {
-            'name': 'Pro',
-            'price': 1999,  # $19.99 in cents
-            'compressions_per_day': -1,  # Unlimited
-            'max_file_size': 100 * 1024 * 1024,  # 100MB
-            'bulk_processing': True,
-            'priority_processing': True
-        }
-    }
+
     
     # Celery task queue settings
     CELERY_BROKER_URL =  REDIS_URL
@@ -113,13 +87,7 @@ class BaseConfig:
     CELERY_TIMEZONE = os.environ.get('CELERY_TIMEZONE', 'UTC')
     CELERY_ENABLE_UTC = True
     
-    # Email settings (for notifications)
-    MAIL_SERVER = os.environ.get('MAIL_SERVER')
-    MAIL_PORT = int(os.environ.get('MAIL_PORT', 587))
-    MAIL_USE_TLS = os.environ.get('MAIL_USE_TLS', 'true').lower() == 'true'
-    MAIL_USERNAME = os.environ.get('MAIL_USERNAME')
-    MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
-    MAIL_DEFAULT_SENDER = os.environ.get('MAIL_DEFAULT_SENDER')
+
     
     # Monitoring and health checks
     HEALTH_CHECK_ENABLED = os.environ.get('HEALTH_CHECK_ENABLED', 'true').lower() == 'true'
@@ -175,7 +143,7 @@ class BaseConfig:
             'log_level': cls.LOG_LEVEL,
             'rate_limit_default': cls.RATE_LIMIT_DEFAULT,
             'allowed_origins': cls.ALLOWED_ORIGINS,
-            'subscription_plans': list(cls.SUBSCRIPTION_PLANS.keys()),
+
             'health_check_enabled': cls.HEALTH_CHECK_ENABLED,
             'metrics_enabled': cls.METRICS_ENABLED
         }

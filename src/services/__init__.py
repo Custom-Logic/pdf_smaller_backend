@@ -1,6 +1,8 @@
+
+
 from .compression_service import CompressionService
-from .bulk_compression_service import BulkCompressionService
-from .file_manager import FileManager
+from .ai_service import AIService
+from .conversion_service import ConversionService
+from .ocr_service import OCRService
 
-
-__all__ = ['CompressionService', 'BulkCompressionService', 'FileManager']
+__all__ = ['CompressionService', 'AIService', 'ConversionService', 'OCRService']

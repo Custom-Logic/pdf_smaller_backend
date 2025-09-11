@@ -8,7 +8,7 @@ from sqlalchemy import text
 from src.config.config import get_config, validate_current_config, ConfigValidationError
 from src.database import init_database
 from src.models.base import db
-from src.routes import compression_bp, extended_features_bp, jobs_bp
+from src.routes import compression_bp, pdf_suite_bp, jobs_bp
 from src.utils import setup_logging
 
 from src.utils.error_handlers import register_error_handlers
@@ -69,11 +69,9 @@ def create_app(config_name=None, config_override=None):
         # Initialize extensions
 
         initialize_extensions(app)
-        
         # Register error handlers
         register_error_handlers(app)
-        
-       
+
         # Register blueprints
         register_blueprints(app)
         
@@ -90,7 +88,7 @@ def create_app(config_name=None, config_override=None):
         return app
 
 
-def initialize_extensions(app):
+def initialize_extensions(app: Flask):
     """Initialize Flask extensions"""
 
     # Initialize database FIRST
@@ -103,8 +101,6 @@ def initialize_extensions(app):
     app.celery = celery
     set_celery_app(celery)  # Set global celery_app instance
     app.logger.info("Celery initialized with Flask app context")
-
-    # Import models AFTER db is initialized
 
     # Initialize database tables
     init_database(app)
@@ -123,12 +119,12 @@ def initialize_extensions(app):
     app.logger.info(f"CORS initialized with config: {cors_config}")
 
 
-def register_blueprints(app):
+def register_blueprints(app: Flask):
     """Register application blueprints"""
     
     blueprints = [
         (compression_bp, '/api'),
-        (extended_features_bp, '/api'),
+        (pdf_suite_bp, '/api'),
         (jobs_bp, '/api')
     ]
     
@@ -141,7 +137,7 @@ def register_blueprints(app):
             raise
 
 
-def initialize_background_tasks(app):
+def initialize_background_tasks(app: Flask):
     """Initialize background tasks and schedulers"""
     
     if app.config.get('TESTING', False):
@@ -149,10 +145,8 @@ def initialize_background_tasks(app):
         return
     try:
         upload_folder = app.config.get('UPLOAD_FOLDER', './uploads/dev')
-        
         # Ensure upload folder exists
         os.makedirs(upload_folder, exist_ok=True)
-        
         # Start background scheduler for cleanup tasks
         start_background_scheduler(upload_folder, app)
         app.logger.info(f"Background scheduler started for folder: {upload_folder}")
@@ -161,7 +155,7 @@ def initialize_background_tasks(app):
         app.logger.warning(f"Background task initialization failed: {e}")
 
 
-def register_health_checks(app):
+def register_health_checks(app: Flask):
     """Register health check endpoints"""
     
     @app.route('/health')
@@ -241,7 +235,7 @@ def register_health_checks(app):
                 'error': str(e)
             }), 500
             
-def register_debug_endpoints(app):
+def register_debug_endpoints(app: Flask):
     """Register debug endpoints (development only)"""
     
     @app.route('/debug/config')

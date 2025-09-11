@@ -48,78 +48,24 @@ class TieredRateLimiter:
         self._setup_error_handlers()
     
     def _configure_rate_limits(self):
-        """Configure rate limits for different user tiers and endpoints"""
+        """Configure basic anonymous rate limits"""
         self.rate_limits = {
-            'free': {
+            'anonymous': {
                 'compression': {
                     'per_minute': 2,
                     'per_hour': 10,
                     'per_day': 10
                 },
-                'auth': {
-                    'per_minute': 5,
-                    'per_hour': 20
-                },
                 'api': {
                     'per_minute': 30,
                     'per_hour': 200
-                }
-            },
-            'premium': {
-                'compression': {
-                    'per_minute': 10,
-                    'per_hour': 100,
-                    'per_day': 500
-                },
-                'auth': {
-                    'per_minute': 10,
-                    'per_hour': 50
-                },
-                'api': {
-                    'per_minute': 100,
-                    'per_hour': 1000
-                }
-            },
-            'pro': {
-                'compression': {
-                    'per_minute': 50,
-                    'per_hour': 1000,
-                    'per_day': -1  # Unlimited
-                },
-                'auth': {
-                    'per_minute': 20,
-                    'per_hour': 100
-                },
-                'api': {
-                    'per_minute': 500,
-                    'per_hour': 5000
-                }
-            },
-            'anonymous': {
-                'compression': {
-                    'per_minute': 1,
-                    'per_hour': 3,
-                    'per_day': 3
-                },
-                'auth': {
-                    'per_minute': 3,
-                    'per_hour': 10
-                },
-                'api': {
-                    'per_minute': 10,
-                    'per_hour': 50
                 }
             }
         }
     
     def _get_rate_limit_key(self):
-        """Generate rate limit key based on user or IP"""
-        # Try to get user ID from JWT token
-        user_id = getattr(g, 'current_user_id', None)
-        if user_id:
-            return f"user:{user_id}"
-        
-        # Fall back to IP address
+        """Generate rate limit key based on IP address"""
+        # Use IP-based identification for anonymous users
         return f"ip:{get_remote_address()}"
     
     def _setup_error_handlers(self):
@@ -164,12 +110,11 @@ class TieredRateLimiter:
     
     def _log_rate_limit_event(self, error):
         """Log rate limit exceeded events"""
-        user_id = getattr(g, 'current_user_id', None)
-        user_tier = getattr(g, 'current_user_tier', 'anonymous')
+        # Get anonymous user context for logging
+        user_tier = 'anonymous'
         
         log_data = {
             'event': 'rate_limit_exceeded',
-            'user_id': user_id,
             'user_tier': user_tier,
             'ip': get_remote_address(),
             'endpoint': request.endpoint,
@@ -181,18 +126,7 @@ class TieredRateLimiter:
         logger.warning(f"Rate limit exceeded: {log_data}")
     
     def get_user_tier(self) -> str:
-        """Get current user's tier"""
-        # Try to get from Flask g object first
-        if hasattr(g, 'current_user_tier'):
-            return g.current_user_tier
-        
-        # Try to get from user object
-        if hasattr(g, 'current_user') and g.current_user:
-            if hasattr(g.current_user, 'subscription') and g.current_user.subscription:
-                if g.current_user.subscription.plan:
-                    return g.current_user.subscription.plan.name.lower()
-            return 'free'
-        
+        """Always return anonymous tier as no user authentication is used"""
         return 'anonymous'
     
     def get_rate_limit_for_tier(self, tier: str, category: str) -> Dict[str, int]:
@@ -339,9 +273,7 @@ def compression_rate_limit(f):
     return rate_limit_by_endpoint('compression')(f)
 
 
-def auth_rate_limit(f):
-    """Rate limit decorator for authentication endpoints"""
-    return rate_limit_by_endpoint('auth')(f)
+
 
 
 def api_rate_limit(f):

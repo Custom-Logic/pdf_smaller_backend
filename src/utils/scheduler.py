@@ -107,15 +107,14 @@ scheduler = TaskScheduler()
 def setup_cleanup_scheduler(upload_folder: str, app: Flask):
     """Set up the cleanup scheduler with default tasks"""
     with app.app_context():
+        clean_up_service = CleanupService()
         def cleanup_expired_jobs():
             """Wrapper for expired jobs cleanup"""
-            return CleanupService.cleanup_expired_jobs()
-
+            return clean_up_service.cleanup_expired_jobs()
         def cleanup_temp_files():
             """Wrapper for temp files cleanup"""
-            return CleanupService.cleanup_temp_files(upload_folder)
-    
-        # Add cleanup tasks
+            return clean_up_service.cleanup_temp_files(upload_folder)
+            # Add cleanup tasks
         scheduler.add_task('cleanup_expired_jobs', cleanup_expired_jobs, interval_hours=6)  # Every 6 hours
         scheduler.add_task('cleanup_temp_files', cleanup_temp_files, interval_hours=1)      # Every hour
 

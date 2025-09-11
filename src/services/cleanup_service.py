@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
 
 class CleanupService:
     """Service for managing file cleanup and job retention policies"""
-
     # Default retention periods (in hours) - now job-based instead of user-based
     DEFAULT_RETENTION_PERIODS = {
         'completed': 24,  # 1 day for completed jobs
@@ -23,8 +22,8 @@ class CleanupService:
     # File cleanup settings
     TEMP_FILE_MAX_AGE_HOURS = 1  # Clean up temp files after 1 hour
 
-    @staticmethod
-    def cleanup_expired_jobs() -> Dict[str, Any]:
+
+    def cleanup_expired_jobs(self) -> Dict[str, Any]:
         """
         Clean up expired compression jobs and their associated files
         Returns summary of cleanup operations
@@ -38,11 +37,11 @@ class CleanupService:
 
         try:
             # Get all jobs that need cleanup
-            expired_jobs = CleanupService._get_expired_jobs()
+            expired_jobs = self._get_expired_jobs()
 
             for job in expired_jobs:
                 try:
-                    space_freed = CleanupService._cleanup_job_files(job)
+                    space_freed = self._cleanup_job_files(job)
                     cleanup_summary['total_space_freed_mb'] += space_freed
 
                     # Delete the job record

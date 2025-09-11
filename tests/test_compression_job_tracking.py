@@ -5,7 +5,7 @@ import tempfile
 from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock
 
-from src.models import CompressionJob, User, Plan, Subscription
+from src.models import CompressionJob
 from src.services.compression_service import CompressionService
 from src.services.cleanup_service import CleanupService
 from src.models.base import db
@@ -14,11 +14,10 @@ from src.models.base import db
 class TestCompressionJobTracking:
     """Test compression job tracking and management"""
     
-    def test_compression_job_creation(self, app, test_user):
+    def test_compression_job_creation(self, app):
         """Test creating a compression job"""
         with app.app_context():
             job = CompressionJob(
-                user_id=test_user.id,
                 job_type='single',
                 original_filename='test.pdf',
                 settings={'compression_level': 'medium', 'image_quality': 80}
@@ -28,17 +27,15 @@ class TestCompressionJobTracking:
             db.session.commit()
             
             assert job.id is not None
-            assert job.user_id == test_user.id
             assert job.job_type == 'single'
             assert job.status == 'pending'
             assert job.original_filename == 'test.pdf'
             assert job.get_settings()['compression_level'] == 'medium'
     
-    def test_job_status_transitions(self, app, test_user):
+    def test_job_status_transitions(self, app):
         """Test job status transitions"""
         with app.app_context():
             job = CompressionJob(
-                user_id=test_user.id,
                 job_type='single',
                 original_filename='test.pdf'
             )
@@ -65,11 +62,10 @@ class TestCompressionJobTracking:
             assert job.is_completed()
             assert not job.is_successful()
     
-    def test_compression_ratio_calculation(self, app, test_user):
+    def test_compression_ratio_calculation(self, app):
         """Test compression ratio calculation"""
         with app.app_context():
             job = CompressionJob(
-                user_id=test_user.id,
                 job_type='single',
                 original_filename='test.pdf'
             )
@@ -81,11 +77,10 @@ class TestCompressionJobTracking:
             assert ratio == 50.0  # 50% compression
             assert job.compression_ratio == 50.0
     
-    def test_progress_percentage(self, app, test_user):
+    def test_progress_percentage(self, app):
         """Test progress percentage calculation"""
         with app.app_context():
             job = CompressionJob(
-                user_id=test_user.id,
                 job_type='bulk',
                 original_filename='bulk.zip'
             )
@@ -96,11 +91,10 @@ class TestCompressionJobTracking:
             progress = job.get_progress_percentage()
             assert progress == 30.0
     
-    def test_job_to_dict_serialization(self, app, test_user):
+    def test_job_to_dict_serialization(self, app):
         """Test job serialization to dictionary"""
         with app.app_context():
             job = CompressionJob(
-                user_id=test_user.id,
                 job_type='single',
                 original_filename='test.pdf',
                 settings={'compression_level': 'high'}
@@ -116,7 +110,6 @@ class TestCompressionJobTracking:
             job_dict = job.to_dict()
             
             assert job_dict['id'] == job.id
-            assert job_dict['user_id'] == test_user.id
             assert job_dict['job_type'] == 'single'
             assert job_dict['status'] == 'pending'
             assert job_dict['original_filename'] == 'test.pdf'
@@ -129,8 +122,8 @@ class TestCompressionServiceWithTracking:
     """Test compression service with job tracking"""
     
     @patch('src.services.compression_service.CompressionService.compress_pdf')
-    def test_process_upload_with_user_context(self, mock_compress, app, test_user, temp_upload_folder):
-        """Test file processing with user context and job tracking"""
+    def test_process_upload_with_tracking(self, mock_compress, app, temp_upload_folder):
+        """Test file processing with job tracking"""
         with app.app_context():
             # Mock file
             mock_file = MagicMock()
@@ -161,14 +154,13 @@ class TestCompressionServiceWithTracking:
                 result_path = service.process_upload(
                     mock_file, 
                     compression_level='medium',
-                    image_quality=80,
-                    user_id=test_user.id
+                    image_quality=80
                 )
                 
                 assert result_path == output_path
                 
                 # Check that job was created and completed
-                job = CompressionJob.query.filter_by(user_id=test_user.id).first()
+                job = CompressionJob.query.first()
                 assert job is not None
                 assert job.status == 'completed'
                 assert job.original_filename == 'test.pdf'
@@ -176,27 +168,14 @@ class TestCompressionServiceWithTracking:
                 assert job.compressed_size_bytes == 9000
                 assert job.compression_ratio == (17000 - 9000) / 17000 * 100
     
-    def test_check_user_permissions(self, app, test_user_with_subscription, temp_upload_folder):
-        """Test user permission checking"""
-        with app.app_context():
-            service = CompressionService(temp_upload_folder)
-            
-            # Test with valid permissions
-            permissions = service.check_user_permissions(test_user_with_subscription.id, 5.0)
-            assert permissions['allowed'] is True
-            
-            # Test with file too large
-            permissions = service.check_user_permissions(test_user_with_subscription.id, 50.0)
-            assert permissions['allowed'] is False
-            assert 'exceeds limit' in permissions['reason']
+
     
-    def test_get_user_compression_jobs(self, app, test_user, temp_upload_folder):
-        """Test retrieving user's compression jobs"""
+    def test_get_compression_jobs(self, app, temp_upload_folder):
+        """Test retrieving compression jobs"""
         with app.app_context():
             # Create some test jobs
             for i in range(5):
                 job = CompressionJob(
-                    user_id=test_user.id,
                     job_type='single',
                     original_filename=f'test_{i}.pdf'
                 )
@@ -205,22 +184,20 @@ class TestCompressionServiceWithTracking:
             db.session.commit()
             
             service = CompressionService(temp_upload_folder)
-            jobs = service.get_user_compression_jobs(test_user.id, limit=3)
+            jobs = service.get_compression_jobs(limit=3)
             
             assert len(jobs) == 3
-            assert all(job['user_id'] == test_user.id for job in jobs)
 
 
 class TestCleanupService:
     """Test cleanup service functionality"""
     
-    def test_cleanup_statistics(self, app, test_user):
+    def test_cleanup_statistics(self, app):
         """Test getting cleanup statistics"""
         with app.app_context():
             # Create some test jobs
             for i in range(3):
                 job = CompressionJob(
-                    user_id=test_user.id,
                     job_type='single',
                     original_filename=f'test_{i}.pdf'
                 )
@@ -261,12 +238,11 @@ class TestCleanupService:
         assert not os.path.exists(old_file)  # Old file should be deleted
         assert os.path.exists(new_file)      # New file should remain
     
-    def test_force_cleanup_user_jobs(self, app, test_user, temp_upload_folder):
-        """Test force cleanup of user jobs"""
+    def test_force_cleanup_jobs(self, app, temp_upload_folder):
+        """Test force cleanup of jobs"""
         with app.app_context():
             # Create test job with files
             job = CompressionJob(
-                user_id=test_user.id,
                 job_type='single',
                 original_filename='test.pdf'
             )
@@ -287,14 +263,14 @@ class TestCleanupService:
             db.session.commit()
             
             # Run force cleanup
-            result = CleanupService.force_cleanup_user_jobs(test_user.id)
+            result = CleanupService.force_cleanup_jobs()
             
             assert result['jobs_cleaned'] == 1
             assert not os.path.exists(input_file)
             assert not os.path.exists(output_file)
             
             # Verify job was deleted from database
-            remaining_jobs = CompressionJob.query.filter_by(user_id=test_user.id).count()
+            remaining_jobs = CompressionJob.query.count()
             assert remaining_jobs == 0
 
 
@@ -304,56 +280,3 @@ def temp_upload_folder():
     """Create a temporary upload folder for testing"""
     with tempfile.TemporaryDirectory() as temp_dir:
         yield temp_dir
-
-
-@pytest.fixture
-def test_user(app):
-    """Create a test user"""
-    with app.app_context():
-        user = User(
-            email='test@example.com',
-            password='TestPassword123',
-            name='Test User'
-        )
-        db.session.add(user)
-        db.session.commit()
-        yield user
-        
-        # Cleanup
-        db.session.delete(user)
-        db.session.commit()
-
-
-@pytest.fixture
-def test_user_with_subscription(app, test_user):
-    """Create a test user with subscription"""
-    with app.app_context():
-        # Create a test plan
-        plan = Plan(
-            name='premium',
-            display_name='Premium Plan',
-            price_monthly=9.99,
-            daily_compression_limit=500,
-            max_file_size_mb=25,
-            bulk_processing=True,
-            priority_processing=False,
-            api_access=True
-        )
-        db.session.add(plan)
-        db.session.commit()
-        
-        # Create subscription
-        subscription = Subscription(
-            user_id=test_user.id,
-            plan_id=plan.id,
-            billing_cycle='monthly'
-        )
-        db.session.add(subscription)
-        db.session.commit()
-        
-        yield test_user
-        
-        # Cleanup
-        db.session.delete(subscription)
-        db.session.delete(plan)
-        db.session.commit()
