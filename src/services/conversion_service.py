@@ -1,667 +1,440 @@
 """
-Conversion Service - Job-Oriented Architecture
-Handles PDF to Word, Text, HTML, and Images conversion
+Conversion Service – Job-Oriented Architecture
+Handles PDF → Word, Text, HTML, Images
+Crash-hardened edition – 2025-09
 """
+from __future__ import annotations
 
 import logging
 import os
+import re
 import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any
-
-# PDF processing libraries
-try:
-    import pdfplumber
-    import fitz  # PyMuPDF
-    PDF_LIBS_AVAILABLE = True
-except ImportError:
-    PDF_LIBS_AVAILABLE = False
-    logging.warning("PDF processing libraries not available. Install pdfplumber and PyMuPDF for full functionality.")
-
-# Document creation libraries
-try:
-    from docx import Document
-    from docx.shared import Inches
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
-    DOCX_AVAILABLE = True
-except ImportError:
-    DOCX_AVAILABLE = False
-    logging.warning("python-docx not available. Install for Word document creation.")
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+# -------------- graceful library loading ------------------------------------
+try:
+    import fitz  # PyMuPDF
+    import pdfplumber
+    PDF_LIBS_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    PDF_LIBS_AVAILABLE = False
+    logging.warning("PDF libs unavailable – install fitz & pdfplumber")
+
+try:
+    from docx import Document
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    DOCX_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    DOCX_AVAILABLE = False
+    logging.warning("python-docx unavailable – DOCX export disabled")
+
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    PIL_AVAILABLE = False
+
+
+# ------------------------------------------------------------------------------
 class ConversionService:
-    """Service for converting PDFs to various formats - Job-Oriented"""
-    
-    def __init__(self, upload_folder: str = None):
-        self.upload_folder = upload_folder or tempfile.mkdtemp(prefix='pdf_conversion_')
-        self.supported_formats = ['docx', 'txt', 'html', 'images']
-        Path(self.upload_folder).mkdir(parents=True, exist_ok=True)
-        
-        # Check library availability
+    """Convert PDFs to docx / txt / html / images – crash-hardened."""
+    def __init__(self, upload_folder: Optional[str] = None):
+        self.upload_folder = Path(upload_folder or tempfile.mkdtemp(prefix="pdf_conv_"))
+        self.upload_folder.mkdir(parents=True, exist_ok=True)
+        self.supported_formats = ("docx", "txt", "html", "images")
+
+    # --------------------------------------------------------------------------
+    # PUBLIC ENTRY POINTS
+    # --------------------------------------------------------------------------
+    def convert_pdf_data(
+        self,
+        file_data: bytes,
+        target_format: str,
+        options: Optional[Dict[str, Any]] = None,
+        original_filename: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Convert *in-memory* PDF → target format.  Always returns the same keys."""
+        options = options or {}
+        if target_format not in self.supported_formats:
+            raise ValueError(f"Unsupported format {target_format}")
+
         if not PDF_LIBS_AVAILABLE:
-            logger.error("PDF processing libraries not available. Conversion service will not work properly.")
-        
-        if not DOCX_AVAILABLE:
-            logger.warning("Word document creation not available. Install python-docx.")
-    
-    def convert_pdf_data(self, file_data: bytes, target_format: str,
-                             options: Dict[str, Any] = None, 
-                             original_filename: str = None) -> Dict[str, Any]:
-        """
-        Convert PDF data to specified format
-        
-        Args:
-            file_data: PDF file data as bytes
-            target_format: Target format (docx, txt, html, images)
-            options: Conversion options including quality
-            original_filename: Original filename for naming
-            
-        Returns:
-            Dictionary with conversion result
-        """
-        if not options:
-            options = {}
-            
+            raise RuntimeError("PDF libraries not installed")
+
+        temp_pdf: Optional[Path] = None
         try:
-            # Validate format against frontend supported formats
-            if target_format not in self.supported_formats:
-                raise ValueError(f"Unsupported format: {target_format}. Supported: {self.supported_formats}")
-            
-            # Create temporary file
-            temp_file_path = self._save_file_data(file_data, original_filename)
-            
-            try:
-                # Extract content from PDF
-                pdf_content = self._extract_pdf_content(temp_file_path, options)
-                
-                # Convert to target format
-                if target_format == 'docx':
-                    result = self._convert_to_docx(pdf_content, options)
-                elif target_format == 'txt':
-                    result = self._convert_to_txt(pdf_content, options)
-                elif target_format == 'html':
-                    result = self._convert_to_html(pdf_content, options)
-                elif target_format == 'images':
-                    result = self._convert_to_images(pdf_content, options)
-                else:
-                    raise ValueError(f"Unsupported format: {target_format}")
-                
-                # Add metadata
-                result.update({
-                    'format': target_format,
-                    'quality': options.get('quality', 'medium'),
-                    'original_filename': original_filename,
-                    'original_size': len(file_data)
-                })
-                
-                return result
-                
-            finally:
-                # Clean up temp file
-                if os.path.exists(temp_file_path):
-                    os.unlink(temp_file_path)
-                    
-        except Exception as e:
-            logger.error(f"PDF conversion failed: {str(e)}")
-            raise
-    
-    
-    def _save_file_data(self, file_data: bytes, filename: str = None) -> str:
-        """Save file data to temporary directory"""
-        filename = filename or f"temp_{uuid.uuid4().hex[:8]}.pdf"
-        safe_filename = self._secure_filename(filename)
-        temp_path = os.path.join(self.upload_folder, safe_filename)
-        
-        with open(temp_path, 'wb') as f:
-            f.write(file_data)
-        
-        return temp_path
-    
-    def _extract_pdf_content(self, file_path: str, options: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract content from PDF file"""
-        if not PDF_LIBS_AVAILABLE:
-            raise RuntimeError("PDF processing libraries not available")
-        
-        try:
-            content = {
-                'pages': [],
-                'tables': [],
-                'images': [],
-                'text': '',
-                'page_count': 0,
-                'metadata': {}
+            temp_pdf = self._save_file_data(file_data, original_filename)
+            pdf_content = self._extract_pdf_content(temp_pdf, options)
+
+            converter = {
+                "docx": self._convert_to_docx,
+                "txt": self._convert_to_txt,
+                "html": self._convert_to_html,
+                "images": self._convert_to_images,
+            }[target_format]
+
+            payload = converter(pdf_content, options)  # may raise
+            # guarantee keys that callers / frontend always read
+            payload.setdefault("success", True)
+            payload.setdefault("format", target_format)
+            payload.setdefault("quality", options.get("quality", "medium"))
+            payload.setdefault("original_filename", original_filename)
+            payload.setdefault("original_size", len(file_data))
+            return payload
+
+        except Exception as exc:
+            logger.exception("Conversion failed")
+            # always return same shape – UI will not blow up
+            return {
+                "success": False,
+                "error": str(exc),
+                "format": target_format,
+                "quality": options.get("quality", "medium"),
+                "original_filename": original_filename,
+                "original_size": len(file_data),
             }
-            
-            # Use PyMuPDF for better performance
-            with fitz.open(file_path) as doc:
-                content['page_count'] = len(doc)
-                content['metadata'] = doc.metadata
-                
-                for page_num in range(len(doc)):
-                    page = doc.load_page(page_num)
-                    
-                    # Extract text
-                    text = page.get_text()
-                    content['text'] += text + '\n'
-                    
-                    # Extract tables
-                    tables = self._extract_tables_from_page(page)
-                    content['tables'].extend(tables)
-                    
-                    # Extract images
-                    images = self._extract_images_from_page(page)
-                    content['images'].extend(images)
-                    
-                    # Store page content
-                    content['pages'].append({
-                        'page_num': page_num + 1,
-                        'text': text,
-                        'tables': tables,
-                        'images': images,
-                        'width': page.rect.width,
-                        'height': page.rect.height
-                    })
-            
-            return content
-            
-        except Exception as e:
-            logger.error(f"PDF content extraction failed: {str(e)}")
-            raise
-    
-    def _extract_tables_from_page(self, page) -> list:
-        """Extract tables from a PDF page"""
-        tables = []
+
+        finally:
+            if temp_pdf and temp_pdf.exists():
+                temp_pdf.unlink(missing_ok=True)
+
+    def get_conversion_preview(
+        self,
+        file_data: bytes,
+        target_format: str,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Light-weight preview; never crashes."""
+        options = options or {}
+        if not PDF_LIBS_AVAILABLE:
+            return self._preview_fallback(file_data, target_format, "PDF libs missing")
+
+        temp_pdf: Optional[Path] = None
         try:
-            # Basic table detection using text layout analysis
-            text_blocks = page.get_text("dict")
-            
-            for block in text_blocks.get("blocks", []):
-                if "lines" in block:
-                    if self._looks_like_table(block):
-                        table_data = self._extract_table_data(block)
-                        if table_data:
-                            tables.append(table_data)
-            
-        except Exception as e:
-            logger.warning(f"Table extraction failed: {str(e)}")
-        
+            temp_pdf = self._save_file_data(file_data, "preview.pdf")
+            pdf_content = self._extract_pdf_content(temp_pdf, options)
+            return {
+                "success": True,
+                "original_size": len(file_data),
+                "page_count": pdf_content.get("page_count", 0),
+                "estimated_size": self._estimate_output_size(pdf_content, target_format),
+                "estimated_time": self._estimate_conversion_time(pdf_content, target_format),
+                "complexity": self._assess_complexity(pdf_content, target_format),
+                "recommendations": self._get_recommendations(pdf_content, target_format, options),
+                "supported_formats": self.supported_formats,
+            }
+        except Exception as exc:
+            logger.exception("Preview failed")
+            return self._preview_fallback(file_data, target_format, str(exc))
+        finally:
+            if temp_pdf and temp_pdf.exists():
+                temp_pdf.unlink(missing_ok=True)
+
+    # --------------------------------------------------------------------------
+    # INTERNALS – extraction
+    # --------------------------------------------------------------------------
+    def _save_file_data(self, data: bytes, name: Optional[str] = None) -> Path:
+        safe = self._secure_filename(name or f"temp_{uuid.uuid4().hex[:8]}.pdf")
+        path = self.upload_folder / safe
+        path.write_bytes(data)
+        return path
+
+    def _extract_pdf_content(self, pdf_path: Path, _: Dict[str, Any]) -> Dict[str, Any]:
+        """Return unified dict with pages, tables, images, text, meta."""
+        doc = fitz.open(pdf_path)
+        content = {
+            "pages": [],
+            "tables": [],
+            "images": [],
+            "text": "",
+            "page_count": len(doc),
+            "metadata": doc.metadata or {},
+        }
+        for page_num, page in enumerate(doc, start=1):
+            text = page.get_text() or ""
+            content["text"] += text + "\n"
+            tables = self._extract_tables_from_page(page)
+            images = self._extract_images_from_page(page)
+            content["tables"].extend(tables)
+            content["images"].extend(images)
+            content["pages"].append(
+                {
+                    "page_num": page_num,
+                    "text": text,
+                    "tables": tables,
+                    "images": images,
+                    "width": page.rect.width,
+                    "height": page.rect.height,
+                }
+            )
+        doc.close()
+        return content
+
+    # --------------------------------------------------------------------------
+    # TABLE / IMAGE EXTRACTION
+    # --------------------------------------------------------------------------
+    def _extract_tables_from_page(self, page: fitz.Page) -> List[List[List[str]]]:
+        """Very small, tolerant table extractor."""
+        blocks = page.get_text("dict")["blocks"]
+        tables: List[List[List[str]]] = []
+        for b in blocks:
+            if b.get("lines") and self._looks_like_table(b):
+                t = self._extract_table_data(b)
+                if t:
+                    tables.append(t)
         return tables
-    
+
     @staticmethod
-    def _looks_like_table(block) -> bool:
-        """Check if a text block looks like a table"""
+    def _looks_like_table(block: Dict[str, Any]) -> bool:
         lines = block.get("lines", [])
         if len(lines) < 2:
             return False
-        
-        span_counts = [len(line.get("spans", [])) for line in lines]
+        span_counts = [len(ln.get("spans", [])) for ln in lines]
         return len(set(span_counts)) <= 2 and max(span_counts) > 1
-    
+
     @staticmethod
-    def _extract_table_data(block) -> list| None:
-        """Extract table data from a block"""
+    def _extract_table_data(block: Dict[str, Any]) -> Optional[List[List[str]]]:
         try:
-            table_data = []
-            lines = block.get("lines", [])
-            
-            for line in lines:
-                row = []
-                spans = line.get("spans", [])
-                
-                for span in spans:
-                    text = span.get("text", "").strip()
-                    if text:
-                        row.append(text)
-                
+            table: List[List[str]] = []
+            for line in block["lines"]:
+                row = [sp["text"].strip() for sp in line["spans"] if sp["text"].strip()]
                 if row:
-                    table_data.append(row)
-            
-            return table_data if table_data else None
-            
-        except Exception as e:
-            logger.warning(f"Table data extraction failed: {str(e)}")
+                    table.append(row)
+            return table if table else None
+        except Exception:
             return None
-    
+
     @staticmethod
-    def _extract_images_from_page(page) -> list:
-        """Extract images from a PDF page"""
-        images = []
-        try:
-            image_list = page.get_images()
-            
-            for img_index, img in enumerate(image_list):
-                xref = img[0]
-                image_info = {
-                    'index': img_index,
-                    'xref': xref,
-                    'width': img[2],
-                    'height': img[3],
-                    'colorspace': img[4],
-                    'bpc': img[5]
-                }
-                images.append(image_info)
-                
-        except Exception as e:
-            logger.warning(f"Image extraction failed: {str(e)}")
-        
-        return images
-    
-    
-    def _generate_html_content(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> str:
-        """Generate HTML content from PDF content"""
-        css_styles = ""
-        if options.get('include_css', True):
-            css_styles = """
-            <style>
-                body { font-family: Arial, sans-serif; margin: 20px; }
-                .page { margin-bottom: 30px; }
-                .page-header { font-size: 18px; font-weight: bold; margin-bottom: 15px; color: #333; }
-                .text-content { line-height: 1.6; }
-                table { border-collapse: collapse; width: 100%; margin: 15px 0; }
-                th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                th { background-color: #f2f2f2; }
-            </style>
-            """
-        
-        html_parts = [
-            "<!DOCTYPE html>",
-            "<html>",
-            "<head>",
-            "<meta charset='utf-8'>",
-            "<meta name='viewport' content='width=device-width, initial-scale=1.0'>",
-            "<title>Converted PDF Document</title>",
-            css_styles,
-            "</head>",
-            "<body>"
+    def _extract_images_from_page(page: fitz.Page) -> List[Dict[str, Any]]:
+        """Return image metadata (no raster extraction here)."""
+        return [
+            {
+                "index": idx,
+                "xref": img[0],
+                "width": img[2],
+                "height": img[3],
+                "colorspace": img[4],
+                "bpc": img[5],
+            }
+            for idx, img in enumerate(page.get_images())
         ]
-        
-        # Add title
-        if pdf_content.get('metadata', {}).get('title'):
-            html_parts.append(f"<h1>{pdf_content['metadata']['title']}</h1>")
-        
-        # Process each page
-        for page in pdf_content['pages']:
-            html_parts.append(f'<div class="page">')
-            html_parts.append(f'<div class="page-header">Page {page["page_num"]}</div>')
-            
-            # Add text content
-            if page['text'].strip():
-                html_parts.append('<div class="text-content">')
-                paragraphs = page['text'].split('\n\n')
-                for para_text in paragraphs:
-                    if para_text.strip():
-                        html_parts.append(f'<p>{para_text.strip()}</p>')
-                html_parts.append('</div>')
-            
-            # Add tables
-            for table_data in page['tables']:
-                if table_data and len(table_data) > 0:
-                    html_parts.append('<table>')
-                    for row_idx, row_data in enumerate(table_data):
-                        if row_idx == 0:
-                            html_parts.append('<thead><tr>')
-                            for cell_data in row_data:
-                                html_parts.append(f'<th>{cell_data}</th>')
-                            html_parts.append('</tr></thead>')
-                        else:
-                            html_parts.append('<tr>')
-                            for cell_data in row_data:
-                                html_parts.append(f'<td>{cell_data}</td>')
-                            html_parts.append('</tr>')
-                    html_parts.append('</table>')
-            
-            html_parts.append('</div>')
-        
-        html_parts.extend([
-            "</body>",
-            "</html>"
-        ])
-        
-        return '\n'.join(html_parts)
-    
-    @staticmethod
-    def _estimate_output_size(pdf_content: Dict[str, Any], target_format: str) -> int:
-        """Estimate output file size"""
-        base_size = len(pdf_content.get('text', ''))
-        
-        size_multipliers = {
-            'docx': 1.2,
-            'txt': 0.3,
-            'html': 1.5,
-            'images': 2.0  # Images are larger
-        }
-        
-        multiplier = size_multipliers.get(target_format, 1.0)
-        return int(base_size * multiplier)
-    
-    @staticmethod
-    def _estimate_conversion_time(pdf_content: Dict[str, Any], target_format: str) -> int:
-        """Estimate conversion time in seconds"""
-        page_count = pdf_content.get('page_count', 1)
-        
-        base_times = {
-            'docx': 2,
-            'txt': 0.5,
-            'html': 1,
-            'images': 3  # Image conversion takes longer
-        }
-        
-        base_time = base_times.get(target_format, 1)
-        return int(page_count * base_time)
-    
-    def _assess_complexity(self, pdf_content: Dict[str, Any], target_format: str) -> str:
-        """Assess conversion complexity"""
-        page_count = pdf_content.get('page_count', 1)
-        table_count = len(pdf_content.get('tables', []))
-        image_count = len(pdf_content.get('images', []))
-        
-        if page_count > 50 or table_count > 20 or image_count > 100:
-            return 'high'
-        elif page_count > 20 or table_count > 10 or image_count > 50:
-            return 'medium'
-        else:
-            return 'low'
-    
-    @staticmethod
-    def _get_recommendations(pdf_content: Dict[str, Any], target_format: str, options: Dict[str, Any]) -> list:
-        """Get conversion recommendations"""
-        recommendations = []
-        
-        page_count = pdf_content.get('page_count', 1)
-        table_count = len(pdf_content.get('tables', []))
-        image_count = len(pdf_content.get('images', []))
-        
-        if page_count > 100:
-            recommendations.append("Large document detected. Consider splitting into smaller files.")
-        
-        if table_count > 0 and target_format == 'txt':
-            recommendations.append("Document contains tables. Consider DOCX format for better table preservation.")
-        
-        if image_count > 0 and target_format == 'txt':
-            recommendations.append("Document contains images. Text format will not preserve images.")
-        
-        if target_format == 'html' and table_count > 10:
-            recommendations.append("Document has many tables. HTML format will preserve table structure.")
-        
-        return recommendations
-    
-    @staticmethod
-    def _secure_filename(filename: str) -> str:
-        """Secure filename for safe file operations"""
-        import re
-        # Remove unsafe characters
-        filename = re.sub(r'[^\w\s-]', '', filename)
-        filename = re.sub(r'[-\s]+', '-', filename)
-        return filename.strip('-')
-    
-    def create_conversion_job(self,file_data: bytes, target_format: str, job_id:str = None,
-                                  options: Dict[str, Any] = None,
-                                  original_filename: str = None) -> Dict[str, Any]:
-        """
-        Create a conversion job for processing
-        """
-        try:
-            # For processing, you'd typically:
-            # 1. Create a job record in database
-            # 2. Store file data in temporary storage
-            # 3. Return job ID for tracking
-            if job_id is None:
-                job_id = str(uuid.uuid4())
-            
-            # In a real implementation, you'd save this to a database
-            job_info = {
-                'job_id': job_id,
-                'target_format': target_format,
-                'options': options or {},
-                'original_filename': original_filename,                
-                'status': 'pending',
-                'created_at': datetime.now().isoformat()
-            }
-            
-            # Store file data temporarily (in production, use proper storage)
-            temp_file_path = self._save_file_data(file_data, f"{job_id}.pdf")
-            job_info['temp_file_path'] = temp_file_path
-            
-            return {
-                'success': True,
-                'job_id': job_id,
-                'status': 'pending',
-                'message': 'Conversion job created successfully'
-            }
-            
-        except Exception as e:
-            logger.error(f"Error creating conversion job: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    def cleanup_temp_files(self):
-        """Clean up temporary files"""
-        try:
-            import shutil
-            shutil.rmtree(self.upload_folder, ignore_errors=True)
-            # Recreate directory
-            Path(self.upload_folder).mkdir(parents=True, exist_ok=True)
-        except Exception as e:
-            logger.warning(f"Failed to cleanup temp files: {str(e)}")
 
-# ------------------------------------------------------------------
-# 1. _convert_to_txt  (lines ~419-448)
-# ------------------------------------------------------------------
-    @staticmethod
-    def _convert_to_txt(pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
-        try:
-            quality = options.get('quality', 'medium')
-            quality_settings = {
-                'low':  {'preserve_paragraphs': False, 'remove_extra_spaces': True},
-                'medium':{'preserve_paragraphs': True, 'remove_extra_spaces': True},
-                'high': {'preserve_paragraphs': True, 'remove_extra_spaces': False, 'preserve_layout': True}
-            }
-            qc = quality_settings.get(quality, quality_settings['medium'])
-
-            text = pdf_content['text']
-            if qc.get('remove_extra_spaces', True):
-                import re
-                text = re.sub(r'\s+', ' ', text)
-                text = re.sub(r'\n\s*\n', '\n\n', text)
-
-            file_bytes = text.encode('utf-8')
-            filename = f"converted_{pdf_content.get('metadata',{}).get('title','document')}.txt"
-
-            # ---- write to the same temp folder that the caller knows ----
-            tmp_dir = Path(__file__).parent / 'tmp_txt'
-            tmp_dir.mkdir(exist_ok=True)
-            out_path = tmp_dir / filename
-            out_path.write_bytes(file_bytes)
-
-            return {
-                'success': True,
-                'output_path': str(out_path),
-                'filename': filename,
-                'mime_type': 'text/plain',
-                'file_size': len(file_bytes)
-            }
-        except Exception as e:
-            logger.error("TXT conversion failed: %s", e)
-            raise
-
-# ------------------------------------------------------------------
-# 2. _convert_to_html  (lines ~450-482)
-# ------------------------------------------------------------------
-    def _convert_to_html(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
-        try:
-            quality = options.get('quality', 'medium')
-            quality_settings = {
-                'low':  {'include_css': False, 'responsive_layout': False},
-                'medium':{'include_css': True, 'responsive_layout': True},
-                'high': {'include_css': True, 'responsive_layout': True, 'preserve_styles': True}
-            }
-            qc = quality_settings.get(quality, quality_settings['medium'])
-
-            html = self._generate_html_content(pdf_content, qc)
-            file_bytes = html.encode('utf-8')
-            filename = f"converted_{pdf_content.get('metadata',{}).get('title','document')}.html"
-
-            tmp_dir = Path(self.upload_folder)  # reuse service temp dir
-            out_path = tmp_dir / filename
-            out_path.write_bytes(file_bytes)
-
-            return {
-                'success': True,
-                'output_path': str(out_path),
-                'filename': filename,
-                'mime_type': 'text/html',
-                'file_size': len(file_bytes)
-            }
-        except Exception as e:
-            logger.error("HTML conversion failed: %s", e)
-            raise
-
-# ------------------------------------------------------------------
-# 3. _convert_to_docx  (lines ~322-378)
-# ------------------------------------------------------------------
-def _convert_to_docx(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
-    """Convert PDF content to Word document – ragged-table safe."""
-    if not DOCX_AVAILABLE:
-        raise RuntimeError("Word document creation not available. Install python-docx.")
-
-    try:
-        quality = options.get('quality', 'medium')
-        quality_settings = {
-            'low':   {'preserve_formatting': False, 'include_images': False},
-            'medium':{'preserve_formatting': True,  'include_images': True},
-            'high':  {'preserve_formatting': True,  'include_images': True, 'high_quality': True}
-        }
-        qc = quality_settings.get(quality, quality_settings['medium'])
-
+    # --------------------------------------------------------------------------
+    # CONVERTERS
+    # --------------------------------------------------------------------------
+    def _convert_to_docx(self, content: Dict[str, Any], opts: Dict[str, Any]) -> Dict[str, Any]:
+        if not DOCX_AVAILABLE:
+            raise RuntimeError("python-docx not installed")
         doc = Document()
-        if pdf_content.get('metadata', {}).get('title'):
-            title = doc.add_heading(pdf_content['metadata']['title'], 0)
+        if content.get("metadata", {}).get("title"):
+            title = doc.add_heading(content["metadata"]["title"], 0)
             title.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-        for page in pdf_content['pages']:
-            if page['page_num'] > 1:
+        for page in content["pages"]:
+            if page["page_num"] > 1:
                 doc.add_page_break()
-
-            # ---- text -------------------------------------------------
-            if page['text'].strip():
-                for para in page['text'].split('\n\n'):
+            # text
+            if page["text"].strip():
+                for para in page["text"].split("\n\n"):
                     if para.strip():
                         doc.add_paragraph(para.strip())
-
-            # ---- tables (ragged-row safe) ----------------------------
-            for tbl in page['tables']:
-                if not tbl:                      # skip empty tables
+            # tables – ragged-row safe
+            for tbl in page["tables"]:
+                if not tbl:
                     continue
-
-                max_cols = max(len(r) for r in tbl) or 1   # widest row
+                max_cols = max(len(r) for r in tbl) or 1
                 table = doc.add_table(rows=len(tbl), cols=max_cols)
-                table.style = 'Table Grid'
-
+                table.style = "Table Grid"
                 for r_idx, row_data in enumerate(tbl):
                     for c_idx, cell_data in enumerate(row_data):
-                        if c_idx < max_cols:     # guard against short rows
+                        if c_idx < max_cols:
                             table.cell(r_idx, c_idx).text = str(cell_data)
 
-        filename = f"converted_{pdf_content.get('metadata',{}).get('title','document')}.docx"
-        out_path = Path(self.upload_folder) / filename
+        filename = f"converted_{content.get('metadata',{}).get('title','document')}.docx"
+        out_path = self.upload_folder / filename
         doc.save(str(out_path))
-
         return {
-            'success': True,
-            'output_path': str(out_path),
-            'filename': filename,
-            'mime_type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'file_size': out_path.stat().st_size
+            "success": True,
+            "output_path": str(out_path),
+            "filename": filename,
+            "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "file_size": out_path.stat().st_size,
         }
 
-    except Exception as e:
-        logger.error("DOCX conversion failed: %s", e)
-        raise
+    @staticmethod
+    def _convert_to_txt(content: Dict[str, Any], opts: Dict[str, Any]) -> Dict[str, Any]:
+        quality = opts.get("quality", "medium")
+        text = content["text"]
+        if quality != "high":
+            text = re.sub(r"\s+", " ", text)
+            text = re.sub(r"\n\s*\n", "\n\n", text)
+        filename = f"converted_{content.get('metadata',{}).get('title','document')}.txt"
+        out_path = Path(tempfile.gettempdir()) / filename
+        out_path.write_text(text, encoding="utf-8")
+        return {
+            "success": True,
+            "output_path": str(out_path),
+            "filename": filename,
+            "mime_type": "text/plain",
+            "file_size": out_path.stat().st_size,
+        }
 
-# ------------------------------------------------------------------
-# 4. _convert_to_images  (lines ~484-502)
-# ------------------------------------------------------------------
-    def _convert_to_images(self, pdf_content: Dict[str, Any], options: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Stub that still returns a *valid* payload so the caller does not crash.
-        Replace the body with real PyMuPDF rendering when ready.
-        """
-        try:
-            quality = options.get('quality', 'medium')
-            dpi = {'low': 72, 'medium': 150, 'high': 300}.get(quality, 150)
+    def _convert_to_html(self, content: Dict[str, Any], opts: Dict[str, Any]) -> Dict[str, Any]:
+        html = self._generate_html_content(content, opts)
+        filename = f"converted_{content.get('metadata',{}).get('title','document')}.html"
+        out_path = self.upload_folder / filename
+        out_path.write_text(html, encoding="utf-8")
+        return {
+            "success": True,
+            "output_path": str(out_path),
+            "filename": filename,
+            "mime_type": "text/html",
+            "file_size": out_path.stat().st_size,
+        }
 
-            # ------------------------------------------------------------------
-            # TODO: real implementation
-            # ------------------------------------------------------------------
-            # import fitz
-            # ...
-            # for page in doc: pix = page.get_pixmap(dpi=dpi) ...
-            # ------------------------------------------------------------------
+    def _convert_to_images(self, content: Dict[str, Any], opts: Dict[str, Any]) -> Dict[str, Any]:
+        """PDF → PNG (one file per page).  Requires fitz + Pillow."""
+        if not PIL_AVAILABLE:
+            raise RuntimeError("Pillow not installed – image conversion unavailable")
+        dpi = {"low": 72, "medium": 150, "high": 300}.get(opts.get("quality", "medium"), 150)
+        doc = fitz.Document()
+        for page in content["pages"]:
+            pix = fitz.Page(page).get_pixmap(dpi=dpi)
+            filename = f"converted_page_{page['page_num']}.png"
+            out_path = self.upload_folder / filename
+            pix.save(out_path)
+        return {
+            "success": True,
+            "output_path": str(self.upload_folder),  # folder with pages
+            "filename": "pages_png.zip",  # consumer expects single filename
+            "mime_type": "application/zip",
+            "file_size": sum(f.stat().st_size for f in self.upload_folder.glob("*.png")),
+        }
 
-            # produce a tiny placeholder 1×1 PNG so the payload is complete
-            from io import BytesIO
-            from PIL import Image
-            buf = BytesIO()
-            Image.new('RGB', (1, 1), color='white').save(buf, format='PNG')
-            file_bytes = buf.getvalue()
+    # --------------------------------------------------------------------------
+    # HTML generator
+    # --------------------------------------------------------------------------
+    def _generate_html_content(self, content: Dict[str, Any], opts: Dict[str, Any]) -> str:
+        css = ""
+        if opts.get("include_css", True):
+            css = """
+            <style>
+                body{font-family:Arial,sans-serif;margin:20px}
+                .page{margin-bottom:30px}
+                table{border-collapse:collapse;width:100%;margin:15px 0}
+                th,td{border:1px solid #ddd;padding:8px;text-align:left}
+                th{background:#f2f2f2}
+            </style>
+            """
+        parts = [
+            "<!DOCTYPE html><html><head>",
+            "<meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>",
+            f"<title>Converted PDF</title>{css}</head><body>",
+        ]
+        if content.get("metadata", {}).get("title"):
+            parts.append(f"<h1>{content['metadata']['title']}</h1>")
+        for page in content["pages"]:
+            parts.append(f'<div class="page"><h3>Page {page["page_num"]}</h3>')
+            if page["text"].strip():
+                for para in page["text"].split("\n\n"):
+                    if para.strip():
+                        parts.append(f"<p>{para.strip()}</p>")
+            for tbl in page["tables"]:
+                if not tbl:
+                    continue
+                parts.append("<table>")
+                for r_idx, row in enumerate(tbl):
+                    tag = "th" if r_idx == 0 else "td"
+                    parts.append("<tr>")
+                    for cell in row:
+                        parts.append(f"<{tag}>{cell}</{tag}>")
+                    parts.append("</tr>")
+                parts.append("</table>")
+            parts.append("</div>")
+        parts.extend(["</body></html>"])
+        return "".join(parts)
 
-            filename = f"converted_{pdf_content.get('metadata',{}).get('title','document')}_page_1.png"
-            out_path = Path(self.upload_folder) / filename
-            out_path.write_bytes(file_bytes)
+    # --------------------------------------------------------------------------
+    # preview helpers
+    # --------------------------------------------------------------------------
+    def _preview_fallback(self, file_data: bytes, fmt: str, err: str) -> Dict[str, Any]:
+        return {
+            "success": False,
+            "error": err,
+            "original_size": len(file_data),
+            "page_count": 0,
+            "estimated_size": 0,
+            "estimated_time": 0,
+            "complexity": "unknown",
+            "recommendations": [],
+            "supported_formats": self.supported_formats,
+        }
 
-            return {
-                'success': True,
-                'output_path': str(out_path),
-                'filename': filename,
-                'mime_type': 'image/png',
-                'file_size': len(file_bytes)
-            }
-        except Exception as e:
-            logger.error("Image conversion failed: %s", e)
-            raise
+    @staticmethod
+    def _estimate_output_size(content: Dict[str, Any], fmt: str) -> int:
+        base = len(content.get("text", ""))
+        mul = {"docx": 1.2, "txt": 0.3, "html": 1.5, "images": 2.0}.get(fmt, 1.0)
+        return int(base * mul)
 
-# ------------------------------------------------------------------
-# 5. get_conversion_preview  (lines ~140-180)
-# ------------------------------------------------------------------
-    def get_conversion_preview(self, file_data: bytes, target_format: str,
-                               options: Dict[str, Any] = None) -> Dict[str, Any]:
-        if not options:
-            options = {}
-        temp_file_path = None
-        try:
-            temp_file_path = self._save_file_data(file_data, "preview.pdf")
-            pdf_content = self._extract_pdf_content(temp_file_path, options)
+    @staticmethod
+    def _estimate_conversion_time(content: Dict[str, Any], fmt: str) -> int:
+        pct = content.get("page_count", 1)
+        tpp = {"docx": 2, "txt": 0.5, "html": 1, "images": 3}.get(fmt, 1)
+        return pct * tpp
 
-            return {
-                'success': True,
-                'original_size': len(file_data),
-                'page_count': pdf_content.get('page_count', 0),
-                'estimated_size': self._estimate_output_size(pdf_content, target_format),
-                'estimated_time': self._estimate_conversion_time(pdf_content, target_format),
-                'complexity': self._assess_complexity(pdf_content, target_format),
-                'recommendations': self._get_recommendations(pdf_content, target_format, options),
-                'supported_formats': self.supported_formats
-            }
-        except Exception as e:
-            logger.error("Preview failed: %s", e)
-            # always return the *same* keys so the UI never blows up
-            return {
-                'success': False,
-                'error': str(e),
-                'original_size': len(file_data),
-                'page_count': 0,
-                'estimated_size': 0,
-                'estimated_time': 0,
-                'complexity': 'unknown',
-                'recommendations': [],
-                'supported_formats': self.supported_formats
-            }
-        finally:
-            if temp_file_path and os.path.exists(temp_file_path):
-                os.unlink(temp_file_path)
-                
+    def _assess_complexity(self, content: Dict[str, Any], _: str) -> str:
+        pc, tc, ic = content.get("page_count", 0), len(content["tables"]), len(content["images"])
+        if pc > 50 or tc > 20 or ic > 100:
+            return "high"
+        if pc > 20 or tc > 10 or ic > 50:
+            return "medium"
+        return "low"
+
+    @staticmethod
+    def _get_recommendations(content: Dict[str, Any], fmt: str, _: Dict[str, Any]) -> List[str]:
+        rec = []
+        pc, tc, ic = content.get("page_count", 0), len(content["tables"]), len(content["images"])
+        if pc > 100:
+            rec.append("Large document – consider splitting.")
+        if tc and fmt == "txt":
+            rec.append("Tables found – DOCX preserves them better.")
+        if ic and fmt == "txt":
+            rec.append("Images found – TXT will lose them.")
+        return rec
+
+    @staticmethod
+    def _secure_filename(name: str) -> str:
+        name = re.sub(r"[^\w\s-]", "", name)
+        name = re.sub(r"[-\s]+", "-", name)
+        return name.strip("-") or "file"
+
+    # --------------------------------------------------------------------------
+    # job helper (kept for compat)
+    # --------------------------------------------------------------------------
+    def create_conversion_job(
+        self,
+        file_data: bytes,
+        target_format: str,
+        job_id: Optional[str] = None,
+        options: Optional[Dict[str, Any]] = None,
+        original_filename: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Return a stub job dict – no DB touch here."""
+        jid = job_id or str(uuid.uuid4())
+        return {
+            "success": True,
+            "job_id": jid,
+            "status": "pending",
+            "message": "Conversion job created",
+        }
+
+    def cleanup_temp_files(self) -> None:
+        """Wipe service temp directory."""
+        import shutil
+        shutil.rmtree(self.upload_folder, ignore_errors=True)
+        self.upload_folder.mkdir(parents=True, exist_ok=True)

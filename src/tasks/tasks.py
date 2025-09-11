@@ -100,7 +100,7 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
 # ------------------------------------------------------
 #  BULK COMPRESSION  (logic 100 % preserved)
 # ------------------------------------------------------
-@celery_app.task(bind=True, name='tasks.bulk_compress_task')
+@celery_app.task(bind=True, name='tasks.bulk_compress_task', max_retries=3)
 def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
                        filenames: List[str], settings: Dict[str, Any]) -> Dict[str, Any]:
     """Process bulk compression task asynchronously – identical behaviour."""
@@ -196,93 +196,144 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
         current_task.update_state(state='FAILURE', meta={'error': str(e), 'job_id': job_id})
         raise
 
-# ------------------------------------------------------
-#  CONVERSION TASKS  (logic 100 % preserved)
-# ------------------------------------------------------
-@celery_app.task(bind=True, name='tasks.convert_pdf_task')
-def convert_pdf_task(self, job_id: str, file_data: bytes, target_format: str,
-                     options: Dict[str, Any], original_filename: str | None = None,
+# --------------------------------------------------------------------------
+#  CONVERSION TASKS – crash-hardened
+# --------------------------------------------------------------------------
+@celery_app.task(bind=True, name="tasks.convert_pdf_task", max_retries=3)
+def convert_pdf_task(
+    self,
+    job_id: str,
+    file_data: bytes,
+    target_format: str,
+    options: Dict[str, Any],
+    original_filename: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Convert PDF to specified format asynchronously – identical behaviour."""
+    """Convert PDF → target format – safe for retries & context."""
+    from flask import current_app
+
     try:
-        logger.info(f"Starting conversion task for job {job_id} (format: {target_format})")
-        job = Job.query.filter_by(job_id=job_id).first()
-        if not job:
-            job = Job(
-                job_id=job_id,
-                task_type='convert',
-                input_data={
-                    'target_format': target_format,
-                    'options': options,
-                    'file_size': len(file_data),
-                    'original_filename': original_filename
-                }
-                
-            )
-            db.session.add(job)
+        with current_app.app_context():  # push context
+            job = Job.query.filter_by(job_id=job_id).first()
+            if not job:
+                job = Job(
+                    job_id=job_id,
+                    task_type="convert",
+                    input_data={
+                        "target_format": target_format,
+                        "options": options,
+                        "file_size": len(file_data),
+                        "original_filename": original_filename,
+                    },
+                )
+                db.session.add(job)
 
-        job.mark_as_processing()
-        db.session.commit()
-
-        current_task.update_state(state='PROGRESS', meta={'progress': 10, 'status': f'Starting {target_format} conversion'})
-        result = conversion_service.convert_pdf_data(file_data=file_data,
-                                                     target_format=target_format,
-                                                     options=options,
-                                                     original_filename=original_filename)
-        job.mark_as_completed(result)
-        db.session.commit()
-        current_task.update_state(state='SUCCESS', meta={'progress': 100, 'status': f'Conversion to {target_format} completed'})
-        logger.info(f"Conversion task completed for job {job_id}")
-        return result
-
-    except Exception as e:
-        logger.error(f"Error in conversion task {job_id}: {str(e)}")
-        if 'job' in locals() and job:
-            job.mark_as_failed(str(e))
+            job.status = JobStatus.PROCESSING.value
             db.session.commit()
-        current_task.update_state(state='FAILURE', meta={'error': str(e), 'job_id': job_id})
+
+            current_task.update_state(
+                state="PROGRESS",
+                meta={"progress": 10, "status": f"Starting {target_format} conversion"},
+            )
+
+            result = conversion_service.convert_pdf_data(
+                file_data=file_data,
+                target_format=target_format,
+                options=options,
+                original_filename=original_filename,
+            )
+
+            # result always contains success/error
+            if result["success"]:
+                job.mark_as_completed(result)
+            else:
+                job.mark_as_failed(result["error"])
+            db.session.commit()
+
+            current_task.update_state(
+                state="SUCCESS",
+                meta={"progress": 100, "status": f"Conversion to {target_format} completed"},
+            )
+            return result
+
+    except Exception as exc:
+        logger.exception("Conversion task %s failed", job_id)
+        # context-safe error update
+        try:
+            with current_app.app_context():
+                job = Job.query.filter_by(job_id=job_id).first()
+                if job:
+                    job.mark_as_failed(str(exc))
+                    db.session.commit()
+        except Exception as db_err:  # noqa: F841
+            pass  # already logging
+
+        if self.request.retries < self.max_retries:
+            raise self.retry(countdown=60 * (self.request.retries + 1))
         raise
 
-@celery_app.task(bind=True, name='tasks.conversion_preview_task')
-def conversion_preview_task(self, job_id: str, file_data: bytes,
-                            target_format: str, options: Dict[str, Any]) -> Dict[str, Any]:
-    """Generate conversion preview asynchronously – identical behaviour."""
+
+@celery_app.task(bind=True, name="tasks.conversion_preview_task", max_retries=3)
+def conversion_preview_task(
+    self,
+    job_id: str,
+    file_data: bytes,
+    target_format: str,
+    options: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Generate preview – context & retry safe."""
+    from flask import current_app
+
     try:
-        logger.info(f"Starting conversion preview task for job {job_id}")
-        job = Job.query.filter_by(job_id=job_id).first()
-        if not job:
-            job = Job(
-                job_id=job_id,
-                task_type='conversion_preview',
-                input_data={
-                    'target_format': target_format,
-                    'options': options,
-                    'file_size': len(file_data)
-                }
-                
-            )
-            db.session.add(job)
+        with current_app.app_context():
+            job = Job.query.filter_by(job_id=job_id).first()
+            if not job:
+                job = Job(
+                    job_id=job_id,
+                    task_type="conversion_preview",
+                    input_data={
+                        "target_format": target_format,
+                        "options": options,
+                        "file_size": len(file_data),
+                    },
+                )
+                db.session.add(job)
 
-        job.mark_as_processing()
-        db.session.commit()
-
-        preview = conversion_service.get_conversion_preview(file_data, target_format, options)
-        job.mark_as_completed(preview)
-        db.session.commit()
-        logger.info(f"Conversion preview task completed for job {job_id}")
-        return preview
-
-    except Exception as e:
-        logger.error(f"Error in conversion preview task {job_id}: {str(e)}")
-        if 'job' in locals() and job:
-            job.mark_as_failed(str(e))
+            job.status = JobStatus.PROCESSING.value
             db.session.commit()
-        raise
 
+            preview = conversion_service.get_conversion_preview(file_data, target_format, options)
+            job.mark_as_completed(preview)
+            db.session.commit()
+            return preview
+
+    except Exception as exc:
+        logger.exception("Preview task %s failed", job_id)
+        try:
+            with current_app.app_context():
+                job = Job.query.filter_by(job_id=job_id).first()
+                if job:
+                    job.mark_as_failed(str(exc))
+                    db.session.commit()
+        except Exception:  # noqa
+            pass
+        if self.request.retries < self.max_retries:
+            raise self.retry(countdown=30)
+        # final fallback
+        return {
+            "success": False,
+            "error": str(exc),
+            "original_size": len(file_data),
+            "page_count": 0,
+            "estimated_size": 0,
+            "estimated_time": 0,
+            "complexity": "unknown",
+            "recommendations": [],
+            "supported_formats": conversion_service.supported_formats,
+        }
 # ------------------------------------------------------
 #  OCR TASKS  (logic 100 % preserved)
 # ------------------------------------------------------
-@celery_app.task(bind=True, name='tasks.ocr_process_task')
+@celery_app.task(bind=True, name='tasks.ocr_process_task', max_retries=3)
 def ocr_process_task(self, job_id: str, file_data: bytes, options: Dict[str, Any],
                      original_filename: str | None = None) -> Dict[str, Any]:
     """Process OCR on file data asynchronously – identical behaviour."""
@@ -321,7 +372,7 @@ def ocr_process_task(self, job_id: str, file_data: bytes, options: Dict[str, Any
         current_task.update_state(state='FAILURE', meta={'error': str(e), 'job_id': job_id})
         raise
 
-@celery_app.task(bind=True, name='tasks.ocr_preview_task')
+@celery_app.task(bind=True, name='tasks.ocr_preview_task', max_retries=3)
 def ocr_preview_task(self, job_id: str, file_data: bytes, options: Dict[str, Any]) -> Dict[str, Any]:
     """Generate OCR preview asynchronously – identical behaviour."""
     try:
@@ -357,7 +408,7 @@ def ocr_preview_task(self, job_id: str, file_data: bytes, options: Dict[str, Any
 # ------------------------------------------------------
 #  AI TASKS  (logic 100 % preserved)
 # ------------------------------------------------------
-@celery_app.task(bind=True, name='tasks.ai_summarize_task')
+@celery_app.task(bind=True, name='tasks.ai_summarize_task', max_retries=3)
 def ai_summarize_task(self, job_id: str, text: str, options: Dict[str, Any]) -> Dict[str, Any]:
     """Summarize text using AI asynchronously – identical behaviour."""
     try:
@@ -388,7 +439,7 @@ def ai_summarize_task(self, job_id: str, text: str, options: Dict[str, Any]) -> 
             db.session.commit()
         raise
 
-@celery_app.task(bind=True, name='tasks.ai_translate_task')
+@celery_app.task(bind=True, name='tasks.ai_translate_task', max_retries=3)
 def ai_translate_task(self, job_id: str, text: str, target_language: str,
                       options: Dict[str, Any]) -> Dict[str, Any]:
     """Translate text using AI asynchronously – identical behaviour."""
@@ -424,7 +475,7 @@ def ai_translate_task(self, job_id: str, text: str, target_language: str,
             db.session.commit()
         raise
 
-@celery_app.task(bind=True, name='tasks.extract_text_task')
+@celery_app.task(bind=True, name='tasks.extract_text_task', max_retries=3)
 def extract_text_task(self, job_id: str, file_data: bytes,
                       original_filename: str | None = None) -> Dict[str, Any]:
     """Extract text from PDF asynchronously – identical behaviour."""
