@@ -5,7 +5,7 @@ Celery tasks for background job processing – context-safe refactor
 import logging
 import os
 from datetime import datetime, timedelta
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from celery import current_task
 from src.celery_app import get_celery_app
