@@ -291,11 +291,12 @@ class OCRService:
 
     @staticmethod
     def _get_tesseract_config(quality: str) -> str:
+        """Always use LSTM engine – legacy data not needed."""
         return {
             "fast": "--oem 1 --psm 6",
-            "accurate": "--oem 3 --psm 6",
-        }.get(quality, "--oem 2 --psm 6")
-
+            "balanced": "--oem 1 --psm 6",   # changed from 2 → 1
+            "accurate": "--oem 1 --psm 6",   # changed from 3 → 1
+        }.get(quality, "--oem 1 --psm 6")
     # --------------------------------------------------------------------------
     # output helpers – disk only
     # --------------------------------------------------------------------------
