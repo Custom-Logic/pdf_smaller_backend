@@ -405,8 +405,8 @@ def extract_invoice():
         
         # Save file temporarily
         from src.services.file_management_service import FileManagementService
-file_service = FileManagementService()
-file_path = file_service.save_file(file, job_id)
+        file_service = FileManagementService()
+        file_path = file_service.save_file(file, job_id)
 
         # Enqueue invoice extraction task using .delay() pattern
         from src.tasks.tasks import extract_invoice_task
@@ -464,8 +464,8 @@ def extract_bank_statement():
         
         # Save file temporarily
         from src.services.file_management_service import FileManagementService
-file_service = FileManagementService()
-file_path = file_service.save_file(file, job_id)
+        file_service = FileManagementService()
+        file_path = file_service.save_file(file, job_id)
 
         # Enqueue bank statement extraction task using .delay() pattern
         from src.tasks.tasks import extract_bank_statement_task
@@ -541,11 +541,6 @@ def get_extended_features_status():
                 'max_file_size': '25MB',
                 'async_processing': True,
                 'features': ['invoice_extraction', 'bank_statement_extraction']
-            },
-            'cloud': {
-                'available': True,
-                'supported_providers': ['google_drive', 'dropbox', 'onedrive'],
-                'async_processing': False
             },
             'queue': {
                 'redis_available': redis_available,
