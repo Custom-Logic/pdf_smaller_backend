@@ -56,7 +56,7 @@ class ServiceName:
 
 **Dependencies**:
 - Ghostscript (external binary)
-- FileManager
+- FileManagementService
 - Configuration
 
 **Key Methods**:
@@ -117,62 +117,243 @@ result = service.compress_pdf(
 )
 ```
 
-### FileManager
+### FileManagementService
 
-**Location**: `src/services/file_manager.py`
+**Location**: `src/services/file_management_service.py`
 
-**Purpose**: Manages file operations, storage, and cleanup
+**Purpose**: Unified service for all file management operations including storage, retrieval, cleanup, and job-based file management
 
 **Dependencies**:
 - Configuration
+- Database models
 - File utilities
+- Flask (for file downloads)
 
 **Key Methods**:
 
 ```python
 def __init__(self, upload_folder: str = None):
-    """Initialize file manager with upload directory"""
-    
-def save_file(self, file_data: bytes, original_filename: str = None) -> Tuple[str, str]:
-    """Save file data with unique filename
+    """Initialize the file management service
     
     Args:
-        file_data: Binary file data
-        original_filename: Original filename for extension
+        upload_folder: Directory to store uploaded files. Defaults to Config.UPLOAD_FOLDER.
+    """
+    
+def save_file(self, file_data: bytes, original_filename: str = None) -> Tuple[str, str]:
+    """Save file data to disk with a unique filename
+    
+    Args:
+        file_data: Binary file data to save
+        original_filename: Original filename (used for extension)
         
     Returns:
         Tuple of (unique_id, file_path)
     """
     
-def get_file_path(self, file_id: str) -> str:
-    """Get full path for file by ID
+def get_file_path(self, file_id: str, extension: str = '.pdf') -> str:
+    """Get the full path for a file based on its ID
     
     Args:
         file_id: Unique file identifier
+        extension: File extension (default: .pdf)
         
     Returns:
         Full file path
     """
     
 def delete_file(self, file_path: str) -> bool:
-    """Delete file from storage
+    """Delete a file safely
     
     Args:
-        file_path: Path to file to delete
+        file_path: Path to the file to delete
         
     Returns:
-        True if successful, False otherwise
+        True if file was deleted successfully, False otherwise
     """
     
-def cleanup_old_files(self, max_age_hours: int = 24) -> int:
-    """Clean up files older than specified age
+def get_job_download_response(self, job_id: str):
+    """Get Flask response for downloading job result file
     
     Args:
-        max_age_hours: Maximum file age in hours
+        job_id: Job identifier
         
     Returns:
-        Number of files deleted
+        Flask response object or error response
     """
+    
+def cleanup_expired_jobs(self) -> Dict[str, Any]:
+    """Clean up expired jobs and their associated files
+    
+    Returns:
+        Summary of cleanup operations
+    """
+    
+def cleanup_temp_files(self) -> Dict[str, Any]:
+    """Clean up temporary files older than specified age
+    
+    Returns:
+        Cleanup summary dictionary
+    """
+```
+
+### InvoiceExtractionService
+
+**Location**: `src/services/invoice_extraction_service.py`
+
+**Purpose**: Extracts structured data from invoice PDF documents using AI
+
+**Dependencies**:
+- AIService (OpenAI integration)
+- FileManagementService
+- ExportService
+- Configuration
+
+**Key Methods**:
+
+```python
+def __init__(self, config: Config = None):
+    """Initialize invoice extraction service with AI integration"""
+    
+def extract_invoice_data(self, file_path: str, export_format: str = 'json') -> Dict:
+    """Extract structured data from invoice PDF
+    
+    Args:
+        file_path: Path to invoice PDF file
+        export_format: Output format ('json', 'csv', 'excel')
+        
+    Returns:
+        Dict with extracted invoice data and export information
+    """
+    
+def validate_invoice_data(self, extracted_data: Dict) -> Dict:
+    """Validate extracted invoice data for completeness
+    
+    Args:
+        extracted_data: Raw extracted data from AI
+        
+    Returns:
+        Dict with validation results and cleaned data
+    """
+    
+def get_extraction_capabilities(self) -> Dict:
+    """Get invoice extraction capabilities and supported features
+    
+    Returns:
+        Dict with supported formats, features, and limitations
+    """
+```
+
+### BankStatementExtractionService
+
+**Location**: `src/services/bank_statement_extraction_service.py`
+
+**Purpose**: Extracts transaction data and account information from bank statement PDFs
+
+**Dependencies**:
+- AIService (OpenAI integration)
+- FileManagementService
+- ExportService
+- Configuration
+
+**Key Methods**:
+
+```python
+def __init__(self, config: Config = None):
+    """Initialize bank statement extraction service with AI integration"""
+    
+def extract_bank_statement_data(self, file_path: str, export_format: str = 'json') -> Dict:
+    """Extract structured data from bank statement PDF
+    
+    Args:
+        file_path: Path to bank statement PDF file
+        export_format: Output format ('json', 'csv', 'excel')
+        
+    Returns:
+        Dict with extracted bank statement data and export information
+    """
+    
+def validate_bank_statement_data(self, extracted_data: Dict) -> Dict:
+    """Validate extracted bank statement data
+    
+    Args:
+        extracted_data: Raw extracted data from AI
+        
+    Returns:
+        Dict with validation results and cleaned data
+    """
+    
+def get_extraction_capabilities(self) -> Dict:
+    """Get bank statement extraction capabilities
+    
+    Returns:
+        Dict with supported formats, features, and limitations
+    """
+```
+
+### ExportService
+
+**Location**: `src/services/export_service.py`
+
+**Purpose**: Handles export of extracted data to various formats (JSON, CSV, Excel)
+
+**Dependencies**:
+- FileManagementService
+- pandas (for CSV/Excel export)
+- Configuration
+
+**Key Methods**:
+
+```python
+def __init__(self, config: Config = None):
+    """Initialize export service with format support"""
+    
+def export_invoice_to_json(self, data: Dict, output_path: str) -> Dict:
+    """Export invoice data to JSON format
+    
+    Args:
+        data: Extracted invoice data
+        output_path: Path for JSON output file
+        
+    Returns:
+        Dict with export results and file information
+    """
+    
+def export_invoice_to_csv(self, data: Dict, output_path: str) -> Dict:
+    """Export invoice data to CSV format
+    
+    Args:
+        data: Extracted invoice data
+        output_path: Path for CSV output file
+        
+    Returns:
+        Dict with export results and file information
+    """
+    
+def export_invoice_to_excel(self, data: Dict, output_path: str) -> Dict:
+    """Export invoice data to Excel format with multiple sheets
+    
+    Args:
+        data: Extracted invoice data
+        output_path: Path for Excel output file
+        
+    Returns:
+        Dict with export results and file information
+    """
+    
+def export_bank_statement_to_json(self, data: Dict, output_path: str) -> Dict:
+    """Export bank statement data to JSON format"""
+    
+def export_bank_statement_to_csv(self, data: Dict, output_path: str) -> Dict:
+    """Export bank statement data to CSV format"""
+    
+def export_bank_statement_to_excel(self, data: Dict, output_path: str) -> Dict:
+    """Export bank statement data to Excel format"""
+    
+def get_export_capabilities(self) -> Dict:
+    """Get supported export formats and capabilities"""
+    
+def cleanup_export_files(self, file_paths: List[str]) -> Dict:
+    """Clean up temporary export files"""
 ```
 
 ## Processing Services
@@ -187,7 +368,7 @@ def cleanup_old_files(self, max_age_hours: int = 24) -> int:
 - Tesseract OCR (external)
 - PyMuPDF (fitz)
 - PIL/Pillow
-- FileManager
+- FileManagementService
 
 **Key Methods**:
 
@@ -361,7 +542,7 @@ def convert_to_images(self, pdf_path: str, output_dir: str, format: str = 'png')
 
 **Dependencies**:
 - CompressionService
-- FileManager
+- FileManagementService
 - Celery (for task management)
 
 **Key Methods**:
@@ -399,45 +580,7 @@ def validate_bulk_request(self, files: List, options: Dict) -> Dict:
 
 ## Utility Services
 
-### CleanupService
-
-**Location**: `src/services/cleanup_service.py`
-
-**Purpose**: Manage file retention and automated cleanup
-
-**Dependencies**:
-- Database models
-- FileManager
-
-**Key Methods**:
-
-```python
-@staticmethod
-def cleanup_expired_jobs() -> Dict[str, Any]:
-    """Clean up expired jobs and associated files
-    
-    Returns:
-        Cleanup summary with statistics
-    """
-    
-@staticmethod
-def cleanup_temp_files() -> Dict[str, Any]:
-    """Clean up temporary files older than threshold
-    
-    Returns:
-        Cleanup results
-    """
-    
-@staticmethod
-def get_cleanup_status() -> Dict[str, Any]:
-    """Get current cleanup service status
-    
-    Returns:
-        Status information and statistics
-    """
-```
-
-**Retention Policies**:
+**Retention Policies** (FileManagementService):
 - Completed jobs: 24 hours
 - Failed jobs: 24 hours
 - Pending jobs: 1 hour
@@ -505,14 +648,14 @@ def download_from_cloud(self, cloud_url: str, local_path: str) -> Dict:
 ```
 CompressionService
 ├── Ghostscript (external)
-├── FileManager
+├── FileManagementService
 └── Configuration
 
 OCRService
 ├── Tesseract (external)
 ├── PyMuPDF
 ├── PIL/Pillow
-└── FileManager
+└── FileManagementService
 
 AIService
 ├── OpenRouter API
@@ -524,16 +667,17 @@ ConversionService
 ├── PyMuPDF
 ├── pdfplumber
 ├── python-docx
-└── FileManager
+└── FileManagementService
 
 BulkCompressionService
 ├── CompressionService
-├── FileManager
+├── FileManagementService
 └── Celery
 
-CleanupService
+FileManagementService (includes cleanup)
 ├── Database Models
-└── FileManager
+├── Configuration
+└── File Utilities
 
 CloudIntegrationService
 ├── boto3 (AWS)
@@ -541,7 +685,7 @@ CloudIntegrationService
 ├── azure-storage-blob
 └── dropbox
 
-FileManager
+FileManagementService
 ├── Configuration
 └── File Utilities
 ```
@@ -749,14 +893,14 @@ class TestCompressionService(unittest.TestCase):
 ```python
 import tempfile
 import os
-from src.services.file_manager import FileManager
+from src.services.file_management_service import FileManagementService
 from src.services.compression_service import CompressionService
 
 class TestServiceIntegration(unittest.TestCase):
     
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
-        self.file_manager = FileManager(upload_folder=self.temp_dir)
+        self.file_service = FileManagementService(upload_folder=self.temp_dir)
         self.compression_service = CompressionService()
         
     def tearDown(self):
@@ -767,7 +911,7 @@ class TestServiceIntegration(unittest.TestCase):
     def test_full_compression_workflow(self):
         # Create test PDF file
         test_pdf_data = b'%PDF-1.4\n...'
-        file_id, file_path = self.file_manager.save_file(
+        file_id, file_path = self.file_service.save_file(
             test_pdf_data, 
             'test.pdf'
         )

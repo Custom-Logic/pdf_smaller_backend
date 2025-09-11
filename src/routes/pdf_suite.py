@@ -15,6 +15,8 @@ from src.models import JobStatus
 from src.services.ai_service import AIService
 from src.services.conversion_service import ConversionService
 from src.services.ocr_service import OCRService
+from src.services.invoice_extraction_service import InvoiceExtractionService
+from src.services.bank_statement_extraction_service import BankStatementExtractionService
 from src.utils.response_helpers import success_response, error_response
 
 # Initialize blueprint
@@ -25,6 +27,8 @@ pdf_suite_bp = Blueprint('pdf_suite', __name__)
 conversion_service = ConversionService()
 ocr_service = OCRService()
 ai_service = AIService()
+invoice_extraction_service = InvoiceExtractionService()
+bank_statement_extraction_service = BankStatementExtractionService()
 
 
 # Configure logging
@@ -35,6 +39,7 @@ ALLOWED_EXTENSIONS = {
     'conversion': {'pdf'},
     'ocr': {'pdf', 'png', 'jpg', 'jpeg', 'tiff', 'bmp'},
     'ai': {'pdf'},
+    'extraction': {'pdf'},
 }
 
 MAX_FILE_SIZES = {
@@ -377,6 +382,124 @@ def extract_text():
         return error_response(message=f"Failed to create text extraction job: {str(e)}", status_code=500)
 
 # ============================================================================
+# INVOICE EXTRACTION ROUTES (Job-Oriented)
+# ============================================================================
+
+@pdf_suite_bp.route('/ai/extract-invoice', methods=['POST'])
+def extract_invoice():
+    """Extract invoice data from PDF - returns job ID"""
+    try:
+        file, error = get_file_and_validate('extraction')
+        if error:
+            return error
+
+        # Get extraction options
+        options = {}
+        if 'options' in request.form:
+            try:
+                options = json.loads(request.form['options'])
+            except json.JSONDecodeError:
+                return error_response(message="Invalid options format", status_code=400)
+
+        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        
+        # Save file temporarily
+        from src.services.file_management_service import FileManagementService
+file_service = FileManagementService()
+file_path = file_service.save_file(file, job_id)
+
+        # Enqueue invoice extraction task using .delay() pattern
+        from src.tasks.tasks import extract_invoice_task
+        task = extract_invoice_task.delay(
+            job_id,
+            file_path,
+            options
+        )
+
+        logger.info(f"Invoice extraction job {job_id} enqueued (task_id: {task.id})")
+
+        return success_response(message="Invoice extraction job queued successfully", data={
+            'job_id': job_id,
+            'task_id': task.id,
+            'status': JobStatus.PENDING.value
+        }, status_code=202)
+
+    except Exception as e:
+        logger.error(f"Invoice extraction job creation failed: {str(e)}")
+        return error_response(message=f"Failed to create invoice extraction job: {str(e)}", status_code=500)
+
+
+@pdf_suite_bp.route('/ai/invoice-capabilities', methods=['GET'])
+def get_invoice_capabilities():
+    """Get invoice extraction capabilities"""
+    try:
+        capabilities = invoice_extraction_service.get_extraction_capabilities()
+        return success_response(message="Invoice extraction capabilities retrieved successfully", data=capabilities)
+    except Exception as e:
+        logger.error(f"Invoice capabilities retrieval failed: {str(e)}")
+        return error_response(message=f"Invoice capabilities retrieval failed: {str(e)}", status_code=500)
+
+
+# ============================================================================
+# BANK STATEMENT EXTRACTION ROUTES (Job-Oriented)
+# ============================================================================
+
+@pdf_suite_bp.route('/ai/extract-bank-statement', methods=['POST'])
+def extract_bank_statement():
+    """Extract bank statement data from PDF - returns job ID"""
+    try:
+        file, error = get_file_and_validate('extraction')
+        if error:
+            return error
+
+        # Get extraction options
+        options = {}
+        if 'options' in request.form:
+            try:
+                options = json.loads(request.form['options'])
+            except json.JSONDecodeError:
+                return error_response(message="Invalid options format", status_code=400)
+
+        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        
+        # Save file temporarily
+        from src.services.file_management_service import FileManagementService
+file_service = FileManagementService()
+file_path = file_service.save_file(file, job_id)
+
+        # Enqueue bank statement extraction task using .delay() pattern
+        from src.tasks.tasks import extract_bank_statement_task
+        task = extract_bank_statement_task.delay(
+            job_id,
+            file_path,
+            options
+        )
+
+        logger.info(f"Bank statement extraction job {job_id} enqueued (task_id: {task.id})")
+
+        return success_response(message="Bank statement extraction job queued successfully", data={
+            'job_id': job_id,
+            'task_id': task.id,
+            'status': JobStatus.PENDING.value
+        }, status_code=202)
+
+    except Exception as e:
+        logger.error(f"Bank statement extraction job creation failed: {str(e)}")
+        return error_response(message=f"Failed to create bank statement extraction job: {str(e)}", status_code=500)
+
+
+@pdf_suite_bp.route('/ai/bank-statement-capabilities', methods=['GET'])
+def get_bank_statement_capabilities():
+    """Get bank statement extraction capabilities"""
+    try:
+        capabilities = bank_statement_extraction_service.get_extraction_capabilities()
+        return success_response(message="Bank statement extraction capabilities retrieved successfully", data=capabilities)
+    except Exception as e:
+        logger.error(f"Bank statement capabilities retrieval failed: {str(e)}")
+        return error_response(message=f"Bank statement capabilities retrieval failed: {str(e)}", status_code=500)
+
+
+# ============================================================================
 # HEALTH CHECK AND STATUS ROUTES
 # ============================================================================
 
@@ -411,6 +534,13 @@ def get_extended_features_status():
                 'supported_formats': ['pdf'],
                 'max_file_size': '25MB',
                 'async_processing': True
+            },
+            'extraction': {
+                'available': True,
+                'supported_formats': ['pdf'],
+                'max_file_size': '25MB',
+                'async_processing': True,
+                'features': ['invoice_extraction', 'bank_statement_extraction']
             },
             'cloud': {
                 'available': True,
@@ -466,6 +596,18 @@ def get_extended_features_capabilities():
                     'style': 'string (concise|detailed|academic|casual|professional)',
                     'maxLength': 'string (short|medium|long)',
                     'targetLanguage': 'string (language code)'
+                },
+                'processing_mode': 'async'
+            },
+            'extraction': {
+                'name': 'Document Data Extraction',
+                'description': 'Extract structured data from invoices and bank statements using AI',
+                'features': ['invoice_data_extraction', 'bank_statement_extraction', 'structured_output', 'export_formats'],
+                'options': {
+                    'export_format': 'string (json|csv|excel|none)',
+                    'export_filename': 'string (optional custom filename)',
+                    'include_confidence': 'boolean (include AI confidence scores)',
+                    'validate_data': 'boolean (perform data validation)'
                 },
                 'processing_mode': 'async'
             },

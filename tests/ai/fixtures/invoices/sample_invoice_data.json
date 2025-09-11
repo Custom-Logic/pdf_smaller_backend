@@ -1,0 +1,52 @@
+{
+  "valid_invoice_extraction": {
+    "invoice_number": "INV-2024-001",
+    "date": "2024-01-15",
+    "due_date": "2024-02-15",
+    "vendor": {
+      "name": "Tech Solutions Inc.",
+      "address": "123 Business St, Tech City, TC 12345",
+      "phone": "+1-555-0123",
+      "email": "billing@techsolutions.com"
+    },
+    "customer": {
+      "name": "ABC Corporation",
+      "address": "456 Corporate Ave, Business City, BC 67890",
+      "phone": "+1-555-0456"
+    },
+    "items": [
+      {
+        "description": "Software Development Services",
+        "quantity": 40,
+        "unit_price": 125.00,
+        "total": 5000.00
+      },
+      {
+        "description": "Technical Consultation",
+        "quantity": 8,
+        "unit_price": 150.00,
+        "total": 1200.00
+      }
+    ],
+    "subtotal": 6200.00,
+    "tax_rate": 0.08,
+    "tax_amount": 496.00,
+    "total_amount": 6696.00,
+    "currency": "USD",
+    "payment_terms": "Net 30",
+    "notes": "Payment due within 30 days of invoice date"
+  },
+  "partial_invoice_extraction": {
+    "invoice_number": "INV-2024-002",
+    "date": "2024-01-20",
+    "vendor": {
+      "name": "Service Provider LLC"
+    },
+    "total_amount": 2500.00,
+    "currency": "USD"
+  },
+  "invalid_invoice_extraction": {
+    "error": "Unable to extract invoice data",
+    "confidence": 0.2
+  }
+}

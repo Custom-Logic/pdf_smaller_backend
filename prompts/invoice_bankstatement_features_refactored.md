@@ -12,7 +12,7 @@ The features integrate seamlessly with existing components:
 - **Route Structure**: Follows `src/routes/pdf_suite.py` blueprint patterns
 - **Task Processing**: Uses `src/tasks/tasks.py` Celery patterns
 - **Response Helpers**: Leverages `src/utils/response_helpers.py` for consistent API responses
-- **File Management**: Integrates with `src/services/file_manager.py` for secure file handling
+- **File Management**: Integrates with `src/services/file_management_service.py` for secure file handling
 - **Error Handling**: Uses custom exceptions from `src/utils/exceptions.py`
 
 ## Feature 1: Invoice Extraction
@@ -75,7 +75,7 @@ class InvoiceExtractionService:
     
     def __init__(self):
         self.ai_service = AIService()
-        self.file_manager = FileManager()
+        self.file_service = FileManagementService()
         self.logger = logging.getLogger(__name__)
     
     def extract_invoice_data(self, file_path: str, options: dict) -> dict:
@@ -177,7 +177,7 @@ def extract_invoice():
         db.session.commit()
         
         # Save file
-        file_path = file_manager.save_uploaded_file(file, job_id)
+        file_path = file_service.save_uploaded_file(file, job_id)
         
         # Enqueue task
         extract_invoice_task.delay(job_id, file_path, extraction_options)
@@ -278,7 +278,7 @@ class BankStatementExtractionService:
     
     def __init__(self):
         self.ai_service = AIService()
-        self.file_manager = FileManager()
+        self.file_service = FileManagementService()
         self.logger = logging.getLogger(__name__)
     
     def extract_statement_data(self, file_path: str, options: dict) -> dict:
@@ -383,7 +383,7 @@ def extract_bank_statement():
         db.session.commit()
         
         # Save file
-        file_path = file_manager.save_uploaded_file(file, job_id)
+        file_path = file_service.save_uploaded_file(file, job_id)
         
         # Enqueue task
         extract_bank_statement_task.delay(job_id, file_path, extraction_options)

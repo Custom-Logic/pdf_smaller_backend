@@ -94,8 +94,7 @@ This guide provides a comprehensive overview of the PDF Smaller Backend architec
 - **conversion_service.py**: PDF format conversion
 - **bulk_compression_service.py**: Bulk file processing
 - **cloud_integration_service.py**: Cloud storage integration
-- **file_manager.py**: File operations and cleanup
-- **cleanup_service.py**: Automated cleanup tasks
+- **file_management_service.py**: Unified file operations, cleanup, and job-based file management
 
 ### 4. Task Processing (`src/tasks/`)
 - **tasks.py**: Celery task definitions
@@ -134,14 +133,14 @@ class ServiceName:
 ```
 CompressionService
 ├── Ghostscript (external)
-├── FileManager
+├── FileManagementService
 └── ValidationUtils
 
 OCRService
 ├── Tesseract (external)
 ├── PyMuPDF
 ├── PIL/Pillow
-└── FileManager
+└── FileManagementService
 
 AIService
 ├── OpenRouter API
@@ -153,7 +152,7 @@ ConversionService
 ├── PyMuPDF
 ├── pdfplumber
 ├── python-docx
-└── FileManager
+└── FileManagementService
 ```
 
 ## Data Flow Patterns

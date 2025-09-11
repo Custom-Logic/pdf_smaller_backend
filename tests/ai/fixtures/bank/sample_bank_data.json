@@ -1,0 +1,105 @@
+{
+  "valid_bank_statement_extraction": {
+    "account_info": {
+      "account_number": "****1234",
+      "account_holder": "John Doe",
+      "bank_name": "First National Bank",
+      "statement_period": {
+        "start_date": "2024-01-01",
+        "end_date": "2024-01-31"
+      }
+    },
+    "opening_balance": 5250.75,
+    "closing_balance": 4890.25,
+    "transactions": [
+      {
+        "date": "2024-01-02",
+        "description": "Direct Deposit - Salary",
+        "amount": 3500.00,
+        "type": "credit",
+        "balance": 8750.75
+      },
+      {
+        "date": "2024-01-03",
+        "description": "ATM Withdrawal",
+        "amount": -200.00,
+        "type": "debit",
+        "balance": 8550.75
+      },
+      {
+        "date": "2024-01-05",
+        "description": "Online Transfer to Savings",
+        "amount": -1000.00,
+        "type": "debit",
+        "balance": 7550.75
+      },
+      {
+        "date": "2024-01-10",
+        "description": "Grocery Store Purchase",
+        "amount": -125.50,
+        "type": "debit",
+        "balance": 7425.25
+      },
+      {
+        "date": "2024-01-15",
+        "description": "Utility Bill Payment",
+        "amount": -285.00,
+        "type": "debit",
+        "balance": 7140.25
+      },
+      {
+        "date": "2024-01-20",
+        "description": "Interest Credit",
+        "amount": 15.50,
+        "type": "credit",
+        "balance": 7155.75
+      },
+      {
+        "date": "2024-01-25",
+        "description": "Rent Payment",
+        "amount": -1800.00,
+        "type": "debit",
+        "balance": 5355.75
+      },
+      {
+        "date": "2024-01-30",
+        "description": "Service Fee",
+        "amount": -15.00,
+        "type": "debit",
+        "balance": 5340.75
+      }
+    ],
+    "summary": {
+      "total_credits": 3515.50,
+      "total_debits": -3425.50,
+      "net_change": 90.00,
+      "transaction_count": 8
+    }
+  },
+  "partial_bank_statement_extraction": {
+    "account_info": {
+      "account_number": "****5678",
+      "bank_name": "Community Bank"
+    },
+    "opening_balance": 1250.00,
+    "closing_balance": 980.50,
+    "transactions": [
+      {
+        "date": "2024-01-15",
+        "description": "Check Deposit",
+        "amount": 500.00,
+        "type": "credit"
+      },
+      {
+        "date": "2024-01-20",
+        "description": "Online Purchase",
+        "amount": -75.25,
+        "type": "debit"
+      }
+    ]
+  },
+  "invalid_bank_statement_extraction": {
+    "error": "Unable to extract bank statement data",
+    "confidence": 0.15
+  }
+}

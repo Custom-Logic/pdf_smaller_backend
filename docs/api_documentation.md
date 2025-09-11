@@ -98,6 +98,254 @@ GET /jobs/{job_id}
 **Status Code**: 200 OK
 
 #### Download Compressed PDF
+```
+GET /jobs/{job_id}/download
+```
+
+**Description**: Download the compressed PDF file.
+
+**Path Parameters**:
+- `job_id` (required): The job ID of a completed compression job
+
+**Response**: Binary PDF file
+
+**Status Code**: 200 OK
+
+### AI Document Extraction
+
+#### Extract Invoice Data
+
+```
+POST /pdf-suite/extract/invoice
+```
+
+**Description**: Upload an invoice PDF for AI-powered data extraction. Returns a job ID and processes the file asynchronously.
+
+**Request**:
+- Content-Type: `multipart/form-data`
+
+**Form Parameters**:
+- `file` (required): The invoice PDF file to process
+- `export_format` (optional): Export format - `json`, `csv`, or `excel` (default: `json`)
+
+**Response**:
+```json
+{
+  "success": true,
+  "job_id": "extract_invoice_abc123",
+  "status": "pending",
+  "message": "Invoice extraction started",
+  "estimated_time": "30-60 seconds"
+}
+```
+
+**Status Code**: 202 Accepted
+
+#### Extract Bank Statement Data
+
+```
+POST /pdf-suite/extract/bank-statement
+```
+
+**Description**: Upload a bank statement PDF for AI-powered data extraction. Returns a job ID and processes the file asynchronously.
+
+**Request**:
+- Content-Type: `multipart/form-data`
+
+**Form Parameters**:
+- `file` (required): The bank statement PDF file to process
+- `export_format` (optional): Export format - `json`, `csv`, or `excel` (default: `json`)
+
+**Response**:
+```json
+{
+  "success": true,
+  "job_id": "extract_bank_abc123",
+  "status": "pending",
+  "message": "Bank statement extraction started",
+  "estimated_time": "30-60 seconds"
+}
+```
+
+**Status Code**: 202 Accepted
+
+#### Get Invoice Extraction Capabilities
+
+```
+GET /pdf-suite/extract/invoice/capabilities
+```
+
+**Description**: Get information about invoice extraction capabilities and supported features.
+
+**Response**:
+```json
+{
+  "supported_formats": ["pdf"],
+  "max_file_size": "10MB",
+  "processing_mode": "async",
+  "features": [
+    "invoice_number_extraction",
+    "vendor_information",
+    "customer_information",
+    "line_items",
+    "tax_calculation",
+    "multiple_export_formats"
+  ],
+  "export_formats": ["json", "csv", "excel"],
+  "estimated_processing_time": "30-60 seconds"
+}
+```
+
+**Status Code**: 200 OK
+
+#### Get Bank Statement Extraction Capabilities
+
+```
+GET /pdf-suite/extract/bank-statement/capabilities
+```
+
+**Description**: Get information about bank statement extraction capabilities and supported features.
+
+**Response**:
+```json
+{
+  "supported_formats": ["pdf"],
+  "max_file_size": "10MB",
+  "processing_mode": "async",
+  "features": [
+    "account_information",
+    "transaction_extraction",
+    "balance_tracking",
+    "date_range_processing",
+    "multiple_export_formats"
+  ],
+  "export_formats": ["json", "csv", "excel"],
+  "estimated_processing_time": "30-60 seconds"
+}
+```
+
+**Status Code**: 200 OK
+
+### Job Status for Extraction
+
+#### Get Extraction Job Status
+
+```
+GET /jobs/{job_id}
+```
+
+**Description**: Check the status of an extraction job (same endpoint as compression jobs).
+
+**Path Parameters**:
+- `job_id` (required): The job ID returned from the extraction request
+
+**Response (Completed - Invoice)**:
+```json
+{
+  "job_id": "extract_invoice_abc123",
+  "status": "completed",
+  "task_type": "invoice_extraction",
+  "created_at": "2024-01-15T10:30:00.000Z",
+  "updated_at": "2024-01-15T10:30:45.000Z",
+  "result": {
+    "extracted_data": {
+      "invoice_number": "INV-2024-001",
+      "date": "2024-01-15",
+      "vendor_name": "ABC Company Ltd",
+      "total_amount": 1620.00,
+      "currency": "USD",
+      "items": [
+        {
+          "description": "Professional Services",
+          "quantity": 10,
+          "unit_price": 150.00,
+          "total": 1500.00
+        }
+      ]
+    },
+    "export_info": {
+      "format": "json",
+      "file_path": "/exports/invoice_abc123.json",
+      "file_size": 2048
+    },
+    "validation": {
+      "is_valid": true,
+      "completeness_score": 0.95,
+      "confidence_score": 0.92
+    }
+  },
+  "download_url": "/api/jobs/extract_invoice_abc123/download"
+}
+```
+
+**Response (Completed - Bank Statement)**:
+```json
+{
+  "job_id": "extract_bank_abc123",
+  "status": "completed",
+  "task_type": "bank_statement_extraction",
+  "created_at": "2024-01-15T10:30:00.000Z",
+  "updated_at": "2024-01-15T10:31:15.000Z",
+  "result": {
+    "extracted_data": {
+      "account_info": {
+        "account_number": "****1234",
+        "account_type": "Checking",
+        "account_holder": "John Doe"
+      },
+      "statement_period": {
+        "start_date": "2024-01-01",
+        "end_date": "2024-01-31"
+      },
+      "transactions": [
+        {
+          "date": "2024-01-02",
+          "description": "Direct Deposit - Salary",
+          "amount": 3000.00,
+          "type": "credit"
+        }
+      ],
+      "summary": {
+        "total_credits": 3500.00,
+        "total_debits": -3750.00,
+        "transaction_count": 25
+      }
+    },
+    "export_info": {
+      "format": "json",
+      "file_path": "/exports/bank_abc123.json",
+      "file_size": 4096
+    },
+    "validation": {
+      "is_valid": true,
+      "completeness_score": 0.88,
+      "confidence_score": 0.91
+    }
+  },
+  "download_url": "/api/jobs/extract_bank_abc123/download"
+}
+```
+
+**Response (Failed - Extraction)**:
+```json
+{
+  "job_id": "extract_invoice_abc123",
+  "status": "failed",
+  "task_type": "invoice_extraction",
+  "created_at": "2024-01-15T10:30:00.000Z",
+  "updated_at": "2024-01-15T10:30:30.000Z",
+  "error": {
+    "type": "ExtractionError",
+    "message": "Failed to extract data from document",
+    "details": "The document appears to be corrupted or unreadable",
+    "code": "EXTRACTION_FAILED"
+  }
+}
+```
+
+**Status Code**: 200 OK
+
+#### Download Extracted Data
 
 ```
 GET /jobs/{job_id}/download

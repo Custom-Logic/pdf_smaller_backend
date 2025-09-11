@@ -356,12 +356,14 @@ def compress_pdf():
 ### Service Structure
 
 ```python
+from src.services.file_management_service import FileManagementService
+
 class CompressionService:
     """Service for handling PDF compression operations."""
     
     def __init__(self, config: Config = None):
         self.config = config or Config()
-        self.file_manager = FileManager()
+        self.file_service = FileManagementService()
         
     def compress_pdf(self, file_path: str, options: dict) -> dict:
         """Synchronous PDF compression."""

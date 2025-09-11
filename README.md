@@ -103,7 +103,7 @@ class Job(BaseModel):
 
 ### Infrastructure
 - **Job Manager**: Tracks job status and results
-- **File Manager**: Handles temporary file storage
+- **FileManagementService**: Handles temporary file storage and cleanup operations
 - **Queue Manager**: Manages async task processing
 ```
 

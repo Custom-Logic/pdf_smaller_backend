@@ -15,11 +15,15 @@ celery_app = get_celery_app()
 from src.config.config import Config
 from src.models import Job, JobStatus
 from src.models.base import db
+# TODO all services could just be imported from src.services
 from src.services.ai_service import AIService
 from src.services.bulk_compression_service import BulkCompressionService
 from src.services.compression_service import CompressionService
 from src.services.conversion_service import ConversionService
 from src.services.ocr_service import OCRService
+from src.services.invoice_extraction_service import InvoiceExtractionService
+from src.services.bank_statement_extraction_service import BankStatementExtractionService
+from src.services.export_service import ExportService
 
 # ------------------------------------------------------
 #  IMPORT THE HELPER – keeps context for every task
@@ -37,6 +41,9 @@ conversion_service = ConversionService(config.UPLOAD_FOLDER)
 ocr_service = OCRService(config.UPLOAD_FOLDER)
 ai_service = AIService()
 bulk_service = BulkCompressionService(config.UPLOAD_FOLDER)
+invoice_extraction_service = InvoiceExtractionService()
+bank_statement_extraction_service = BankStatementExtractionService()
+export_service = ExportService()
 
 # ------------------------------------------------------
 #  helper – unchanged
@@ -644,3 +651,234 @@ def get_task_status(self, task_id: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error getting task status for {task_id}: {str(e)}")
         return {'state': 'ERROR', 'error': str(e), 'task_id': task_id}
+
+
+# ------------------------------------------------------
+#  AI EXTRACTION TASKS
+# ------------------------------------------------------
+@celery_app.task(bind=True, max_retries=3, name='tasks.extract_invoice_task')
+def extract_invoice_task(self, job_id: str, file_path: str, extraction_options: Dict[str, Any]) -> Dict[str, Any]:
+    """Async invoice extraction task."""
+    try:
+        job = Job.query.filter_by(job_id=job_id).first()
+        logger.debug(f"Starting invoice extraction task for job {job_id}")
+        
+        if not job:
+            job = Job(
+                job_id=job_id,
+                task_type='extract_invoice',
+                input_data={
+                    'file_path': file_path,
+                    'extraction_options': extraction_options
+                },
+            )
+            db.session.add(job)
+
+        job.mark_as_processing()
+        db.session.commit()
+        logger.debug(f"Job {job_id} marked as processing")
+
+        # Update task progress
+        current_task.update_state(
+            state='PROGRESS',
+            meta={
+                'current': 1,
+                'total': 4,
+                'progress': 25,
+                'status': 'Starting invoice extraction...'
+            }
+        )
+
+        # Extract invoice data
+        current_task.update_state(
+            state='PROGRESS',
+            meta={
+                'current': 2,
+                'total': 4,
+                'progress': 50,
+                'status': 'Extracting invoice data...'
+            }
+        )
+        
+        start_time = datetime.utcnow()
+        extraction_result = invoice_extraction_service.extract_invoice_data(file_path, extraction_options)
+        processing_time = (datetime.utcnow() - start_time).total_seconds()
+        
+        # Add processing time to metadata
+        if 'metadata' in extraction_result:
+            extraction_result['metadata']['processing_time'] = processing_time
+
+        # Export data if requested
+        export_result = None
+        export_format = extraction_options.get('export_format')
+        if export_format and export_format != 'none':
+            current_task.update_state(
+                state='PROGRESS',
+                meta={
+                    'current': 3,
+                    'total': 4,
+                    'progress': 75,
+                    'status': f'Exporting to {export_format}...'
+                }
+            )
+            
+            try:
+                export_result = export_service.export_invoice_data(
+                    extraction_result,
+                    export_format,
+                    extraction_options.get('export_filename')
+                )
+                extraction_result['export'] = export_result
+            except Exception as e:
+                logger.warning(f"Export failed for job {job_id}: {str(e)}")
+                extraction_result['export_error'] = str(e)
+
+        current_task.update_state(
+            state='PROGRESS',
+            meta={
+                'current': 4,
+                'total': 4,
+                'progress': 100,
+                'status': 'Invoice extraction completed'
+            }
+        )
+
+        job.mark_as_completed(result=extraction_result)
+        db.session.commit()
+        logger.info(f"Invoice extraction job {job_id} completed successfully")
+        return extraction_result
+
+    except Exception as e:
+        logger.error(f"Invoice extraction task failed for job {job_id}: {str(e)}")
+        try:
+            job = Job.query.filter_by(job_id=job_id).first()
+            if job:
+                job.status = JobStatus.FAILED.value
+                job.error = str(e)
+                db.session.commit()
+        except Exception as db_err:
+            logger.error(f"Failed to update job status: {db_err}")
+
+        current_task.update_state(
+            state='FAILURE',
+            meta={'error': str(e), 'job_id': job_id}
+        )
+
+        if self.request.retries < self.max_retries:
+            logger.info(f"Retrying invoice extraction job {job_id} (attempt {self.request.retries + 1})")
+            raise self.retry(countdown=60 * (self.request.retries + 1))
+        raise
+
+
+@celery_app.task(bind=True, max_retries=3, name='tasks.extract_bank_statement_task')
+def extract_bank_statement_task(self, job_id: str, file_path: str, extraction_options: Dict[str, Any]) -> Dict[str, Any]:
+    """Async bank statement extraction task."""
+    try:
+        job = Job.query.filter_by(job_id=job_id).first()
+        logger.debug(f"Starting bank statement extraction task for job {job_id}")
+        
+        if not job:
+            job = Job(
+                job_id=job_id,
+                task_type='extract_bank_statement',
+                input_data={
+                    'file_path': file_path,
+                    'extraction_options': extraction_options
+                },
+            )
+            db.session.add(job)
+
+        job.mark_as_processing()
+        db.session.commit()
+        logger.debug(f"Job {job_id} marked as processing")
+
+        # Update task progress
+        current_task.update_state(
+            state='PROGRESS',
+            meta={
+                'current': 1,
+                'total': 4,
+                'progress': 25,
+                'status': 'Starting bank statement extraction...'
+            }
+        )
+
+        # Extract bank statement data
+        current_task.update_state(
+            state='PROGRESS',
+            meta={
+                'current': 2,
+                'total': 4,
+                'progress': 50,
+                'status': 'Extracting bank statement data...'
+            }
+        )
+        
+        start_time = datetime.utcnow()
+        extraction_result = bank_statement_extraction_service.extract_statement_data(file_path, extraction_options)
+        processing_time = (datetime.utcnow() - start_time).total_seconds()
+        
+        # Add processing time to metadata
+        if 'metadata' in extraction_result:
+            extraction_result['metadata']['processing_time'] = processing_time
+
+        # Export data if requested
+        export_result = None
+        export_format = extraction_options.get('export_format')
+        if export_format and export_format != 'none':
+            current_task.update_state(
+                state='PROGRESS',
+                meta={
+                    'current': 3,
+                    'total': 4,
+                    'progress': 75,
+                    'status': f'Exporting to {export_format}...'
+                }
+            )
+            
+            try:
+                export_result = export_service.export_bank_statement_data(
+                    extraction_result,
+                    export_format,
+                    extraction_options.get('export_filename')
+                )
+                extraction_result['export'] = export_result
+            except Exception as e:
+                logger.warning(f"Export failed for job {job_id}: {str(e)}")
+                extraction_result['export_error'] = str(e)
+
+        current_task.update_state(
+            state='PROGRESS',
+            meta={
+                'current': 4,
+                'total': 4,
+                'progress': 100,
+                'status': 'Bank statement extraction completed'
+            }
+        )
+
+        job.mark_as_completed(result=extraction_result)
+        db.session.commit()
+        logger.info(f"Bank statement extraction job {job_id} completed successfully")
+        return extraction_result
+
+    except Exception as e:
+        logger.error(f"Bank statement extraction task failed for job {job_id}: {str(e)}")
+        try:
+            job = Job.query.filter_by(job_id=job_id).first()
+            if job:
+                job.status = JobStatus.FAILED.value
+                job.error = str(e)
+                db.session.commit()
+        except Exception as db_err:
+            logger.error(f"Failed to update job status: {db_err}")
+
+        current_task.update_state(
+            state='FAILURE',
+            meta={'error': str(e), 'job_id': job_id}
+        )
+
+        if self.request.retries < self.max_retries:
+            logger.info(f"Retrying bank statement extraction job {job_id} (attempt {self.request.retries + 1})")
+            raise self.retry(countdown=60 * (self.request.retries + 1))
+        raise

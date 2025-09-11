@@ -54,8 +54,7 @@ tests/
 ├── test_enhanced_compression_service.py # Compression service tests
 ├── test_bulk_compression_service.py # Bulk compression tests
 ├── test_bulk_compression_api.py   # Bulk compression API tests
-├── test_file_manager.py           # File management tests
-├── test_enhanced_cleanup_service.py # Cleanup service tests
+├── test_file_management_service.py # Unified file management tests
 ├── test_celery_tasks.py           # Celery task tests
 ├── test_rate_limiter.py           # Rate limiting tests
 ├── test_security_middleware.py    # Security middleware tests
@@ -573,29 +572,30 @@ class TestCompressionWorkflow:
 ### Service Integration Testing
 
 ```python
+from src.services.file_management_service import FileManagementService
+from src.services.compression_service import CompressionService
+
 def test_service_integration(self, app, temp_upload_folder):
     """Test integration between multiple services"""
     with app.app_context():
         # Initialize services
-        file_manager = FileManager(base_upload_folder=temp_upload_folder)
+        file_service = FileManagementService(upload_folder=temp_upload_folder)
         compression_service = CompressionService()
-        cleanup_service = CleanupService()
         
         # Create test file
-        test_file_path = os.path.join(temp_upload_folder, 'test.pdf')
-        with open(test_file_path, 'wb') as f:
-            f.write(b'%PDF-1.4 test content')
+        test_file_data = b'%PDF-1.4 test content'
+        file_id, file_path = file_service.save_file(test_file_data, 'test.pdf')
         
         # Test file processing pipeline
-        file_info = file_manager.get_file_info(test_file_path)
-        compression_result = compression_service.compress_pdf(test_file_path, 'medium')
+        assert file_service.file_exists(file_path) is True
+        compression_result = compression_service.compress_pdf(file_path, 'medium')
         
         assert compression_result['success'] is True
         assert os.path.exists(compression_result['output_path'])
         
         # Test cleanup
-        cleanup_result = cleanup_service.cleanup_job_files(compression_result['job_id'])
-        assert cleanup_result['files_cleaned'] > 0
+        cleanup_result = file_service.cleanup_expired_jobs()
+        assert cleanup_result['files_cleaned'] >= 0
 ```
 
 ## Test Data Management
