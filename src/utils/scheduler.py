@@ -7,7 +7,7 @@ from typing import Callable, Dict, Any
 
 from flask import Flask
 
-from src.services.cleanup_service import CleanupService
+from src.services.file_management_service import FileManagementService
 
 logger = logging.getLogger(__name__)
 
@@ -105,18 +105,26 @@ scheduler = TaskScheduler()
 
 
 def setup_cleanup_scheduler(upload_folder: str, app: Flask):
-    """Set up the cleanup scheduler with default tasks"""
+    """Set up the cleanup scheduler with default tasks using FileManagementService"""
     with app.app_context():
-        clean_up_service = CleanupService()
+        file_management_service = FileManagementService(upload_folder=upload_folder)
+        
         def cleanup_expired_jobs():
             """Wrapper for expired jobs cleanup"""
-            return clean_up_service.cleanup_expired_jobs()
+            return file_management_service.cleanup_expired_jobs()
+        
         def cleanup_temp_files():
             """Wrapper for temp files cleanup"""
-            return clean_up_service.cleanup_temp_files(upload_folder)
-            # Add cleanup tasks
+            return file_management_service.cleanup_temp_files()
+        
+        def cleanup_old_files():
+            """Wrapper for old files cleanup"""
+            return file_management_service.cleanup_old_files()
+        
+        # Add cleanup tasks
         scheduler.add_task('cleanup_expired_jobs', cleanup_expired_jobs, interval_hours=6)  # Every 6 hours
         scheduler.add_task('cleanup_temp_files', cleanup_temp_files, interval_hours=1)      # Every hour
+        scheduler.add_task('cleanup_old_files', cleanup_old_files, interval_hours=12)       # Every 12 hours
 
         return scheduler
 

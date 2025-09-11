@@ -16,6 +16,8 @@ class TaskType(Enum):
     CONVERT = 'convert'
     OCR = 'ocr'
     AI = 'ai'
+    AI_INVOICE_EXTRACTION = 'ai_invoice_extraction'
+    AI_BANK_STATEMENT_EXTRACTION = 'ai_bank_statement_extraction'
     
 class Job(BaseModel):
     """Generic job tracking model"""

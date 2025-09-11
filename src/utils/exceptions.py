@@ -231,3 +231,51 @@ class SecurityError(PDFCompressionError):
             details=error_details,
             status_code=403
         )
+
+
+class ExtractionError(PDFCompressionError):
+    """Base exception class for AI extraction service errors."""
+    
+    def __init__(self, message: str, extraction_type: str = None, details: Dict[str, Any] = None):
+        error_details = details or {}
+        if extraction_type:
+            error_details['extraction_type'] = extraction_type
+        
+        super().__init__(
+            message=message,
+            error_code='EXTRACTION_ERROR',
+            details=error_details,
+            status_code=422
+        )
+
+
+class ExtractionValidationError(ExtractionError):
+    """Raised when extraction result validation fails."""
+    
+    def __init__(self, message: str, validation_field: str = None, details: Dict[str, Any] = None):
+        error_details = details or {}
+        if validation_field:
+            error_details['validation_field'] = validation_field
+        
+        super().__init__(
+            message=message,
+            extraction_type='validation',
+            details=error_details
+        )
+        self.error_code = 'EXTRACTION_VALIDATION_ERROR'
+
+
+class ExportFormatError(PDFCompressionError):
+    """Raised when export format is invalid or export fails."""
+    
+    def __init__(self, message: str, format_type: str = None, details: Dict[str, Any] = None):
+        error_details = details or {}
+        if format_type:
+            error_details['format_type'] = format_type
+        
+        super().__init__(
+            message=message,
+            error_code='EXPORT_FORMAT_ERROR',
+            details=error_details,
+            status_code=422
+        )

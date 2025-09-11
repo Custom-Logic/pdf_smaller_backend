@@ -93,6 +93,12 @@ class BaseConfig:
     HEALTH_CHECK_ENABLED = os.environ.get('HEALTH_CHECK_ENABLED', 'true').lower() == 'true'
     METRICS_ENABLED = os.environ.get('METRICS_ENABLED', 'false').lower() == 'true'
     
+    # AI Extraction Features
+    INVOICE_EXTRACTION_ENABLED = os.environ.get('INVOICE_EXTRACTION_ENABLED', 'true').lower() == 'true'
+    BANK_STATEMENT_EXTRACTION_ENABLED = os.environ.get('BANK_STATEMENT_EXTRACTION_ENABLED', 'true').lower() == 'true'
+    EXTRACTION_MAX_FILE_SIZE = int(os.environ.get('EXTRACTION_MAX_FILE_SIZE', 52428800))  # 50MB
+    EXTRACTION_TIMEOUT = int(os.environ.get('EXTRACTION_TIMEOUT', 300))  # 5 minutes
+    
     @classmethod
     def validate_config(cls) -> List[str]:
         """Validate configuration and return list of errors"""
