@@ -348,14 +348,10 @@ class ConversionService:
             output_filename = f"converted_{pdf_content.get('metadata', {}).get('title', 'document')}.docx"
             output_path = os.path.join(self.upload_folder, output_filename)
             doc.save(output_path)
-            
-            # Read the file data
-            with open(output_path, 'rb') as f:
-                file_data = f.read()
-            
+                       
             return {
                 'success': True,
-                'file_data': file_data,
+                'output_path': output_path,
                 'filename': output_filename,
                 'mime_type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                 'file_size': len(file_data)
@@ -390,7 +386,7 @@ class ConversionService:
             
             return {
                 'success': True,
-                'file_data': file_data,
+                'output_path': output_path,
                 'filename': f"converted_{pdf_content.get('metadata', {}).get('title', 'document')}.txt",
                 'mime_type': 'text/plain',
                 'file_size': len(file_data)
@@ -420,7 +416,7 @@ class ConversionService:
             
             return {
                 'success': True,
-                'file_data': file_data,
+                'output_path': output_path,
                 'filename': f"converted_{pdf_content.get('metadata', {}).get('title', 'document')}.html",
                 'mime_type': 'text/html',
                 'file_size': len(file_data)
