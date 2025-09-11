@@ -228,7 +228,7 @@ class OCRService:
     # OCR PROCESSING – sync, disk-only
     # --------------------------------------------------------------------------
     def _process_pdf_ocr(self, pdf_path: Path, opts: Dict[str, Any]) -> Dict[str, Any]:
-        """PDF → searchable PDF (text overlay) on disk."""
+        """PDF → searchable PDF **or** text/json on disk."""
         if not PDF_LIBS_AVAILABLE:
             raise RuntimeError("PyMuPDF unavailable")
 
@@ -236,32 +236,44 @@ class OCRService:
         lang = opts.get("language", self.default_lang)
         quality = opts.get("quality", self.default_quality)
 
+        # ---------- 1.  run OCR on every page ----------
         doc = fitz.open(pdf_path)
-        out_doc = fitz.open()
-
+        full_text = []
         for page in doc:
             pix = page.get_pixmap(dpi=300)
             img_bytes = pix.tobytes("png")
-            ocr_text = self._perform_image_ocr_bytes(img_bytes, lang, quality)
-
-            new_page = out_doc.new_page(width=page.rect.width, height=page.rect.height)
-            new_page.show_pdf_page(page.rect, doc, page.number)
-            if ocr_text.strip():
-                new_page.insert_textbox(
-                    fitz.Rect(0, 0, page.rect.width, page.rect.height),
-                    ocr_text,
-                    fontsize=1,
-                    color=(0, 0, 0, 0),
-                )
-
-        filename = f"ocr_{pdf_path.stem}.pdf"
-        out_path = self.upload_folder / filename
-        out_doc.save(str(out_path))
-        out_doc.close()
+            full_text.append(self._perform_image_ocr_bytes(img_bytes, lang, quality))
         doc.close()
+        ocr_text = "\n".join(full_text)
 
-        return {"output_path": str(out_path), "filename": filename, "mime_type": "application/pdf", "output_format": output_format}
+        # ---------- 2.  return the *correct* disk file ----------
+        if output_format == "searchable_pdf":
+            # make searchable PDF
+            doc = fitz.open(pdf_path)  # re-open to copy pages
+            out_doc = fitz.open()
+            for page in doc:
+                new_page = out_doc.new_page(width=page.rect.width, height=page.rect.height)
+                new_page.show_pdf_page(page.rect, doc, page.number)
+                if ocr_text.strip():
+                    new_page.insert_textbox(
+                        fitz.Rect(0, 0, page.rect.width, page.rect.height),
+                        ocr_text,
+                        fontsize=1,
+                        color=(0, 0, 0, 0),
+                    )
+            doc.close()
+            filename = f"ocr_{pdf_path.stem}.pdf"
+            out_path = self.upload_folder / filename
+            out_doc.save(str(out_path))
+            out_doc.close()
+            return {"output_path": str(out_path), "filename": filename, "mime_type": "application/pdf", "output_format": output_format}
 
+        # ---------- 3.  text or json ----------
+        if output_format == "json":
+            return self._create_json_output(ocr_text, pdf_path)
+        # default = plain text
+        return self._create_text_output(ocr_text, pdf_path)
+        
     def _process_image_ocr(self, img_path: Path, opts: Dict[str, Any]) -> Dict[str, Any]:
         """Image → text / json on disk."""
         if not OCR_LIBS_AVAILABLE:
