@@ -885,4 +885,544 @@ curl http://localhost:5000/api/health
 time curl -s http://localhost:5000/api/health > /dev/null
 ```
 
-This deployment guide provides comprehensive instructions for deploying the PDF Smaller backend in both development and production environments, focusing on the core PDF processing functionality without authentication complexity.
+## Production Best Practices
+
+### 1. High Availability Setup
+
+#### Load Balancer Configuration
+For production environments handling high traffic, implement load balancing:
+
+```nginx
+# /etc/nginx/conf.d/pdfsmaller-lb.conf
+upstream pdfsmaller_backend {
+    least_conn;
+    server 10.0.1.10:5000 max_fails=3 fail_timeout=30s weight=1;
+    server 10.0.1.11:5000 max_fails=3 fail_timeout=30s weight=1;
+    server 10.0.1.12:5000 max_fails=3 fail_timeout=30s weight=1;
+    
+    # Health check
+    keepalive 32;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name api.yourserver.com;
+    
+    location / {
+        proxy_pass http://pdfsmaller_backend;
+        proxy_next_upstream error timeout invalid_header http_500 http_502 http_503 http_504;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+#### Redis Cluster Setup
+For production resilience, configure Redis in cluster mode:
+
+```bash
+# Redis cluster configuration
+# /etc/redis/redis-cluster.conf
+port 7000
+cluster-enabled yes
+cluster-config-file nodes-7000.conf
+cluster-node-timeout 5000
+appendonly yes
+
+# Start cluster nodes
+redis-server /etc/redis/redis-cluster.conf
+
+# Initialize cluster
+redis-cli --cluster create 127.0.0.1:7000 127.0.0.1:7001 127.0.0.1:7002 --cluster-replicas 0
+```
+
+### 2. Performance Optimization
+
+#### Gunicorn Production Configuration
+Create optimized `gunicorn_conf.py`:
+
+```python
+# gunicorn_conf.py
+import multiprocessing
+import os
+
+# Server socket
+bind = "0.0.0.0:5000"
+backlog = 2048
+
+# Worker processes
+workers = multiprocessing.cpu_count() * 2 + 1
+worker_class = "gevent"
+worker_connections = 1000
+max_requests = 1000
+max_requests_jitter = 50
+preload_app = True
+
+# Timeouts
+timeout = 300
+keepalive = 2
+graceful_timeout = 30
+
+# Logging
+accesslog = "/var/log/pdfsmaller/gunicorn-access.log"
+errorlog = "/var/log/pdfsmaller/gunicorn-error.log"
+loglevel = "info"
+access_log_format = '%(h)s %(l)s %(u)s %(t)s "%(r)s" %(s)s %(b)s "%(f)s" "%(a)s" %(D)s'
+
+# Process naming
+proc_name = 'pdfsmaller'
+
+# Server mechanics
+daemon = False
+pidfile = '/var/run/pdfsmaller/gunicorn.pid'
+user = 'pdfsmaller'
+group = 'pdfsmaller'
+tmp_upload_dir = None
+
+# SSL (if terminating SSL at application level)
+# keyfile = '/etc/ssl/private/server.key'
+# certfile = '/etc/ssl/certs/server.crt'
+```
+
+#### Celery Production Configuration
+Optimize Celery for production workloads:
+
+```python
+# celery_config.py
+from kombu import Queue
+
+# Broker settings
+broker_url = 'redis://localhost:6379/0'
+result_backend = 'redis://localhost:6379/0'
+
+# Task routing
+task_routes = {
+    'app.tasks.compress_pdf': {'queue': 'compression'},
+    'app.tasks.cleanup_files': {'queue': 'cleanup'},
+    'app.tasks.health_check': {'queue': 'monitoring'}
+}
+
+# Queue configuration
+task_default_queue = 'default'
+task_queues = (
+    Queue('compression', routing_key='compression'),
+    Queue('cleanup', routing_key='cleanup'),
+    Queue('monitoring', routing_key='monitoring'),
+    Queue('default', routing_key='default'),
+)
+
+# Performance settings
+worker_prefetch_multiplier = 1
+task_acks_late = True
+worker_max_tasks_per_child = 1000
+
+# Serialization
+task_serializer = 'json'
+result_serializer = 'json'
+accept_content = ['json']
+
+# Monitoring
+worker_send_task_events = True
+task_send_sent_event = True
+
+# Result backend settings
+result_expires = 3600  # 1 hour
+result_backend_transport_options = {
+    'master_name': 'mymaster',
+    'visibility_timeout': 3600,
+}
+```
+
+### 3. Security Hardening
+
+#### Application Security
+```python
+# security_config.py
+from flask_talisman import Talisman
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+
+def configure_security(app):
+    # Content Security Policy
+    csp = {
+        'default-src': "'self'",
+        'script-src': "'self' 'unsafe-inline'",
+        'style-src': "'self' 'unsafe-inline'",
+        'img-src': "'self' data:",
+        'font-src': "'self'",
+        'connect-src': "'self'",
+        'frame-ancestors': "'none'"
+    }
+    
+    # Security headers
+    Talisman(app, 
+        force_https=True,
+        strict_transport_security=True,
+        content_security_policy=csp,
+        referrer_policy='strict-origin-when-cross-origin'
+    )
+    
+    # Rate limiting
+    limiter = Limiter(
+        app,
+        key_func=get_remote_address,
+        default_limits=["200 per day", "50 per hour"]
+    )
+    
+    return limiter
+```
+
+#### System Security
+```bash
+# /etc/security/limits.conf
+pdfsmaller soft nofile 65536
+pdfsmaller hard nofile 65536
+pdfsmaller soft nproc 32768
+pdfsmaller hard nproc 32768
+
+# Disable unnecessary services
+sudo systemctl disable bluetooth
+sudo systemctl disable cups
+sudo systemctl disable avahi-daemon
+
+# Configure fail2ban
+sudo apt-get install fail2ban
+
+# /etc/fail2ban/jail.local
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 5
+
+[nginx-http-auth]
+enabled = true
+filter = nginx-http-auth
+logpath = /var/log/nginx/error.log
+
+[nginx-limit-req]
+enabled = true
+filter = nginx-limit-req
+logpath = /var/log/nginx/error.log
+```
+
+## Advanced Monitoring and Alerting
+
+### 1. Prometheus Integration
+
+#### Application Metrics
+```python
+# metrics.py
+from prometheus_client import Counter, Histogram, Gauge, generate_latest
+from flask import Response
+import time
+
+# Metrics
+REQUEST_COUNT = Counter('http_requests_total', 'Total HTTP requests', ['method', 'endpoint', 'status'])
+REQUEST_DURATION = Histogram('http_request_duration_seconds', 'HTTP request duration')
+ACTIVE_JOBS = Gauge('active_compression_jobs', 'Number of active compression jobs')
+FILE_SIZE_PROCESSED = Counter('file_size_processed_bytes_total', 'Total bytes processed')
+COMPRESSION_RATIO = Histogram('compression_ratio', 'PDF compression ratio achieved')
+
+def setup_metrics(app):
+    @app.before_request
+    def before_request():
+        request.start_time = time.time()
+    
+    @app.after_request
+    def after_request(response):
+        REQUEST_COUNT.labels(
+            method=request.method,
+            endpoint=request.endpoint or 'unknown',
+            status=response.status_code
+        ).inc()
+        
+        if hasattr(request, 'start_time'):
+            REQUEST_DURATION.observe(time.time() - request.start_time)
+        
+        return response
+    
+    @app.route('/metrics')
+    def metrics():
+        return Response(generate_latest(), mimetype='text/plain')
+```
+
+#### Prometheus Configuration
+```yaml
+# /etc/prometheus/prometheus.yml
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "pdfsmaller_rules.yml"
+
+scrape_configs:
+  - job_name: 'pdfsmaller'
+    static_configs:
+      - targets: ['localhost:5000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['localhost:9121']
+    
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['localhost:9113']
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - localhost:9093
+```
+
+#### Alert Rules
+```yaml
+# /etc/prometheus/pdfsmaller_rules.yml
+groups:
+  - name: pdfsmaller_alerts
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value }} errors per second"
+      
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High response time detected"
+          description: "95th percentile response time is {{ $value }} seconds"
+      
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service is down"
+          description: "{{ $labels.instance }} has been down for more than 1 minute"
+      
+      - alert: HighDiskUsage
+        expr: (node_filesystem_size_bytes - node_filesystem_free_bytes) / node_filesystem_size_bytes > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High disk usage"
+          description: "Disk usage is above 80%"
+```
+
+### 2. Grafana Dashboard
+
+#### Dashboard Configuration
+```json
+{
+  "dashboard": {
+    "title": "PDF Smaller Backend Monitoring",
+    "panels": [
+      {
+        "title": "Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(http_requests_total[5m])",
+            "legendFormat": "{{method}} {{endpoint}}"
+          }
+        ]
+      },
+      {
+        "title": "Response Time",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "95th percentile"
+          },
+          {
+            "expr": "histogram_quantile(0.50, rate(http_request_duration_seconds_bucket[5m]))",
+            "legendFormat": "50th percentile"
+          }
+        ]
+      },
+      {
+        "title": "Active Jobs",
+        "type": "singlestat",
+        "targets": [
+          {
+            "expr": "active_compression_jobs",
+            "legendFormat": "Active Jobs"
+          }
+        ]
+      },
+      {
+        "title": "Compression Efficiency",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, rate(compression_ratio_bucket[5m]))",
+            "legendFormat": "Median Compression Ratio"
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+## Scaling Strategies
+
+### 1. Horizontal Scaling
+
+#### Multi-Instance Deployment
+```yaml
+# docker-compose.scale.yml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    deploy:
+      replicas: 3
+    environment:
+      - FLASK_ENV=production
+    env_file:
+      - .env.production
+    volumes:
+      - shared_uploads:/app/uploads
+      - shared_data:/app/data
+    depends_on:
+      - redis
+    
+  celery-worker:
+    build: .
+    command: celery -A celery_worker.celery worker --loglevel=info --concurrency=2
+    deploy:
+      replicas: 6
+    environment:
+      - FLASK_ENV=production
+    env_file:
+      - .env.production
+    volumes:
+      - shared_uploads:/app/uploads
+      - shared_data:/app/data
+    depends_on:
+      - redis
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx-lb.conf:/etc/nginx/nginx.conf
+    depends_on:
+      - app
+
+volumes:
+  shared_uploads:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=nfs-server.local,rw
+      device: ":/var/nfs/uploads"
+  shared_data:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=nfs-server.local,rw
+      device: ":/var/nfs/data"
+```
+
+#### Auto-scaling with Docker Swarm
+```bash
+# Initialize swarm
+docker swarm init
+
+# Deploy stack
+docker stack deploy -c docker-compose.scale.yml pdfsmaller
+
+# Scale services
+docker service scale pdfsmaller_app=5
+docker service scale pdfsmaller_celery-worker=10
+```
+
+### 2. Vertical Scaling
+
+#### Resource Optimization
+```bash
+# /etc/systemd/system/pdfsmaller.service.d/override.conf
+[Service]
+# Memory limits
+MemoryMax=2G
+MemoryHigh=1.5G
+
+# CPU limits
+CPUQuota=200%
+
+# I/O limits
+IOWeight=500
+
+# Process limits
+LimitNOFILE=65536
+LimitNPROC=32768
+```
+
+#### Database Scaling
+```python
+# database_config.py
+from sqlalchemy import create_engine
+from sqlalchemy.pool import QueuePool
+
+def create_optimized_engine(database_url):
+    return create_engine(
+        database_url,
+        poolclass=QueuePool,
+        pool_size=20,
+        max_overflow=30,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+        echo=False
+    )
+```
+
+### 3. Performance Monitoring
+
+#### Resource Usage Tracking
+```bash
+#!/bin/bash
+# /usr/local/bin/performance_monitor.sh
+
+# CPU usage
+cpu_usage=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | awk -F'%' '{print $1}')
+
+# Memory usage
+mem_usage=$(free | grep Mem | awk '{printf "%.2f", $3/$2 * 100.0}')
+
+# Disk I/O
+disk_io=$(iostat -x 1 1 | grep -E "(sda|nvme)" | awk '{print $10}' | tail -1)
+
+# Network usage
+net_rx=$(cat /proc/net/dev | grep eth0 | awk '{print $2}')
+net_tx=$(cat /proc/net/dev | grep eth0 | awk '{print $10}')
+
+# Log metrics
+echo "$(date): CPU=${cpu_usage}% MEM=${mem_usage}% DISK_IO=${disk_io}% NET_RX=${net_rx} NET_TX=${net_tx}" >> /var/log/pdfsmaller/performance.log
+
+# Send to monitoring system
+curl -X POST http://localhost:9090/api/v1/write \
+  -H 'Content-Type: application/x-protobuf' \
+  --data-binary @<(echo "cpu_usage ${cpu_usage}")
+```
+
+This comprehensive deployment guide provides production-ready instructions for deploying the PDF Smaller backend with high availability, security, monitoring, and scaling capabilities, focusing on the core PDF processing functionality without authentication complexity.

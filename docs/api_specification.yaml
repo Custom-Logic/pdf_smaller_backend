@@ -2,26 +2,40 @@ openapi: 3.0.3
 info:
   title: PDF Smaller API
   description: |
-    A simple PDF compression service that provides endpoints for compressing PDF files
-    and managing compression jobs. This API focuses on core PDF processing functionality
-    without user authentication or session management.
+    A comprehensive PDF processing service that provides endpoints for PDF compression,
+    OCR processing, AI-powered features, format conversion, and job management.
+    This API focuses on core PDF processing functionality without user authentication.
     
     ## Features
-    - Single and bulk PDF compression
-    - Asynchronous job processing
-    - File download capabilities
-    - Job status tracking
-    - Automatic file cleanup
+    - Single and bulk PDF compression with multiple quality levels
+    - Optical Character Recognition (OCR) for scanned documents
+    - AI-powered summarization and translation
+    - PDF to Word/Text/HTML conversion
+    - Cloud storage integration
+    - Asynchronous job processing with real-time status tracking
+    - Automatic file cleanup and resource management
+    
+    ## Processing Model
+    All operations follow a job-oriented architecture:
+    1. Submit request → Receive job ID immediately
+    2. Poll job status → Track processing progress
+    3. Download results → Access completed files
     
     ## Rate Limiting
-    API endpoints are rate-limited to 100 requests per hour for all users.
+    API endpoints are rate-limited to 100 requests per hour per IP address.
     
-    ## Error Handling
-    All errors follow a consistent format with error codes and messages.
+    ## File Size Limits
+    - Single file: 50MB maximum
+    - Bulk operations: 100 files, 1GB total maximum
     
-  version: 1.0.0
+    ## Supported Formats
+    - Input: PDF, PNG, JPG, JPEG, TIFF, BMP (for OCR)
+    - Output: PDF, DOCX, TXT, HTML, ZIP (for bulk operations)
+    
+  version: 2.0.0
   contact:
     name: PDF Smaller Support
+    email: support@pdfsmaller.com
   license:
     name: MIT
     url: https://opensource.org/licenses/MIT
@@ -53,13 +67,17 @@ paths:
                   type: string
                   enum: [low, medium, high, maximum]
                   default: medium
-                  description: Compression level
+                  description: Compression level affecting file size and quality
                 imageQuality:
                   type: integer
                   minimum: 10
                   maximum: 100
                   default: 80
-                  description: Image quality for compression
+                  description: Image quality for compression (10=lowest, 100=highest)
+                job_id:
+                  type: string
+                  format: uuid
+                  description: Optional client-provided job ID for tracking
               required:
                 - file
       responses:
@@ -69,10 +87,19 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/JobCreatedResponse'
+              example:
+                success: true
+                job_id: "550e8400-e29b-41d4-a716-446655440000"
+                status: "pending"
+                message: "Compression job queued successfully"
         '400':
           $ref: '#/components/responses/BadRequest'
         '413':
-          description: File too large
+          description: File too large (exceeds 50MB limit)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '429':
           $ref: '#/components/responses/RateLimitExceeded'
         '500':
@@ -102,13 +129,7 @@ paths:
                   type: string
                   enum: [low, medium, high, maximum]
                   default: medium
-                  description: Compression level
-                imageQuality:
-                  type: integer
-                  minimum: 10
-                  maximum: 100
-                  default: 80
-                  description: Image quality for compression
+                  description: Compression level for all files
               required:
                 - files
       responses:
@@ -117,11 +138,226 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BulkJobCreatedResponse'
+                $ref: '#/components/schemas/JobCreatedResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '413':
-          description: Files too large
+          description: Total size exceeds limit (1GB maximum)
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/extended-features/convert:
+    post:
+      tags:
+        - Extended Features
+      summary: Convert PDF to other formats
+      description: Convert PDF files to Word, Text, or HTML formats
+      operationId: convertPdf
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The PDF file to convert
+                outputFormat:
+                  type: string
+                  enum: [docx, txt, html, images]
+                  default: docx
+                  description: Target output format
+                preserveLayout:
+                  type: boolean
+                  default: true
+                  description: Preserve original document layout
+                extractTables:
+                  type: boolean
+                  default: true
+                  description: Extract tables from PDF
+                extractImages:
+                  type: boolean
+                  default: false
+                  description: Extract images from PDF
+                quality:
+                  type: string
+                  enum: [low, medium, high]
+                  default: medium
+                  description: Conversion quality level
+              required:
+                - file
+      responses:
+        '202':
+          description: Conversion job queued successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreatedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          description: File too large
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/extended-features/ocr:
+    post:
+      tags:
+        - Extended Features
+      summary: Perform OCR on PDF or image
+      description: Extract text from scanned PDFs or images using OCR
+      operationId: performOcr
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The PDF or image file for OCR
+                language:
+                  type: string
+                  enum: [eng, spa, fra, deu, ita, por, rus, jpn, kor, chi_sim, ara, hin]
+                  default: eng
+                  description: OCR language
+                quality:
+                  type: string
+                  enum: [fast, balanced, accurate]
+                  default: balanced
+                  description: OCR processing quality
+                outputFormat:
+                  type: string
+                  enum: [searchable_pdf, text, json]
+                  default: searchable_pdf
+                  description: Output format for OCR results
+              required:
+                - file
+      responses:
+        '202':
+          description: OCR job queued successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreatedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          description: File too large
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/extended-features/ai/summarize:
+    post:
+      tags:
+        - AI Features
+      summary: Summarize PDF content using AI
+      description: Generate AI-powered summaries of PDF documents
+      operationId: summarizePdf
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The PDF file to summarize
+                style:
+                  type: string
+                  enum: [concise, detailed, academic, casual, professional]
+                  default: professional
+                  description: Summary style
+                maxLength:
+                  type: integer
+                  minimum: 100
+                  maximum: 2000
+                  default: 500
+                  description: Maximum summary length in words
+                provider:
+                  type: string
+                  enum: [openrouter, openai, anthropic]
+                  default: openrouter
+                  description: AI provider to use
+              required:
+                - file
+      responses:
+        '202':
+          description: Summarization job queued successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreatedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          description: File too large
+        '429':
+          $ref: '#/components/responses/RateLimitExceeded'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/extended-features/ai/translate:
+    post:
+      tags:
+        - AI Features
+      summary: Translate PDF content using AI
+      description: Translate PDF documents to different languages using AI
+      operationId: translatePdf
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The PDF file to translate
+                targetLanguage:
+                  type: string
+                  description: Target language for translation (e.g., 'Spanish', 'French')
+                sourceLanguage:
+                  type: string
+                  default: auto
+                  description: Source language (auto-detect if not specified)
+                quality:
+                  type: string
+                  enum: [fast, balanced, high_quality]
+                  default: balanced
+                  description: Translation quality level
+                provider:
+                  type: string
+                  enum: [openrouter, openai, anthropic]
+                  default: openrouter
+                  description: AI provider to use
+              required:
+                - file
+                - targetLanguage
+      responses:
+        '202':
+          description: Translation job queued successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobCreatedResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '413':
+          description: File too large
         '429':
           $ref: '#/components/responses/RateLimitExceeded'
         '500':
@@ -132,7 +368,7 @@ paths:
       tags:
         - Job Management
       summary: Get job status
-      description: Retrieve the current status and details of a compression job
+      description: Retrieve the current status and details of a processing job
       operationId: getJobStatus
       parameters:
         - name: job_id
@@ -141,7 +377,7 @@ paths:
           schema:
             type: string
             format: uuid
-          description: The job ID
+          description: The unique job identifier
       responses:
         '200':
           description: Job status retrieved successfully
@@ -149,8 +385,44 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/JobStatusResponse'
+              examples:
+                pending:
+                  summary: Job is pending
+                  value:
+                    job_id: "550e8400-e29b-41d4-a716-446655440000"
+                    status: "pending"
+                    task_type: "compression"
+                    created_at: "2023-06-15T10:30:00.000Z"
+                    updated_at: "2023-06-15T10:30:00.000Z"
+                processing:
+                  summary: Job is processing
+                  value:
+                    job_id: "550e8400-e29b-41d4-a716-446655440000"
+                    status: "processing"
+                    task_type: "compression"
+                    created_at: "2023-06-15T10:30:00.000Z"
+                    updated_at: "2023-06-15T10:30:05.000Z"
+                    progress: 45
+                completed:
+                  summary: Job completed successfully
+                  value:
+                    job_id: "550e8400-e29b-41d4-a716-446655440000"
+                    status: "completed"
+                    task_type: "compression"
+                    created_at: "2023-06-15T10:30:00.000Z"
+                    updated_at: "2023-06-15T10:30:15.000Z"
+                    completed_at: "2023-06-15T10:30:15.000Z"
+                    result:
+                      original_size: 1048576
+                      compressed_size: 524288
+                      compression_ratio: 0.5
+                      download_url: "/api/jobs/550e8400-e29b-41d4-a716-446655440000/download"
         '404':
           description: Job not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           $ref: '#/components/responses/InternalServerError'
 
@@ -158,9 +430,9 @@ paths:
     get:
       tags:
         - Job Management
-      summary: Download compressed file
-      description: Download the compressed PDF file for a completed job
-      operationId: downloadCompressedFile
+      summary: Download job result
+      description: Download the processed file for a completed job
+      operationId: downloadJobResult
       parameters:
         - name: job_id
           in: path
@@ -168,28 +440,139 @@ paths:
           schema:
             type: string
             format: uuid
-          description: The job ID
+          description: The unique job identifier
       responses:
         '200':
-          description: File download successful
+          description: File download
           content:
             application/pdf:
               schema:
                 type: string
                 format: binary
+            application/zip:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.wordprocessingml.document:
+              schema:
+                type: string
+                format: binary
+            text/plain:
+              schema:
+                type: string
+            text/html:
+              schema:
+                type: string
         '404':
           description: Job not found or file not available
-        '410':
-          description: File has been cleaned up and is no longer available
+        '409':
+          description: Job not completed yet
         '500':
           $ref: '#/components/responses/InternalServerError'
+
+  /api/extended-features/cloud/exchange-token:
+    post:
+      tags:
+        - Cloud Integration
+      summary: Exchange cloud storage token
+      description: Exchange temporary tokens for cloud storage access
+      operationId: exchangeCloudToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                provider:
+                  type: string
+                  enum: [dropbox, google_drive, onedrive]
+                  description: Cloud storage provider
+                authCode:
+                  type: string
+                  description: Authorization code from OAuth flow
+                redirectUri:
+                  type: string
+                  format: uri
+                  description: OAuth redirect URI
+              required:
+                - provider
+                - authCode
+      responses:
+        '200':
+          description: Token exchange successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  access_token:
+                    type: string
+                  expires_in:
+                    type: integer
+                  token_type:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/extended-features/status:
+    get:
+      tags:
+        - System Status
+      summary: Get extended features status
+      description: Check the availability and status of all extended features
+      operationId: getExtendedFeaturesStatus
+      responses:
+        '200':
+          description: Extended features status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversion:
+                    $ref: '#/components/schemas/FeatureStatus'
+                  ocr:
+                    $ref: '#/components/schemas/FeatureStatus'
+                  ai:
+                    $ref: '#/components/schemas/FeatureStatus'
+                  cloud_integration:
+                    $ref: '#/components/schemas/FeatureStatus'
+
+  /api/extended-features/capabilities:
+    get:
+      tags:
+        - System Status
+      summary: Get system capabilities
+      description: Get detailed information about system capabilities and limits
+      operationId: getSystemCapabilities
+      responses:
+        '200':
+          description: System capabilities
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversion:
+                    $ref: '#/components/schemas/CapabilityInfo'
+                  ocr:
+                    $ref: '#/components/schemas/CapabilityInfo'
+                  ai:
+                    $ref: '#/components/schemas/CapabilityInfo'
+                  compression:
+                    $ref: '#/components/schemas/CapabilityInfo'
 
   /api/health:
     get:
       tags:
-        - System
-      summary: Health check
-      description: Check the health status of the API
+        - Health Check
+      summary: Health check endpoint
+      description: Check the overall health of the API service
       operationId: healthCheck
       responses:
         '200':
@@ -201,13 +584,25 @@ paths:
                 properties:
                   status:
                     type: string
-                    example: healthy
+                    example: "healthy"
                   database:
                     type: string
-                    example: connected
+                    example: "connected"
                   database_type:
                     type: string
-                    example: sqlite
+                    example: "sqlite"
+                  redis:
+                    type: string
+                    example: "connected"
+                  timestamp:
+                    type: string
+                    format: date-time
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
 components:
   schemas:
@@ -223,41 +618,16 @@ components:
           example: "550e8400-e29b-41d4-a716-446655440000"
         status:
           type: string
+          enum: [pending]
           example: "pending"
         message:
           type: string
-          example: "Compression job queued successfully"
+          example: "Job queued successfully"
       required:
         - success
         - job_id
         - status
         - message
-
-    BulkJobCreatedResponse:
-      type: object
-      properties:
-        success:
-          type: boolean
-          example: true
-        job_id:
-          type: string
-          format: uuid
-          example: "550e8400-e29b-41d4-a716-446655440000"
-        status:
-          type: string
-          example: "pending"
-        message:
-          type: string
-          example: "Bulk compression job queued successfully"
-        file_count:
-          type: integer
-          example: 3
-      required:
-        - success
-        - job_id
-        - status
-        - message
-        - file_count
 
     JobStatusResponse:
       type: object
@@ -265,47 +635,32 @@ components:
         job_id:
           type: string
           format: uuid
-          example: "550e8400-e29b-41d4-a716-446655440000"
         status:
           type: string
           enum: [pending, processing, completed, failed]
-          example: "completed"
         task_type:
           type: string
-          example: "compression"
+          enum: [compression, bulk_compression, conversion, ocr, ai_summarization, ai_translation]
         created_at:
           type: string
           format: date-time
-          example: "2023-06-15T10:30:00.000Z"
         updated_at:
           type: string
           format: date-time
-          example: "2023-06-15T10:31:00.000Z"
+        completed_at:
+          type: string
+          format: date-time
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Processing progress percentage
         result:
           type: object
-          properties:
-            original_size:
-              type: integer
-              example: 1048576
-            compressed_size:
-              type: integer
-              example: 524288
-            compression_ratio:
-              type: number
-              format: float
-              example: 50.0
-            output_path:
-              type: string
-              example: "/path/to/compressed/file.pdf"
-            original_filename:
-              type: string
-              example: "document.pdf"
-        download_url:
+          description: Job result data (present when status is completed)
+        error_message:
           type: string
-          example: "/api/jobs/550e8400-e29b-41d4-a716-446655440000/download"
-        error:
-          type: string
-          example: "Failed to process PDF: Invalid file format"
+          description: Error message (present when status is failed)
       required:
         - job_id
         - status
@@ -316,19 +671,104 @@ components:
     ErrorResponse:
       type: object
       properties:
+        success:
+          type: boolean
+          example: false
         error:
-          type: string
-          example: "Invalid request"
+          type: object
+          properties:
+            code:
+              type: string
+              example: "VALIDATION_ERROR"
+            message:
+              type: string
+              example: "Invalid input provided"
+            details:
+              type: object
+              description: Additional error details
+            timestamp:
+              type: string
+              format: date-time
+          required:
+            - code
+            - message
+            - timestamp
       required:
+        - success
         - error
+
+    FeatureStatus:
+      type: object
+      properties:
+        available:
+          type: boolean
+        status:
+          type: string
+          enum: [operational, degraded, unavailable]
+        last_checked:
+          type: string
+          format: date-time
+        dependencies:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              status:
+                type: string
+                enum: [available, unavailable]
+      required:
+        - available
+        - status
+        - last_checked
+
+    CapabilityInfo:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        features:
+          type: array
+          items:
+            type: string
+        options:
+          type: object
+          description: Available configuration options
+        processing_mode:
+          type: string
+          enum: [sync, async]
+        limits:
+          type: object
+          properties:
+            max_file_size:
+              type: string
+            supported_formats:
+              type: array
+              items:
+                type: string
+      required:
+        - name
+        - description
+        - processing_mode
 
   responses:
     BadRequest:
-      description: Bad request
+      description: Bad request - invalid input
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: "VALIDATION_ERROR"
+              message: "Invalid input provided"
+              details:
+                file: ["File is required"]
+              timestamp: "2023-06-15T10:30:00.000Z"
 
     RateLimitExceeded:
       description: Rate limit exceeded
@@ -336,6 +776,16 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: "RATE_LIMIT_EXCEEDED"
+              message: "Rate limit exceeded. Try again later."
+              details:
+                limit: 100
+                window: "1 hour"
+                retry_after: 3600
+              timestamp: "2023-06-15T10:30:00.000Z"
 
     InternalServerError:
       description: Internal server error
@@ -343,11 +793,28 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+          example:
+            success: false
+            error:
+              code: "INTERNAL_ERROR"
+              message: "An internal server error occurred"
+              details: {}
+              timestamp: "2023-06-15T10:30:00.000Z"
+
+  securitySchemes: {}
 
 tags:
   - name: PDF Compression
-    description: PDF compression operations
+    description: Core PDF compression functionality
+  - name: Extended Features
+    description: Advanced PDF processing features
+  - name: AI Features
+    description: AI-powered document processing
   - name: Job Management
-    description: Job status and file download operations
-  - name: System
-    description: System health and status operations
+    description: Job status tracking and result download
+  - name: Cloud Integration
+    description: Cloud storage integration features
+  - name: System Status
+    description: System health and capability information
+  - name: Health Check
+    description: Service health monitoring
