@@ -66,7 +66,7 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
             )
             db.session.add(job)
 
-        job.status = JobStatus.PROCESSING.value
+        job.mark_as_processing()
         db.session.commit()
         logger.debug(f"Job {job_id} marked as processing")
 
@@ -120,7 +120,7 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
             )
             db.session.add(job)
 
-        job.status = JobStatus.PROCESSING.value
+        job.mark_as_processing()
         db.session.commit()
 
         total_files = len(file_data_list)
@@ -227,7 +227,7 @@ def convert_pdf_task(
                 )
                 db.session.add(job)
 
-            job.status = JobStatus.PROCESSING.value
+            job.mark_as_processing()
             db.session.commit()
 
             current_task.update_state(
@@ -298,7 +298,7 @@ def conversion_preview_task(
                 )
                 db.session.add(job)
 
-            job.status = JobStatus.PROCESSING.value
+            job.mark_as_processing()
             db.session.commit()
 
             preview = conversion_service.get_conversion_preview(file_data, target_format, options)

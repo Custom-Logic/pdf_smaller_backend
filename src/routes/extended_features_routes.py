@@ -18,7 +18,7 @@ from src.services.cloud_integration_service import CloudIntegrationService
 from src.services.conversion_service import ConversionService
 from src.services.ocr_service import OCRService
 from src.utils.response_helpers import success_response, error_response
-
+from src.models import JobStatus
 # Initialize blueprint
 extended_features_bp = Blueprint('extended_features', __name__)
 # CORS(extended_features_bp, resources={r"/api": {"origins": ["https://www.pdfsmaller.site"]}})
@@ -32,22 +32,16 @@ cloud_service = CloudIntegrationService()
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Job status enum
-class JobStatus(Enum):
-    PENDING = 'pending'
-    PROCESSING = 'processing'
-    COMPLETED = 'completed'
-    FAILED = 'failed'
-
 # File upload configuration
 ALLOWED_EXTENSIONS = {
     'conversion': {'pdf'},
     'ocr': {'pdf', 'png', 'jpg', 'jpeg', 'tiff', 'bmp'},
-    'ai': {'pdf'}
+    'ai': {'pdf'},
 }
 
 MAX_FILE_SIZES = {
     'conversion': 100 * 1024 * 1024,  # 100MB
+
     'ocr': 50 * 1024 * 1024,          # 50MB
     'ai': 25 * 1024 * 1024            # 25MB
 }
@@ -85,10 +79,9 @@ def get_file_and_validate(feature_type, max_size_mb=None):
 def convert_pdf():
     """Convert PDF to specified format - returns job ID"""
     try:
-        target_format = request.form.get('format', 'docx').lower()
+        target_format = request.form.get('format', 'txt').lower()
         # Validate format
-        supported_formats = ['docx', 'xlsx', 'txt', 'html']
-        if target_format not in supported_formats:
+        if target_format not in conversion_service.supported_formats:
             return error_response(message=f"Unsupported format: {target_format}", status_code=400)
 
         # Get and validate file
@@ -119,7 +112,6 @@ def convert_pdf():
                 target_format,
                 options,
                 file.filename,
-
             )
 
             logger.info(f"Conversion job {job_id} enqueued (format: {target_format}, task_id: {task.id})")
