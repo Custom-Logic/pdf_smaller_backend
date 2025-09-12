@@ -265,7 +265,7 @@ class ExtractionValidationError(ExtractionError):
         self.error_code = 'EXTRACTION_VALIDATION_ERROR'
 
 
-class ExportFormatError(PDFCompressionError):
+class ExportError(PDFCompressionError):
     """Raised when export format is invalid or export fails."""
     
     def __init__(self, message: str, format_type: str = None, details: Dict[str, Any] = None):
