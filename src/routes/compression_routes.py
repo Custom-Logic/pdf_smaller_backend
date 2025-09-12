@@ -6,7 +6,7 @@ from enum import Enum
 
 from flask import Blueprint, request, jsonify
 
-from src.models import db, Job
+from src.models import db, Job, JobStatus
 from src.utils.security_utils import validate_file
 from src.utils.response_helpers import success_response, error_response
 
@@ -15,12 +15,6 @@ logger = logging.getLogger(__name__)
 compression_bp = Blueprint('compression', __name__)
 # CORS(compression_bp, resources={r"/api": {"origins": ["https://www.pdfsmaller.site"]}})
 
-
-class JobStatus(Enum):
-    PENDING = 'pending'
-    PROCESSING = 'processing'
-    COMPLETED = 'completed'
-    FAILED = 'failed'
 
 # Updated tasks.py - Ensure proper error handling
 
@@ -56,18 +50,7 @@ def compress_pdf():
             'compression_level': compression_level,
             'image_quality': image_quality
         }
-        job = Job(
-            job_id=job_id,
-            task_type='compress',
-            input_data={
-                'compression_settings': compression_settings,
-                'file_size': len(file_data),
-                'original_filename': file.filename
-            }
-            
-        )
-        db.session.add(job)
-        db.session.commit()
+
         # Enqueue compression task (async processing)
         try:
             from src.tasks.tasks import compress_task
