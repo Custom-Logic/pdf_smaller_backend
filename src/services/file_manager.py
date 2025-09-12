@@ -1,11 +1,19 @@
 import os
 import uuid
+import warnings
 from typing import Tuple
 from src.config import Config
 from src.utils.file_utils import cleanup_old_files, get_file_size
 
 
 class FileManager:
+    """
+    DEPRECATED: This class is deprecated and will be removed in a future version.
+    Use FileManagementService instead for all file operations.
+    
+    FileManagementService provides the same functionality with improved error handling,
+    better security, and consistent patterns across the application.
+    """
     """Manages file operations for the application"""
     
     def __init__(self, upload_folder: str = None):
@@ -14,6 +22,11 @@ class FileManager:
         Args:
             upload_folder: Directory to store uploaded files. Defaults to Config.UPLOAD_FOLDER.
         """
+        warnings.warn(
+            "FileManager is deprecated. Use FileManagementService instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
         self.upload_folder = upload_folder or Config.UPLOAD_FOLDER
         os.makedirs(self.upload_folder, exist_ok=True)
     

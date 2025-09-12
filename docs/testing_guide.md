@@ -289,6 +289,51 @@ def mock_file():
 
 ## Mocking and Patching
 
+### FileManagementService Mocking
+
+```python
+from unittest.mock import Mock, patch, MagicMock
+from src.services.file_management_service import FileManagementService
+
+# Pattern 1: Mock FileManagementService for service testing
+@pytest.fixture
+def mock_file_service():
+    """Create a mocked FileManagementService"""
+    mock_service = Mock(spec=FileManagementService)
+    mock_service.save_file.return_value = ('test_file_id', '/path/to/test.pdf')
+    mock_service.file_exists.return_value = True
+    mock_service.get_file_path.return_value = '/path/to/test.pdf'
+    mock_service.cleanup_expired_jobs.return_value = {'files_cleaned': 0}
+    return mock_service
+
+# Pattern 2: Mock specific file operations
+def test_service_with_file_operations(mock_file_service):
+    """Test service using mocked file operations"""
+    service = CompressionService(file_service=mock_file_service)
+    
+    # Configure mock behavior
+    mock_file_service.save_file.return_value = ('job123', '/uploads/job123/input.pdf')
+    mock_file_service.file_exists.return_value = True
+    
+    # Test service method
+    result = service.process_upload(mock_file_data, 'test.pdf')
+    
+    # Verify mock interactions
+    mock_file_service.save_file.assert_called_once_with(mock_file_data, 'test.pdf')
+    mock_file_service.file_exists.assert_called_once_with('/uploads/job123/input.pdf')
+
+# Pattern 3: Mock with side effects for error testing
+def test_file_service_error_handling():
+    """Test error handling with FileManagementService failures"""
+    mock_file_service = Mock(spec=FileManagementService)
+    mock_file_service.save_file.side_effect = IOError("Disk full")
+    
+    service = CompressionService(file_service=mock_file_service)
+    
+    with pytest.raises(IOError):
+        service.process_upload(b'test_data', 'test.pdf')
+```
+
 ### External Service Mocking
 
 ```python
@@ -487,12 +532,26 @@ class TestCompressionService:
     
     def setup_method(self):
         """Set up test environment"""
-        self.service = CompressionService()
+        # Mock FileManagementService for isolated testing
+        self.mock_file_service = Mock(spec=FileManagementService)
+        self.service = CompressionService(file_service=self.mock_file_service)
         self.temp_dir = tempfile.mkdtemp()
     
     def teardown_method(self):
         """Clean up test environment"""
         shutil.rmtree(self.temp_dir, ignore_errors=True)
+    
+    def test_service_with_default_file_service(self):
+        """Test service initialization with default FileManagementService"""
+        service = CompressionService()  # Should auto-create FileManagementService
+        assert service.file_service is not None
+        assert isinstance(service.file_service, FileManagementService)
+    
+    def test_service_with_injected_file_service(self):
+        """Test service initialization with injected FileManagementService"""
+        mock_file_service = Mock(spec=FileManagementService)
+        service = CompressionService(file_service=mock_file_service)
+        assert service.file_service is mock_file_service
     
     @patch('src.services.compression_service.subprocess.run')
     def test_compress_pdf_with_settings(self, mock_subprocess):
@@ -578,9 +637,9 @@ from src.services.compression_service import CompressionService
 def test_service_integration(self, app, temp_upload_folder):
     """Test integration between multiple services"""
     with app.app_context():
-        # Initialize services
+        # Initialize services with dependency injection
         file_service = FileManagementService(upload_folder=temp_upload_folder)
-        compression_service = CompressionService()
+        compression_service = CompressionService(file_service=file_service)
         
         # Create test file
         test_file_data = b'%PDF-1.4 test content'
@@ -596,6 +655,24 @@ def test_service_integration(self, app, temp_upload_folder):
         # Test cleanup
         cleanup_result = file_service.cleanup_expired_jobs()
         assert cleanup_result['files_cleaned'] >= 0
+
+def test_service_mocking_patterns(self):
+    """Test various FileManagementService mocking patterns"""
+    # Pattern 1: Mock file operations
+    mock_file_service = Mock(spec=FileManagementService)
+    mock_file_service.save_file.return_value = ('file_id', '/path/to/file.pdf')
+    mock_file_service.file_exists.return_value = True
+    
+    service = CompressionService(file_service=mock_file_service)
+    
+    # Test that service uses mocked file operations
+    result = service.process_file(b'test_data', 'test.pdf')
+    mock_file_service.save_file.assert_called_once()
+    
+    # Pattern 2: Mock with side effects
+    mock_file_service.cleanup_expired_jobs.side_effect = lambda: {'files_cleaned': 5}
+    cleanup_result = mock_file_service.cleanup_expired_jobs()
+    assert cleanup_result['files_cleaned'] == 5
 ```
 
 ## Test Data Management

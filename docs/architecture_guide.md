@@ -133,14 +133,14 @@ class ServiceName:
 ```
 CompressionService
 ├── Ghostscript (external)
-├── FileManagementService
+├── FileManagementService (injected or auto-created)
 └── ValidationUtils
 
 OCRService
 ├── Tesseract (external)
 ├── PyMuPDF
 ├── PIL/Pillow
-└── FileManagementService
+└── FileManagementService (injected or auto-created)
 
 AIService
 ├── OpenRouter API
@@ -152,7 +152,13 @@ ConversionService
 ├── PyMuPDF
 ├── pdfplumber
 ├── python-docx
-└── FileManagementService
+└── FileManagementService (injected or auto-created)
+
+FileManagementService (Central Hub)
+├── Configuration
+├── File Utilities
+├── Security Validation
+└── Cleanup Operations
 ```
 
 ## Data Flow Patterns
@@ -282,6 +288,36 @@ Jobs (1) ←→ (1) CompressionJobs
 ```
 
 ## File Management Strategy
+
+### Centralized File Management Architecture
+
+The system uses a centralized file management approach through the `FileManagementService`, which provides:
+
+- **Unified File Operations**: All services use the same file handling patterns
+- **Consistent Security**: Centralized file validation and security measures
+- **Robust Cleanup**: Automated cleanup of temporary and expired files
+- **Error Handling**: Standardized error handling for file operations
+- **Testing Support**: Easy mocking and testing of file operations
+
+### Service Integration Pattern
+
+```python
+class ProcessingService:
+    def __init__(self, file_service: Optional[FileManagementService] = None):
+        # Dependency injection pattern
+        self.file_service = file_service or FileManagementService()
+        
+    def process_file(self, file_data: bytes, filename: str):
+        # Use centralized file service for all operations
+        file_id, file_path = self.file_service.save_file(file_data, filename)
+        try:
+            # Process file...
+            result = self._process_internal(file_path)
+            return result
+        finally:
+            # Cleanup handled by file service
+            self.file_service.delete_file(file_path)
+```
 
 ### Directory Structure
 

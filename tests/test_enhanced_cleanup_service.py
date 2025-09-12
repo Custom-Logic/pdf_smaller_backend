@@ -16,7 +16,7 @@ from werkzeug.datastructures import FileStorage
 from io import BytesIO
 
 from src.services.enhanced_cleanup_service import EnhancedCleanupService
-from src.services.file_manager import FileManager
+from src.services.file_management_service import FileManagementService
 from src.models import User, CompressionJob, Subscription, Plan
 from src.models.base import db
 
@@ -32,14 +32,14 @@ class TestEnhancedCleanupService:
         shutil.rmtree(temp_dir, ignore_errors=True)
     
     @pytest.fixture
-    def file_manager(self, temp_dir):
-        """Create FileManager instance with temporary directory"""
-        return FileManager(base_upload_folder=temp_dir)
+    def file_service(self, temp_dir):
+        """Create FileManagementService instance with temporary directory"""
+        return FileManagementService(upload_folder=temp_dir)
     
     @pytest.fixture
-    def cleanup_service(self, file_manager):
+    def cleanup_service(self, file_service):
         """Create Enhanced Cleanup Service instance"""
-        return EnhancedCleanupService(file_manager=file_manager)
+        return EnhancedCleanupService(file_service=file_service)
     
     @pytest.fixture
     def mock_user(self):
@@ -333,12 +333,13 @@ class TestCleanupServiceIntegration:
     
     def test_real_file_cleanup(self, temp_dir):
         """Test cleanup with real file operations"""
-        # Create FileManager and cleanup service
-        file_manager = FileManager(base_upload_folder=temp_dir)
-        cleanup_service = EnhancedCleanupService(file_manager=file_manager)
+        # Create FileManagementService and cleanup service
+        file_service = FileManagementService(upload_folder=temp_dir)
+        cleanup_service = EnhancedCleanupService(file_service=file_service)
         
         # Create some test files in temp folder
-        temp_folder = file_manager.temp_folder
+        temp_folder = os.path.join(file_service.upload_folder, 'temp')
+        os.makedirs(temp_folder, exist_ok=True)
         
         # Old file
         old_file = os.path.join(temp_folder, 'old_test.pdf')
@@ -365,8 +366,8 @@ class TestCleanupServiceIntegration:
     
     def test_storage_usage_calculation(self, temp_dir):
         """Test storage usage calculation with real files"""
-        file_manager = FileManager(base_upload_folder=temp_dir)
-        cleanup_service = EnhancedCleanupService(file_manager=file_manager)
+        file_service = FileManagementService(upload_folder=temp_dir)
+        cleanup_service = EnhancedCleanupService(file_service=file_service)
         
         user_id = 123
         

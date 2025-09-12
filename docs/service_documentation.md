@@ -31,8 +31,8 @@ All services in the PDF Smaller backend follow a consistent job-oriented archite
 class ServiceName:
     """Service description and purpose"""
     
-    def __init__(self, config_params):
-        # Initialize service with configuration
+    def __init__(self, config_params, file_service: Optional[FileManagementService] = None):
+        # Initialize service with configuration and file management
         # Set up dependencies and validate requirements
         
     def process_job(self, job_data: Dict) -> Dict:
@@ -46,6 +46,41 @@ class ServiceName:
         # Resource cleanup after processing
 ```
 
+### Centralized File Management
+
+All processing services (OCRService, ConversionService, CompressionService) now use a centralized file management approach through the `FileManagementService`:
+
+**Key Benefits**:
+- **Consistency**: All services use the same file operations patterns
+- **Maintainability**: Centralized file handling logic reduces code duplication
+- **Security**: Unified file validation and security measures
+- **Testing**: Easier to mock and test file operations
+- **Error Handling**: Standardized error handling for file operations
+
+**Implementation Pattern**:
+```python
+from src.services.file_management_service import FileManagementService
+
+class ProcessingService:
+    def __init__(self, file_service: Optional[FileManagementService] = None):
+        self.file_service = file_service or FileManagementService()
+        
+    def _save_file_data(self, file_data: bytes, filename: str) -> Tuple[str, str]:
+        """Save file data using centralized service"""
+        return self.file_service.save_file(file_data, filename)
+        
+    def _cleanup_temp_files(self, file_paths: List[str]):
+        """Clean up temporary files using centralized service"""
+        for file_path in file_paths:
+            self.file_service.delete_file(file_path)
+```
+
+**Migration Notes**:
+- Services no longer accept `upload_folder` parameter directly
+- File operations are delegated to `FileManagementService`
+- Temporary file handling is more robust with proper cleanup
+- File size operations are now consistent across all services
+
 ## Core Services
 
 ### CompressionService
@@ -56,14 +91,19 @@ class ServiceName:
 
 **Dependencies**:
 - Ghostscript (external binary)
-- FileManagementService
+- FileManagementService (injected or auto-created)
 - Configuration
 
 **Key Methods**:
 
 ```python
-def __init__(self, config: Config = None):
-    """Initialize compression service with configuration"""
+def __init__(self, config: Config = None, file_service: Optional[FileManagementService] = None):
+    """Initialize compression service with configuration and file management service
+    
+    Args:
+        config: Configuration object (defaults to current app config)
+        file_service: FileManagementService instance for file operations (creates new instance if None)
+    """
     
 def compress_pdf(self, input_path: str, output_path: str, quality: str = 'medium') -> Dict:
     """Compress PDF file synchronously
@@ -108,8 +148,15 @@ def get_compression_info(self, file_path: str) -> Dict:
 **Usage Example**:
 ```python
 from src.services.compression_service import CompressionService
+from src.services.file_management_service import FileManagementService
 
+# Option 1: Use default file service
 service = CompressionService()
+
+# Option 2: Inject custom file service
+file_service = FileManagementService(upload_folder='/custom/path')
+service = CompressionService(file_service=file_service)
+
 result = service.compress_pdf(
     input_path='/path/to/input.pdf',
     output_path='/path/to/output.pdf',
@@ -368,13 +415,17 @@ def cleanup_export_files(self, file_paths: List[str]) -> Dict:
 - Tesseract OCR (external)
 - PyMuPDF (fitz)
 - PIL/Pillow
-- FileManagementService
+- FileManagementService (injected or auto-created)
 
 **Key Methods**:
 
 ```python
-def __init__(self, upload_folder: str = None):
-    """Initialize OCR service with processing directory"""
+def __init__(self, file_service: Optional[FileManagementService] = None):
+    """Initialize OCR service with file management service
+    
+    Args:
+        file_service: FileManagementService instance for file operations (creates new instance if None)
+    """
     
 def process_ocr_job(self, job_data: Dict) -> Dict:
     """Process OCR job on PDF or image
@@ -487,12 +538,17 @@ def get_available_models(self) -> List[Dict[str, Any]]:
 - python-docx
 - pdfplumber
 - PIL/Pillow
+- FileManagementService (injected or auto-created)
 
 **Key Methods**:
 
 ```python
-def __init__(self, upload_folder: str = None):
-    """Initialize conversion service"""
+def __init__(self, file_service: Optional[FileManagementService] = None):
+    """Initialize conversion service with file management service
+    
+    Args:
+        file_service: FileManagementService instance for file operations (creates new instance if None)
+    """
     
 def process_conversion_job(self, job_data: Dict) -> Dict:
     """Convert PDF to specified format
@@ -713,8 +769,15 @@ FileManagementService
 ```python
 # Direct service usage for immediate results
 from src.services.compression_service import CompressionService
+from src.services.file_management_service import FileManagementService
 
+# Option 1: Use default file service
 service = CompressionService()
+
+# Option 2: Use custom file service (recommended for testing)
+file_service = FileManagementService(upload_folder='/custom/path')
+service = CompressionService(file_service=file_service)
+
 result = service.compress_pdf(
     input_path='/path/to/input.pdf',
     output_path='/path/to/output.pdf',
@@ -755,12 +818,17 @@ result = task.get(timeout=300)  # 5 minute timeout
 # Configure services with custom settings
 from src.config import Config
 from src.services.compression_service import CompressionService
+from src.services.file_management_service import FileManagementService
 
 config = Config()
 config.COMPRESSION_QUALITY = 'high'
 config.MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 
-service = CompressionService(config=config)
+# Configure file service with custom upload folder
+file_service = FileManagementService(upload_folder='/custom/uploads')
+
+# Inject both config and file service
+service = CompressionService(config=config, file_service=file_service)
 ```
 
 ### Error Handling Pattern

@@ -4,73 +4,76 @@ import subprocess
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from src.models import Job, JobStatus
 from src.models.base import db
-from src.utils.file_utils import secure_filename, get_file_size
+from src.services.file_management_service import FileManagementService
 
 logger = logging.getLogger(__name__)
 
 class CompressionService:
     GHOSTSCRIPT_BINARY = "/usr/bin/gs"  # Absolute path to Ghostscript
 
-    def __init__(self, upload_folder):
-        self.upload_folder = upload_folder
-        Path(self.upload_folder).mkdir(parents=True, exist_ok=True)
+    def __init__(self, file_service: Optional[FileManagementService] = None):
+        self.file_service = file_service or FileManagementService()
         # Verify Ghostscript exists at startup
         if not os.path.exists(self.GHOSTSCRIPT_BINARY):
             raise EnvironmentError(f"Ghostscript binary not found at {self.GHOSTSCRIPT_BINARY}")
 
     def process_file_data(self, file_data: bytes, settings: Dict[str, Any], original_filename: str = None) -> Dict[str, Any]:
         """Process file data and save result to persistent location"""
+        temp_input_path = None
+        temp_output_path = None
+        
         try:
-            # Create output directory in upload folder (persistent)
-            output_dir = os.path.join(self.upload_folder, 'results')
-            Path(output_dir).mkdir(parents=True, exist_ok=True)
+            # Save input file using file service
+            input_filename = original_filename or 'input.pdf'
+            file_id, temp_input_path = self.file_service.save_file(file_data, input_filename)
             
-            # Generate unique output filename
+            original_size = len(file_data)
+            compression_level = settings.get('compression_level', 'medium')
+            image_quality = settings.get('image_quality', 80)
+            
+            # Create temporary output file for compression
             job_id = str(uuid.uuid4())
-            output_filename = f"compressed_{job_id}_{secure_filename(original_filename or 'file.pdf')}"
-            output_path = os.path.join(output_dir, output_filename)
+            output_filename = f"compressed_{job_id}_{original_filename or 'file.pdf'}"
             
-            with tempfile.TemporaryDirectory() as temp_dir:
-                # Save input file in temp directory
-                input_path = os.path.join(temp_dir, secure_filename(original_filename or 'input.pdf'))
-                with open(input_path, 'wb') as f:
-                    f.write(file_data)
-                
-                original_size = len(file_data)
-                compression_level = settings.get('compression_level', 'medium')
-                image_quality = settings.get('image_quality', 80)
-                
-                # Compress to persistent location
-                self.compress_pdf(input_path, output_path, compression_level, image_quality)
-                
-                compressed_size = get_file_size(output_path)
-                compression_ratio = ((original_size - compressed_size) / original_size) * 100
-                
-                return {
-                    'success': True,
-                    'original_size': original_size,
-                    'compressed_size': compressed_size,
-                    'compression_ratio': compression_ratio,
-                    'compression_level': compression_level,
-                    'image_quality': image_quality,
-                    'original_filename': original_filename,
-                    'output_path': output_path,  # Persistent path
-                    'mime_type': 'application/pdf'
-                }
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_output:
+                temp_output_path = tmp_output.name
+            
+            # Compress PDF
+            self.compress_pdf(temp_input_path, temp_output_path, compression_level, image_quality)
+            
+            # Read compressed data and save through file service
+            with open(temp_output_path, 'rb') as f:
+                compressed_data = f.read()
+            
+            compressed_file_id, output_path = self.file_service.save_file(compressed_data, output_filename)
+            compressed_size = self.file_service.get_file_size(output_path)
+            compression_ratio = ((original_size - compressed_size) / original_size) * 100
+            
+            return {
+                'success': True,
+                'original_size': original_size,
+                'compressed_size': compressed_size,
+                'compression_ratio': compression_ratio,
+                'compression_level': compression_level,
+                'image_quality': image_quality,
+                'original_filename': original_filename,
+                'output_path': output_path,  # Persistent path
+                'mime_type': 'application/pdf'
+            }
                 
         except Exception as e:
             logger.error(f"Error processing file data: {str(e)}")
-            # Clean up output file if created
-            if 'output_path' in locals() and os.path.exists(output_path):
-                try:
-                    os.unlink(output_path)
-                except:
-                    pass
             raise
+        finally:
+            # Clean up temporary files
+            if temp_input_path:
+                self.file_service.delete_file(temp_input_path)
+            if temp_output_path and os.path.exists(temp_output_path):
+                os.unlink(temp_output_path)
 
     def compress_pdf(self, input_path: str, output_path: str, compression_level: str = 'medium', image_quality: int = 80) -> bool:
         """
@@ -128,7 +131,7 @@ class CompressionService:
                 logger.error(f"Ghostscript error: {result.stderr}")
                 raise Exception(f"Ghostscript failed: {result.stderr}")
 
-            if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+            if not os.path.exists(output_path) or self.file_service.get_file_size(output_path) == 0:
                 raise Exception("Compression failed: Output file is empty or doesn't exist")
 
             return True

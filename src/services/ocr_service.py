@@ -1,5 +1,4 @@
-"""
-OCR Service – Job-Oriented Architecture  (sync edition – 2025-09)
+"""OCR Service – Job-Oriented Architecture  (sync edition – 2025-09)
 Handles Optical Character Recognition for scanned PDFs and images
 Returns *disk* meta only – no file_data bytes – to match conversion service.
 """
@@ -9,11 +8,12 @@ import json
 import logging
 import os
 import re
-import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from src.services.file_management_service import FileManagementService
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +39,8 @@ except ImportError:  # pragma: no cover
 class OCRService:
     """OCR for PDFs and images – crash-hardened, 100 % sync, disk-only output."""
 
-    def __init__(self, upload_folder: Optional[str] = None):
-        self.upload_folder = Path(upload_folder or tempfile.mkdtemp(prefix="ocr_"))
-        self.upload_folder.mkdir(parents=True, exist_ok=True)
+    def __init__(self, file_service: Optional[FileManagementService] = None):
+        self.file_service = file_service or FileManagementService()
 
         self.supported_formats = ("pdf", "png", "jpg", "jpeg", "tiff", "bmp")
         self.supported_languages = [
@@ -85,13 +84,16 @@ class OCRService:
                 "output_path": str(out_path),
                 "filename": out_path.name,
                 "mime_type": result["mime_type"],
-                "file_size": out_path.stat().st_size,
+                "file_size": self.file_service.get_file_size(str(out_path)),
                 "original_filename": original_filename,
                 "original_size": len(file_data),
             }
 
         except Exception as exc:
             logger.exception("OCR failed")
+            # Clean up any temporary files
+            if temp_file:
+                self.file_service.delete_file(str(temp_file))
             return {
                 "success": False,
                 "error": str(exc),
@@ -99,8 +101,8 @@ class OCRService:
                 "original_size": len(file_data),
             }
         finally:
-            if temp_file and temp_file.exists():
-                temp_file.unlink(missing_ok=True)
+            if temp_file:
+                self.file_service.delete_file(str(temp_file))
 
     def get_ocr_preview(
         self,
@@ -125,6 +127,9 @@ class OCRService:
             }
         except Exception as exc:
             logger.exception("OCR preview failed")
+            # Clean up any temporary files
+            if temp_file:
+                self.file_service.delete_file(str(temp_file))
             return {
                 "success": False,
                 "error": str(exc),
@@ -137,17 +142,17 @@ class OCRService:
                 "supported_languages": self.supported_languages,
             }
         finally:
-            if temp_file and temp_file.exists():
-                temp_file.unlink(missing_ok=True)
+            if temp_file:
+                self.file_service.delete_file(str(temp_file))
 
     # --------------------------------------------------------------------------
     # INTERNALS – file handling
     # --------------------------------------------------------------------------
     def _save_file_data(self, data: bytes, name: Optional[str] = None) -> Path:
-        safe = self._secure_filename(name or f"temp_{uuid.uuid4().hex[:8]}.pdf")
-        path = self.upload_folder / safe
-        path.write_bytes(data)
-        return path
+        """Save file data using file management service"""
+        filename = name or f"temp_{uuid.uuid4().hex[:8]}.pdf"
+        file_id, file_path = self.file_service.save_file(data, filename)
+        return Path(file_path)
 
     @staticmethod
     def _secure_filename(name: str) -> str:
@@ -183,7 +188,7 @@ class OCRService:
     # --------------------------------------------------------------------------
     def _analyze_file_for_ocr(self, file_path: Path) -> Dict[str, Any]:
         ext = self._get_extension(file_path.name)
-        size = file_path.stat().st_size
+        size = self.file_service.get_file_size(str(file_path))
         base = {"file_type": ext, "file_size": size, "page_count": 1, "image_quality": "medium", "ocr_potential": "medium"}
 
         if ext == "pdf" and PDF_LIBS_AVAILABLE:
@@ -216,7 +221,7 @@ class OCRService:
         try:
             with Image.open(img_path) as img:
                 w, h = img.size
-                size = img_path.stat().st_size
+                size = self.file_service.get_file_size(str(img_path))
                 iq = self._assess_image_quality_by_resolution(w, h, size)
                 op = self._assess_image_ocr_potential(img.format, size)
                 return {"width": w, "height": h, "format": img.format, "image_quality": iq, "ocr_potential": op}
@@ -409,7 +414,6 @@ class OCRService:
         }
 
     def cleanup_temp_files(self) -> None:
-        """Wipe service temp directory."""
-        import shutil
-        shutil.rmtree(self.upload_folder, ignore_errors=True)
-        self.upload_folder.mkdir(parents=True, exist_ok=True)
+        """Cleanup temporary files using file management service."""
+        # Delegate cleanup to file management service
+        return self.file_service.cleanup_temp_files()

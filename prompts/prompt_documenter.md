@@ -1,234 +1,112 @@
-# File Management Service Documentation Refactoring Prompt
+# Documentation Update Prompt for Service Refactoring
 
 ## Overview
-This prompt provides instructions for refactoring documentation across the codebase to reflect the new `FileManagementService` that combines the functionality of `FileManager` and `CleanupService`.
+This prompt is for the documenter agent to update documentation based on the service refactoring changes that have been completed. The refactoring involved standardizing file management operations across multiple services to use the centralized FileManagementService.
 
-## Context
-A new `FileManagementService` has been created at `src/services/file_management_service.py` that:
-- Combines file storage/retrieval functionality from `FileManager`
-- Integrates cleanup and retention policies from `CleanupService`
-- Adds file download capabilities for job routes
-- Maintains backward compatibility with existing services
-- Provides comprehensive file management in a single service
+## Changes Made
 
-## Files Created/Modified
-- **NEW**: `src/services/file_management_service.py` - Combined service implementation
-- **NEW**: `tests/test_file_management_service.py` - Comprehensive unit tests
-- **UPDATED**: `src/services/__init__.py` - Added FileManagementService to exports
-- **UPDATED**: `src/services/README.MD` - Updated with FileManagementService documentation
-- **UPDATED**: `src/utils/scheduler.py` - Updated to use FileManagementService
+### 1. OCRService Refactoring
+**File:** `src/services/ocr_service.py`
 
-## Documentation Refactoring Tasks
+**Changes:**
+- Updated constructor to accept `file_service: Optional[FileManagementService] = None` instead of `upload_folder`
+- Replaced direct file operations with `file_service` methods:
+  - `_save_file_data()` now uses `file_service.save_file()`
+  - File cleanup uses `file_service.delete_file()` instead of `unlink()`
+  - File size operations use `file_service.get_file_size()` instead of `stat().st_size`
+- Removed `tempfile` import and related setup
+- Updated `cleanup_temp_files()` to delegate to `file_service.cleanup_temp_files()`
 
-### 1. API Documentation Updates
-**Priority: High**
+### 2. ConversionService Refactoring
+**File:** `src/services/conversion_service.py`
 
-#### Files to Update:
-- `docs/api/` - All API documentation files
-- `docs/endpoints/` - Endpoint documentation
-- Any OpenAPI/Swagger specifications
+**Changes:**
+- Updated constructor to accept `file_service: Optional[FileManagementService] = None` instead of `upload_folder`
+- Replaced direct file operations with `file_service` methods:
+  - `_save_file_data()` now uses `file_service.save_file()`
+  - File cleanup uses `file_service.delete_file()` instead of `unlink()`
+  - File size operations use `file_service.get_file_size()` instead of `stat().st_size`
+- Updated conversion methods:
+  - `_convert_to_txt()` now uses `file_service.save_file()` for output
+  - `_convert_to_html()` now uses `file_service.save_file()` for output
+  - `_convert_to_docx()` and `_convert_to_xlsx()` use temporary files then save through `file_service`
+  - `_convert_to_images()` saves image data through `file_service`
+- Removed `tempfile` import from main imports
+- Removed `@staticmethod` decorator from `_convert_to_txt()` to access `self.file_service`
 
-#### Required Changes:
-- Update file upload/download endpoint documentation
-- Reference `FileManagementService` instead of separate `FileManager`/`CleanupService`
-- Update cleanup operation documentation
-- Add new combined service capabilities to API docs
+### 3. CompressionService Refactoring
+**File:** `src/services/compression_service.py`
 
-### 2. Architecture Documentation
-**Priority: High**
+**Changes:**
+- Updated constructor to accept `file_service: Optional[FileManagementService] = None` instead of `upload_folder`
+- Replaced direct file operations with `file_service` methods:
+  - Input files saved using `file_service.save_file()`
+  - Output files saved using `file_service.save_file()`
+  - File cleanup uses `file_service.delete_file()`
+  - File size operations use `file_service.get_file_size()` instead of `os.path.getsize()`
+- Updated `process_file_data()` method to use temporary files for Ghostscript processing then save results through `file_service`
+- Removed imports: `secure_filename`, `get_file_size` from `src.utils.file_utils`
+- Added import: `FileManagementService` from `src.services.file_management_service`
 
-#### Files to Update:
-- `docs/architecture/` - System architecture documents
-- `docs/services/` - Service layer documentation
-- Any system design documents
+## Documentation Tasks
 
-#### Required Changes:
-- Update service architecture diagrams
-- Document the new unified file management approach
-- Update service interaction diagrams
-- Reflect the consolidation of file operations
+### 1. Update API Documentation
+- Update constructor signatures in API documentation for all three services
+- Document the new `file_service` parameter and its default behavior
+- Update method signatures where applicable (e.g., `_convert_to_txt` no longer static)
 
-### 3. Developer Documentation
-**Priority: Medium**
+### 2. Update Architecture Documentation
+- Document the centralized file management approach
+- Explain how services now delegate file operations to `FileManagementService`
+- Update service dependency diagrams to show the relationship with `FileManagementService`
 
-#### Files to Update:
-- `docs/development/` - Developer guides
-- `docs/setup/` - Setup and configuration guides
-- `README.md` files in relevant directories
+### 3. Update Development Guide
+- Add guidance on using `FileManagementService` in new services
+- Document the pattern for temporary file handling during processing
+- Update examples of service instantiation
 
-#### Required Changes:
-- Update service usage examples
-- Modify integration guides
-- Update configuration documentation
-- Revise troubleshooting guides
+### 4. Update Service Documentation
+- Update individual service documentation files
+- Document the improved error handling and cleanup mechanisms
+- Update code examples to reflect new constructor signatures
 
-### 4. Deployment Documentation
-**Priority: Medium**
+### 5. Update Deployment Guide
+- Ensure deployment documentation reflects any changes in service initialization
+- Update configuration examples if needed
 
-#### Files to Update:
-- `docs/deployment/` - Deployment guides
-- `docs/configuration/` - Configuration documentation
-- Docker and environment setup files
+### 6. Update Testing Guide
+- Document how to mock `FileManagementService` in tests
+- Update test examples to use new constructor signatures
+- Add guidance on testing file operations through the service layer
 
-#### Required Changes:
-- Update service configuration examples
-- Modify environment variable documentation
-- Update deployment scripts if they reference old services
-- Revise monitoring and logging configurations
+## Files to Update
 
-### 5. User Documentation
-**Priority: Low**
+### Primary Documentation Files
+- `docs/api_documentation.md`
+- `docs/architecture_guide.md`
+- `docs/development_guide.md`
+- `docs/service_documentation.md`
+- `docs/deployment_guide.md`
+- `docs/testing_guide.md`
 
-#### Files to Update:
-- `docs/user/` - User guides
-- `docs/features/` - Feature documentation
-- Any user-facing documentation
+### Service-Specific Documentation
+- Any existing documentation for OCRService
+- Any existing documentation for ConversionService
+- Any existing documentation for CompressionService
 
-#### Required Changes:
-- Update file management feature descriptions
-- Modify cleanup policy explanations
-- Update any user-visible service references
+## Key Points to Emphasize
 
-## Specific Documentation Patterns to Update
+1. **Consistency**: All services now use the same file management approach
+2. **Maintainability**: Centralized file operations make the codebase easier to maintain
+3. **Error Handling**: Improved cleanup and error handling through standardized service
+4. **Testing**: Easier to mock and test file operations
+5. **Security**: Centralized file validation and security measures
 
-### Replace References
-Look for and update these patterns:
+## Implementation Notes
 
-```markdown
-# OLD PATTERNS:
-- "FileManager and CleanupService"
-- "file_manager.py and cleanup_service.py"
-- "separate file management services"
-- References to individual FileManager/CleanupService imports
+- The refactoring maintains backward compatibility where possible
+- Services default to creating their own `FileManagementService` instance if none provided
+- Temporary file handling is now more robust with proper cleanup
+- File size operations are now consistent across all services
 
-# NEW PATTERNS:
-- "FileManagementService"
-- "file_management_service.py"
-- "unified file management service"
-- References to FileManagementService import
-```
-
-### Update Code Examples
-Replace code examples that show:
-
-```python
-# OLD:
-from src.services.file_manager import FileManager
-from src.services.cleanup_service import CleanupService
-
-file_manager = FileManager()
-cleanup_service = CleanupService()
-
-# NEW:
-from src.services.file_management_service import FileManagementService
-
-file_service = FileManagementService()
-```
-
-### Update Configuration Examples
-Modify configuration documentation to reflect:
-- Single service configuration
-- Combined retention policies
-- Unified file management settings
-
-## Implementation Guidelines
-
-### 1. Backward Compatibility Notes
-- Document that `FileManager` and `CleanupService` are still available
-- Explain migration path for existing code
-- Provide compatibility examples
-
-### 2. New Features to Document
-- Combined file operations
-- Enhanced cleanup capabilities
-- Integrated download functionality
-- Unified service status and monitoring
-
-### 3. Performance Improvements
-- Document reduced service overhead
-- Explain improved file operation efficiency
-- Highlight unified cleanup scheduling
-
-## Validation Checklist
-
-After refactoring documentation:
-
-- [ ] All references to separate FileManager/CleanupService are updated
-- [ ] Code examples use FileManagementService
-- [ ] API documentation reflects new service structure
-- [ ] Architecture diagrams show unified service
-- [ ] Configuration examples are updated
-- [ ] Deployment guides reference correct service
-- [ ] User documentation is consistent
-- [ ] Links between documents are updated
-- [ ] Search functionality works with new terms
-- [ ] Documentation builds without errors
-
-## Files That May Need Updates
-
-### High Priority:
-```
-docs/api/
-docs/services/
-docs/architecture/
-README.md (root)
-src/services/README.MD (already updated)
-```
-
-### Medium Priority:
-```
-docs/development/
-docs/deployment/
-docs/configuration/
-docs/troubleshooting/
-```
-
-### Low Priority:
-```
-docs/user/
-docs/features/
-docs/changelog/
-```
-
-## Search Patterns for Finding Files
-
-Use these search patterns to find files that need updates:
-
-```bash
-# Find files mentioning FileManager or CleanupService
-grep -r "FileManager\|CleanupService" docs/
-grep -r "file_manager\|cleanup_service" docs/
-
-# Find files with old import patterns
-grep -r "from.*file_manager\|from.*cleanup_service" docs/
-
-# Find configuration references
-grep -r "upload_folder\|cleanup.*config" docs/
-```
-
-## Success Criteria
-
-1. **Consistency**: All documentation consistently references FileManagementService
-2. **Accuracy**: Code examples and configurations are correct
-3. **Completeness**: No broken links or missing references
-4. **Clarity**: New unified approach is clearly explained
-5. **Migration**: Clear migration path from old to new service
-
-## Notes for Implementation
-
-- Maintain backward compatibility documentation
-- Preserve existing functionality descriptions
-- Add new capabilities without removing old feature docs
-- Update timestamps and version information
-- Consider adding migration examples
-- Test all code examples in documentation
-
-## Post-Refactoring Tasks
-
-1. Update any automated documentation generation
-2. Refresh search indexes
-3. Update internal wikis or knowledge bases
-4. Notify team members of documentation changes
-5. Update any external documentation references
-
-This refactoring should result in consistent, accurate documentation that reflects the new unified file management architecture while maintaining clarity for developers and users.
+Please update all relevant documentation to reflect these changes and ensure developers understand the new patterns for file management in the application.

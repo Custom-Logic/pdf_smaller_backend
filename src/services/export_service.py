@@ -76,7 +76,7 @@ class ExportService:
             elif export_format == 'excel':
                 result = self._export_invoice_excel(invoice_data, filename)
             
-            self.logger.info(f"Invoice data exported successfully to {result['file_path']}")
+            self.logger.info(f"Invoice data exported successfully to {result['output_path']}")
             return result
             
         except Exception as e:
@@ -120,7 +120,7 @@ class ExportService:
             elif export_format == 'excel':
                 result = self._export_statement_excel(statement_data, filename)
             
-            self.logger.info(f"Bank statement data exported successfully to {result['file_path']}")
+            self.logger.info(f"Bank statement data exported successfully to {result['output_path']}")
             return result
             
         except Exception as e:
@@ -140,7 +140,7 @@ class ExportService:
             Export result with file path
         """
         try:
-            file_path = os.path.join(self.export_dir, f"{filename}.json")
+            output_path = os.path.join(self.export_dir, f"{filename}.json")
             
             # Prepare export data
             export_data = {
@@ -154,15 +154,15 @@ class ExportService:
             }
             
             # Write to file
-            with open(file_path, 'w', encoding='utf-8') as f:
+            with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(export_data, f, indent=2, ensure_ascii=False)
             
-            file_size = os.path.getsize(file_path)
+            file_size = os.path.getsize(output_path)
             
             return {
                 'success': True,
-                'file_path': file_path,
-                'filename': os.path.basename(file_path),
+                'output_path': output_path,
+                'filename': os.path.basename(output_path),
                 'format': 'json',
                 'file_size': file_size,
                 'mime_type': 'application/json'
@@ -182,24 +182,24 @@ class ExportService:
             Export result with file path
         """
         try:
-            file_path = os.path.join(self.export_dir, f"{filename}.csv")
+            output_path = os.path.join(self.export_dir, f"{filename}.csv")
             
             # Extract line items for CSV
             line_items = invoice_data.get('data', {}).get('line_items', [])
             
             if not line_items:
                 # Create a summary CSV if no line items
-                self._create_invoice_summary_csv(invoice_data, file_path)
+                self._create_invoice_summary_csv(invoice_data, output_path)
             else:
                 # Create detailed CSV with line items
-                self._create_invoice_detailed_csv(invoice_data, file_path)
+                self._create_invoice_detailed_csv(invoice_data, output_path)
             
-            file_size = os.path.getsize(file_path)
+            file_size = os.path.getsize(output_path)
             
             return {
                 'success': True,
-                'file_path': file_path,
-                'filename': os.path.basename(file_path),
+                'output_path': output_path,
+                'filename': os.path.basename(output_path),
                 'format': 'csv',
                 'file_size': file_size,
                 'mime_type': 'text/csv'
@@ -222,10 +222,10 @@ class ExportService:
             if not PANDAS_AVAILABLE:
                 raise ExportError("Excel export requires pandas library")
             
-            file_path = os.path.join(self.export_dir, f"{filename}.xlsx")
+            output_path = os.path.join(self.export_dir, f"{filename}.xlsx")
             
             # Create Excel writer
-            with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+            with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
                 # Invoice summary sheet
                 self._create_invoice_summary_sheet(invoice_data, writer)
                 
@@ -234,12 +234,12 @@ class ExportService:
                 if line_items:
                     self._create_line_items_sheet(line_items, writer)
             
-            file_size = os.path.getsize(file_path)
+            file_size = os.path.getsize(output_path)
             
             return {
                 'success': True,
-                'file_path': file_path,
-                'filename': os.path.basename(file_path),
+                'output_path': output_path,
+                'filename': os.path.basename(output_path),
                 'format': 'excel',
                 'file_size': file_size,
                 'mime_type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -259,7 +259,7 @@ class ExportService:
             Export result with file path
         """
         try:
-            file_path = os.path.join(self.export_dir, f"{filename}.json")
+            output_path = os.path.join(self.export_dir, f"{filename}.json")
             
             # Prepare export data
             export_data = {
@@ -273,15 +273,15 @@ class ExportService:
             }
             
             # Write to file
-            with open(file_path, 'w', encoding='utf-8') as f:
+            with open(output_path, 'w', encoding='utf-8') as f:
                 json.dump(export_data, f, indent=2, ensure_ascii=False)
             
-            file_size = os.path.getsize(file_path)
+            file_size = os.path.getsize(output_path)
             
             return {
                 'success': True,
-                'file_path': file_path,
-                'filename': os.path.basename(file_path),
+                'output_path': output_path,
+                'filename': os.path.basename(output_path),
                 'format': 'json',
                 'file_size': file_size,
                 'mime_type': 'application/json'
@@ -301,12 +301,12 @@ class ExportService:
             Export result with file path
         """
         try:
-            file_path = os.path.join(self.export_dir, f"{filename}.csv")
+            output_path = os.path.join(self.export_dir, f"{filename}.csv")
             
             # Extract transactions for CSV
             transactions = statement_data.get('data', {}).get('transactions', [])
             
-            with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+            with open(output_path, 'w', newline='', encoding='utf-8') as csvfile:
                 if transactions:
                     # Get all possible fieldnames from transactions
                     fieldnames = set()
@@ -323,12 +323,12 @@ class ExportService:
                     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                     writer.writeheader()
             
-            file_size = os.path.getsize(file_path)
+            file_size = os.path.getsize(output_path)
             
             return {
                 'success': True,
-                'file_path': file_path,
-                'filename': os.path.basename(file_path),
+                'output_path': output_path,
+                'filename': os.path.basename(output_path),
                 'format': 'csv',
                 'file_size': file_size,
                 'mime_type': 'text/csv'
@@ -351,10 +351,10 @@ class ExportService:
             if not PANDAS_AVAILABLE:
                 raise ExportError("Excel export requires pandas library")
             
-            file_path = os.path.join(self.export_dir, f"{filename}.xlsx")
+            output_path = os.path.join(self.export_dir, f"{filename}.xlsx")
             
             # Create Excel writer
-            with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+            with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
                 # Account summary sheet
                 self._create_statement_summary_sheet(statement_data, writer)
                 
@@ -363,12 +363,12 @@ class ExportService:
                 if transactions:
                     self._create_transactions_sheet(transactions, writer)
             
-            file_size = os.path.getsize(file_path)
+            file_size = os.path.getsize(output_path)
             
             return {
                 'success': True,
-                'file_path': file_path,
-                'filename': os.path.basename(file_path),
+                'output_path': output_path,
+                'filename': os.path.basename(output_path),
                 'format': 'excel',
                 'file_size': file_size,
                 'mime_type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -377,11 +377,11 @@ class ExportService:
         except Exception as e:
             raise ExportError(f"Excel export failed: {str(e)}")
     
-    def _create_invoice_summary_csv(self, invoice_data: Dict[str, Any], file_path: str) -> None:
+    def _create_invoice_summary_csv(self, invoice_data: Dict[str, Any], output_path: str) -> None:
         """Create invoice summary CSV file."""
         data = invoice_data.get('data', {})
         
-        with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+        with open(output_path, 'w', newline='', encoding='utf-8') as csvfile:
             writer = csv.writer(csvfile)
             
             # Write header
@@ -406,11 +406,11 @@ class ExportService:
                 writer.writerow(['Customer Name', customer.get('name', '')])
                 writer.writerow(['Customer Address', customer.get('address', '')])
     
-    def _create_invoice_detailed_csv(self, invoice_data: Dict[str, Any], file_path: str) -> None:
+    def _create_invoice_detailed_csv(self, invoice_data: Dict[str, Any], output_path: str) -> None:
         """Create detailed invoice CSV with line items."""
         line_items = invoice_data.get('data', {}).get('line_items', [])
         
-        with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
+        with open(output_path, 'w', newline='', encoding='utf-8') as csvfile:
             if line_items:
                 # Get all possible fieldnames from line items
                 fieldnames = set()
@@ -528,14 +528,14 @@ class ExportService:
             total_size_freed = 0
             
             for filename in os.listdir(self.export_dir):
-                file_path = os.path.join(self.export_dir, filename)
+                output_path = os.path.join(self.export_dir, filename)
                 
-                if os.path.isfile(file_path):
-                    file_mtime = datetime.fromtimestamp(os.path.getmtime(file_path))
+                if os.path.isfile(output_path):
+                    file_mtime = datetime.fromtimestamp(os.path.getmtime(output_path))
                     
                     if file_mtime < cutoff_time:
-                        file_size = os.path.getsize(file_path)
-                        os.remove(file_path)
+                        file_size = os.path.getsize(output_path)
+                        os.remove(output_path)
                         deleted_files.append(filename)
                         total_size_freed += file_size
             

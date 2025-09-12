@@ -1,5 +1,4 @@
-"""
-Conversion Service – Job-Oriented Architecture
+"""Conversion Service – Job-Oriented Architecture
 Handles PDF → Word, Text, HTML, Images
 Crash-hardened edition – 2025-09
 """
@@ -8,11 +7,12 @@ from __future__ import annotations
 import logging
 import os
 import re
-import tempfile
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+from src.services.file_management_service import FileManagementService
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +50,8 @@ except ImportError:  # pragma: no cover
 # ------------------------------------------------------------------------------
 class ConversionService:
     """Convert PDFs to docx / txt / html / images – crash-hardened."""
-    def __init__(self, upload_folder: Optional[str] = None):
-        self.upload_folder = Path(upload_folder or tempfile.mkdtemp(prefix="pdf_conv_"))
-        self.upload_folder.mkdir(parents=True, exist_ok=True)
+    def __init__(self, file_service: Optional[FileManagementService] = None):
+        self.file_service = file_service or FileManagementService()
         self.supported_formats = ("docx", "txt", "html", "images", "xlsx")
 
     # --------------------------------------------------------------------------
@@ -109,8 +108,8 @@ class ConversionService:
             }
 
         finally:
-            if temp_pdf and temp_pdf.exists():
-                temp_pdf.unlink(missing_ok=True)
+            if temp_pdf:
+                self.file_service.delete_file(str(temp_pdf))
 
     def get_conversion_preview(
         self,
@@ -141,17 +140,17 @@ class ConversionService:
             logger.exception("Preview failed")
             return self._preview_fallback(file_data, target_format, str(exc))
         finally:
-            if temp_pdf and temp_pdf.exists():
-                temp_pdf.unlink(missing_ok=True)
+            if temp_pdf:
+                self.file_service.delete_file(str(temp_pdf))
 
     # --------------------------------------------------------------------------
     # INTERNALS – extraction
     # --------------------------------------------------------------------------
     def _save_file_data(self, data: bytes, name: Optional[str] = None) -> Path:
-        safe = self._secure_filename(name or f"temp_{uuid.uuid4().hex[:8]}.pdf")
-        path = self.upload_folder / safe
-        path.write_bytes(data)
-        return path
+        """Save file data using file management service"""
+        filename = name or f"temp_{uuid.uuid4().hex[:8]}.pdf"
+        file_id, file_path = self.file_service.save_file(data, filename)
+        return Path(file_path)
 
     def _extract_pdf_content(self, pdf_path: Path, _: Dict[str, Any]) -> Dict[str, Any]:
         """Return unified dict with pages, tables, images, text, meta."""
@@ -265,14 +264,21 @@ class ConversionService:
                             table.cell(r_idx, c_idx).text = str(cell_data)
 
         filename = f"converted_{content.get('metadata',{}).get('title','document')}.docx"
-        out_path = self.upload_folder / filename
-        doc.save(str(out_path))
+        # Save to temporary location first, then read and save through file_service
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp_file:
+            doc.save(tmp_file.name)
+            with open(tmp_file.name, 'rb') as f:
+                docx_data = f.read()
+            os.unlink(tmp_file.name)
+        
+        file_id, file_path = self.file_service.save_file(docx_data, filename)
         return {
             "success": True,
-            "output_path": str(out_path),
+            "output_path": file_path,
             "filename": filename,
             "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            "file_size": out_path.stat().st_size,
+            "file_size": self.file_service.get_file_size(file_path),
         }
 
     def _convert_to_xlsx(self, content: Dict[str, Any], opts: Dict[str, Any]) -> Dict[str, Any]:
@@ -310,46 +316,51 @@ class ConversionService:
             raise ValueError("No tables found in PDF – nothing to export to Excel")
 
         filename = f"converted_{file_prefix}.xlsx"
-        out_path = self.upload_folder / filename
-        wb.save(str(out_path))
-
+        # Save to temporary location first, then read and save through file_service
+        import tempfile
+        with tempfile.NamedTemporaryFile(suffix='.xlsx', delete=False) as tmp_file:
+            wb.save(tmp_file.name)
+            with open(tmp_file.name, 'rb') as f:
+                xlsx_data = f.read()
+            os.unlink(tmp_file.name)
+        
+        file_id, file_path = self.file_service.save_file(xlsx_data, filename)
         return {
             "success": True,
-            "output_path": str(out_path),
+            "output_path": file_path,
             "filename": filename,
             "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "file_size": out_path.stat().st_size,
+            "file_size": self.file_service.get_file_size(file_path),
         }
 
-    @staticmethod
-    def _convert_to_txt(content: Dict[str, Any], opts: Dict[str, Any]) -> Dict[str, Any]:
+    def _convert_to_txt(self, content: Dict[str, Any], opts: Dict[str, Any]) -> Dict[str, Any]:
         quality = opts.get("quality", "medium")
         text = content["text"]
         if quality != "high":
             text = re.sub(r"\s+", " ", text)
             text = re.sub(r"\n\s*\n", "\n\n", text)
         filename = f"converted_{content.get('metadata',{}).get('title','document')}.txt"
-        out_path = Path(tempfile.gettempdir()) / filename
-        out_path.write_text(text, encoding="utf-8")
+        text_data = text.encode('utf-8')
+        file_id, file_path = self.file_service.save_file(text_data, filename)
         return {
             "success": True,
-            "output_path": str(out_path),
+            "output_path": file_path,
             "filename": filename,
             "mime_type": "text/plain",
-            "file_size": out_path.stat().st_size,
+            "file_size": self.file_service.get_file_size(file_path),
         }
 
     def _convert_to_html(self, content: Dict[str, Any], opts: Dict[str, Any]) -> Dict[str, Any]:
         html = self._generate_html_content(content, opts)
         filename = f"converted_{content.get('metadata',{}).get('title','document')}.html"
-        out_path = self.upload_folder / filename
-        out_path.write_text(html, encoding="utf-8")
+        html_data = html.encode('utf-8')
+        file_id, file_path = self.file_service.save_file(html_data, filename)
         return {
             "success": True,
-            "output_path": str(out_path),
+            "output_path": file_path,
             "filename": filename,
             "mime_type": "text/html",
-            "file_size": out_path.stat().st_size,
+            "file_size": self.file_service.get_file_size(file_path),
         }
 
     def _convert_to_images(self, content: Dict[str, Any], opts: Dict[str, Any]) -> Dict[str, Any]:
@@ -358,17 +369,24 @@ class ConversionService:
             raise RuntimeError("Pillow not installed – image conversion unavailable")
         dpi = {"low": 72, "medium": 150, "high": 300}.get(opts.get("quality", "medium"), 150)
         doc = fitz.Document()
+        image_files = []
+        total_size = 0
+        
         for page in content["pages"]:
             pix = fitz.Page(page).get_pixmap(dpi=dpi)
             filename = f"converted_page_{page['page_num']}.png"
-            out_path = self.upload_folder / filename
-            pix.save(out_path)
+            # Save image data through file service
+            image_data = pix.tobytes("png")
+            file_id, file_path = self.file_service.save_file(image_data, filename)
+            image_files.append(file_path)
+            total_size += self.file_service.get_file_size(file_path)
+            
         return {
             "success": True,
-            "output_path": str(self.upload_folder),  # folder with pages
+            "output_path": str(Path(image_files[0]).parent) if image_files else "",  # folder with pages
             "filename": "pages_png.zip",  # consumer expects single filename
             "mime_type": "application/zip",
-            "file_size": sum(f.stat().st_size for f in self.upload_folder.glob("*.png")),
+            "file_size": total_size,
         }
 
     # --------------------------------------------------------------------------

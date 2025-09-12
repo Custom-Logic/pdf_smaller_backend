@@ -293,8 +293,8 @@ class CompressionJob(BaseModel):
 ### Route Structure
 
 ```python
-from flask import Blueprint, request, jsonify
 from src.services.compression_service import CompressionService
+from src.services.file_management_service import FileManagementService
 from src.utils.validation import validate_file
 from src.utils.response_helpers import success_response, error_response
 
@@ -311,8 +311,9 @@ def compress_pdf():
         file = request.files['file']
         validate_file(file)
         
-        # Process request
-        service = CompressionService()
+        # Process request with optional file service injection
+        file_service = FileManagementService()  # Optional: for custom configuration
+        service = CompressionService(file_service=file_service)
         result = service.compress_pdf_async(file)
         
         return success_response(result, 202)
@@ -356,14 +357,15 @@ def compress_pdf():
 ### Service Structure
 
 ```python
+from typing import Optional
 from src.services.file_management_service import FileManagementService
 
 class CompressionService:
     """Service for handling PDF compression operations."""
     
-    def __init__(self, config: Config = None):
+    def __init__(self, config: Config = None, file_service: Optional[FileManagementService] = None):
         self.config = config or Config()
-        self.file_service = FileManagementService()
+        self.file_service = file_service or FileManagementService()
         
     def compress_pdf(self, file_path: str, options: dict) -> dict:
         """Synchronous PDF compression."""
@@ -387,7 +389,9 @@ class CompressionService:
 ### Service Best Practices
 
 1. **Single Responsibility**: Each service handles one domain
-2. **Dependency Injection**: Accept dependencies in constructor
+2. **Dependency Injection**: Accept dependencies in constructor (especially FileManagementService)
+3. **Centralized File Operations**: Use FileManagementService for all file operations
+4. **Consistent Error Handling**: Use standardized exceptions and cleanup patterns
 3. **Error Handling**: Use custom exceptions for business logic errors
 4. **Logging**: Log important operations and errors
 5. **Configuration**: Use configuration objects, not global variables
@@ -500,11 +504,30 @@ file_path = f"/uploads/{filename}"
 
 ✅ **Do**:
 ```python
-# Safe file handling
-from src.utils.file_utils import secure_filename, get_upload_path
+# Safe file handling with FileManagementService
+from src.services.file_management_service import FileManagementService
 
-filename = secure_filename(request.files['file'].filename)
-file_path = get_upload_path(filename)
+file_service = FileManagementService()
+file_path = file_service.save_file(request.files['file'])
+```
+
+### Service Instantiation
+
+❌ **Don't**:
+```python
+# Direct instantiation without dependency injection
+service = CompressionService()
+service.upload_folder = "/some/path"  # Manual configuration
+```
+
+✅ **Do**:
+```python
+# Proper dependency injection
+file_service = FileManagementService()  # Optional: for custom config
+service = CompressionService(file_service=file_service)
+
+# Or use default (recommended for most cases)
+service = CompressionService()  # FileManagementService auto-created
 ```
 
 ### Database Operations

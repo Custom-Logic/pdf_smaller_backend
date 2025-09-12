@@ -126,6 +126,44 @@ HEALTH_CHECK_ENABLED=true
 METRICS_ENABLED=true
 ```
 
+### 3. Service Configuration
+
+The application uses centralized file management through the `FileManagementService`. Services are initialized with dependency injection patterns:
+
+#### Service Initialization Patterns
+
+```python
+# Default initialization (recommended for production)
+from src.services.compression_service import CompressionService
+from src.services.ocr_service import OCRService
+from src.services.conversion_service import ConversionService
+
+# Services auto-create FileManagementService with default configuration
+compression_service = CompressionService()
+ocr_service = OCRService()
+conversion_service = ConversionService()
+
+# Custom file service configuration (for specific requirements)
+from src.services.file_management_service import FileManagementService
+
+file_service = FileManagementService(
+    upload_folder='/custom/upload/path',
+    max_file_age_hours=2
+)
+compression_service = CompressionService(file_service=file_service)
+```
+
+#### Environment Variables for File Management
+
+```bash
+# File Management Service Configuration
+UPLOAD_FOLDER=/var/app/uploads
+MAX_FILE_SIZE=104857600  # 100MB
+MAX_FILE_AGE_HOURS=1
+CLEANUP_ENABLED=true
+CLEANUP_INTERVAL_MINUTES=30
+```
+
 ### 2. Directory Structure Setup
 
 ```bash
