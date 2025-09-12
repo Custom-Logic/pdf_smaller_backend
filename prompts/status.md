@@ -2,6 +2,20 @@
 
 This file tracks the execution of prompts and their relationship to specification files, maintaining an overall project status.
 
+## Recent Activities
+
+### Exception Handling Improvements
+- **Status**: Completed
+- **Files Modified**: `src/tasks/tasks.py`
+- **Changes**: 
+  - **Added Specific Exception Imports**: SQLAlchemy exceptions (`DBAPIError`, `OperationalError`, `IntegrityError`), Celery exceptions (`Retry`, `WorkerLostError`, `Ignore`), and service-specific exceptions (`ExtractionError`, `ExtractionValidationError`, `ExportError`, `FormatError`)
+  - **Replaced Generic Exception Handlers**: All catch-all `Exception` handlers now use specific exceptions with intelligent retry logic
+  - **Compression Task**: Added handling for `EnvironmentError` (Ghostscript issues) and `TimeoutError` with appropriate retry strategies
+  - **Conversion Task**: Added handling for `ValueError` (unsupported formats) and `RuntimeError` (missing libraries)
+  - **Extraction Tasks**: Added specific handling for `ExtractionError` and `ExtractionValidationError` with smart retry logic
+  - **Database Operations**: All database operations now catch specific SQLAlchemy exceptions
+  - **Intelligent Retry Logic**: Environment and validation errors use `Ignore()` to prevent unnecessary retries, while transient errors retry with exponential backoff
+
 ## Completed Tasks
 
 ### 2025-01-11: Service Refactoring Specification

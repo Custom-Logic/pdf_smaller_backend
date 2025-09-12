@@ -861,7 +861,95 @@ except Exception as e:
 
 ## Error Handling
 
-### Custom Exceptions
+### Exception Hierarchy
+
+The service layer uses a comprehensive exception hierarchy for different error scenarios:
+
+```python
+# Database-related exceptions (from SQLAlchemy)
+from sqlalchemy.exc import DBAPIError, OperationalError, IntegrityError
+
+# Service-specific exceptions
+from src.exceptions.extraction_exceptions import (
+    ExtractionError,           # Base extraction error
+    ExtractionValidationError, # Input validation errors
+    ExtractionTimeoutError,    # Processing timeout errors
+    ExtractionFormatError      # Unsupported format errors
+)
+
+# Celery task exceptions
+from celery.exceptions import Ignore, Retry
+
+# Environment and system exceptions
+EnvironmentError  # Missing dependencies, system issues
+FileNotFoundError # File system errors
+PermissionError   # Access permission errors
+```
+
+### Intelligent Exception Handling
+
+Services implement intelligent exception handling with different strategies based on error type:
+
+```python
+def process_with_intelligent_retry(self, job_data: Dict) -> Dict:
+    """Process job with intelligent exception handling and retry logic"""
+    try:
+        return self._do_processing(job_data)
+        
+    except (DBAPIError, OperationalError, IntegrityError) as db_e:
+        logger.error(f"Database error in job {job_data['job_id']}: {db_e}")
+        # Retry database errors with exponential backoff
+        if self.request.retries < self.max_retries:
+            countdown = 60 * (self.request.retries + 1)  # 60s, 120s, 180s...
+            raise self.retry(countdown=countdown)
+        raise
+        
+    except ExtractionValidationError as val_e:
+        logger.error(f"Validation error in job {job_data['job_id']}: {val_e}")
+        # Don't retry validation errors - they won't succeed on retry
+        raise Ignore()
+        
+    except ExtractionTimeoutError as timeout_e:
+        logger.error(f"Timeout error in job {job_data['job_id']}: {timeout_e}")
+        # Retry timeout errors with longer countdown
+        if self.request.retries < self.max_retries:
+            countdown = 120 * (self.request.retries + 1)  # 2min, 4min, 6min...
+            raise self.retry(countdown=countdown)
+        raise
+        
+    except ExtractionError as ext_e:
+        logger.error(f"Extraction error in job {job_data['job_id']}: {ext_e}")
+        # Retry general extraction errors
+        if self.request.retries < self.max_retries:
+            raise self.retry(countdown=60 * (self.request.retries + 1))
+        raise
+        
+    except EnvironmentError as env_e:
+        logger.error(f"Environment error in job {job_data['job_id']}: {env_e}")
+        # Don't retry environment errors (missing dependencies, etc.)
+        raise Ignore()
+        
+    except (FileNotFoundError, PermissionError) as file_e:
+        logger.error(f"File system error in job {job_data['job_id']}: {file_e}")
+        # Clean up any partial files and don't retry
+        self.file_service.cleanup_temp_files([job_data.get('temp_files', [])])
+        raise Ignore()
+```
+
+### Exception Categories and Retry Strategies
+
+| Exception Type | Retry Strategy | Reason |
+|----------------|----------------|--------|
+| Database errors (DBAPIError, OperationalError) | Exponential backoff retry | Temporary connectivity issues |
+| Validation errors (ExtractionValidationError) | No retry (Ignore) | Input won't change on retry |
+| Timeout errors (ExtractionTimeoutError) | Longer countdown retry | May succeed with more time |
+| General extraction errors (ExtractionError) | Standard retry | May be temporary processing issues |
+| Environment errors (EnvironmentError) | No retry (Ignore) | System configuration issues |
+| File system errors (FileNotFoundError, PermissionError) | No retry + cleanup | File access issues |
+
+### Legacy Exception Support
+
+For backward compatibility, the following exceptions are still supported:
 
 ```python
 # src/exceptions.py

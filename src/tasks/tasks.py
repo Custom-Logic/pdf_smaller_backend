@@ -4,7 +4,7 @@ Celery tasks for background job processing – context-safe refactor
 """
 import logging
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
 
 from celery import current_task
@@ -25,6 +25,12 @@ from src.services.ocr_service import OCRService
 from src.services.invoice_extraction_service import InvoiceExtractionService
 from src.services.bank_statement_extraction_service import BankStatementExtractionService
 from src.services.export_service import ExportService
+from src.exceptions.extraction_exceptions import ExtractionError, ExtractionValidationError
+from src.exceptions.export_exceptions import ExportError, FormatError
+
+# Exception imports for specific error handling
+from sqlalchemy.exc import DBAPIError, OperationalError, IntegrityError, StatementError
+from celery.exceptions import Retry, WorkerLostError, Ignore, Reject
 
 # ------------------------------------------------------
 #  IMPORT THE HELPER – keeps context for every task
@@ -89,6 +95,42 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
         logger.info(f"Compression job {job_id} completed successfully")
         return result
 
+    except (DBAPIError, OperationalError, IntegrityError) as db_e:
+        logger.error(f"Database error in compression task for job {job_id}: {str(db_e)}")
+        try:
+            job = Job.query.filter_by(job_id=job_id).first()
+            if job:
+                job.status = JobStatus.FAILED.value
+                job.error = str(db_e)
+                db.session.commit()
+        except (DBAPIError, OperationalError, IntegrityError) as db_err:
+            logger.error(f"Failed to update job status due to database error: {db_err}")
+
+        if self.request.retries < self.max_retries:
+            logger.info(f"Retrying compression job {job_id} due to database error (attempt {self.request.retries + 1})")
+            raise self.retry(countdown=60 * (self.request.retries + 1))
+        raise
+    except (EnvironmentError, TimeoutError) as env_e:
+        logger.error(f"Environment/timeout error in compression task for job {job_id}: {str(env_e)}")
+        try:
+            job = Job.query.filter_by(job_id=job_id).first()
+            if job:
+                job.status = JobStatus.FAILED.value
+                job.error = str(env_e)
+                db.session.commit()
+        except (DBAPIError, OperationalError, IntegrityError) as db_err:
+            logger.error(f"Failed to update job status due to database error: {db_err}")
+
+        # Don't retry environment errors (like missing Ghostscript)
+        if isinstance(env_e, EnvironmentError):
+            logger.error(f"Environment error - not retrying: {env_e}")
+            raise Ignore()
+        
+        # Retry timeout errors
+        if self.request.retries < self.max_retries:
+            logger.info(f"Retrying compression job {job_id} due to timeout (attempt {self.request.retries + 1})")
+            raise self.retry(countdown=60 * (self.request.retries + 1))
+        raise
     except Exception as e:
         logger.error(f"Compression task failed for job {job_id}: {str(e)}")
         try:
@@ -97,8 +139,8 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
                 job.status = JobStatus.FAILED.value
                 job.error = str(e)
                 db.session.commit()
-        except Exception as db_err:
-            logger.error(f"Failed to update job status: {db_err}")
+        except (DBAPIError, OperationalError, IntegrityError) as db_err:
+            logger.error(f"Failed to update job status due to database error: {db_err}")
 
         if self.request.retries < self.max_retries:
             logger.info(f"Retrying compression job {job_id} (attempt {self.request.retries + 1})")
@@ -110,7 +152,7 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
 # ------------------------------------------------------
 @celery_app.task(bind=True, name='tasks.bulk_compress_task', max_retries=3)
 def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
-                       filenames: List[str], settings: Dict[str, Any]) -> Dict[str, Any]:
+                       filenames: List[str], settings: Dict[str, Any]) -> dict[str, int | list[Any] | Any] | None:
     """Process bulk compression task asynchronously – identical behaviour."""
     try:
         logger.info(f"Starting bulk compression task for job {job_id}")
@@ -203,6 +245,7 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
 
     except Exception as e:
         logger.error(f"Error in bulk compression task {job_id}: {str(e)}")
+        # noinspection PyUnboundLocalVariable
         if 'job' in locals() and job:
             job.mark_as_failed(str(e))
             db.session.commit()
@@ -268,6 +311,39 @@ def convert_pdf_task(
             )
             return result
 
+    except (DBAPIError, OperationalError, IntegrityError) as db_exc:
+        logger.exception("Database error in conversion task %s", job_id)
+        # context-safe error update
+        try:
+            with current_app.app_context():
+                job = Job.query.filter_by(job_id=job_id).first()
+                if job:
+                    job.mark_as_failed(str(db_exc))
+                    db.session.commit()
+        except (DBAPIError, OperationalError, IntegrityError) as db_err:  # noqa: F841
+            logger.error(f"Failed to update job status due to database error: {db_err}")
+    except (ValueError, RuntimeError) as conv_exc:
+        logger.exception("Conversion error in task %s: %s", job_id, str(conv_exc))
+        # context-safe error update
+        try:
+            with current_app.app_context():
+                job = Job.query.filter_by(job_id=job_id).first()
+                if job:
+                    job.mark_as_failed(str(conv_exc))
+                    db.session.commit()
+        except (DBAPIError, OperationalError, IntegrityError) as db_err:  # noqa: F841
+            logger.error(f"Failed to update job status due to database error: {db_err}")
+        
+        # Don't retry ValueError (unsupported format) but retry RuntimeError (missing libraries)
+        if isinstance(conv_exc, ValueError):
+            logger.error(f"Unsupported format error - not retrying: {conv_exc}")
+            raise Ignore()
+        
+        # Retry RuntimeError (missing libraries) - might be temporary
+        if self.request.retries < self.max_retries:
+            logger.info(f"Retrying conversion job {job_id} due to runtime error (attempt {self.request.retries + 1})")
+            raise self.retry(countdown=60 * (self.request.retries + 1))
+        raise
     except Exception as exc:
         logger.exception("Conversion task %s failed", job_id)
         # context-safe error update
@@ -277,7 +353,7 @@ def convert_pdf_task(
                 if job:
                     job.mark_as_failed(str(exc))
                     db.session.commit()
-        except Exception as db_err:  # noqa: F841
+        except (DBAPIError, OperationalError, IntegrityError) as db_err:  # noqa: F841
             pass  # already logging
 
         if self.request.retries < self.max_retries:
@@ -498,6 +574,8 @@ def ai_summarize_task(self, job_id: str, text: str, options: Dict[str, Any]) -> 
 
     except Exception as e:
         logger.error(f"Error in AI summarisation task {job_id}: {str(e)}")
+
+        # noinspection PyUnboundLocalVariable
         if 'job' in locals() and job:
             job.mark_as_failed(str(e))
             db.session.commit()
@@ -534,6 +612,7 @@ def ai_translate_task(self, job_id: str, text: str, target_language: str,
 
     except Exception as e:
         logger.error(f"Error in AI translation task {job_id}: {str(e)}")
+        # noinspection PyUnboundLocalVariable
         if 'job' in locals() and job:
             job.mark_as_failed(str(e))
             db.session.commit()
@@ -569,6 +648,7 @@ def extract_text_task(self, job_id: str, file_data: bytes,
 
     except Exception as e:
         logger.error(f"Error in text-extraction task {job_id}: {str(e)}")
+        # noinspection PyUnboundLocalVariable
         if 'job' in locals() and job:
             job.status = JobStatus.FAILED.value
             job.error = str(e)
@@ -584,7 +664,7 @@ def cleanup_expired_jobs(self) -> Dict[str, Any]:
     """Clean up expired jobs and their associated files – identical behaviour."""
     try:
         logger.info("Starting cleanup of expired jobs")
-        cutoff_time = datetime.utcnow() - timedelta(hours=24)
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=24)
         expired_jobs = Job.query.filter(
             Job.created_at < cutoff_time,
             Job.status.in_(['completed', 'failed'])
@@ -701,9 +781,9 @@ def extract_invoice_task(self, job_id: str, file_path: str, extraction_options: 
             }
         )
         
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         extraction_result = invoice_extraction_service.extract_invoice_data(file_path, extraction_options)
-        processing_time = (datetime.utcnow() - start_time).total_seconds()
+        processing_time = (datetime.now(timezone.utc) - start_time).total_seconds()
         
         # Add processing time to metadata
         if 'metadata' in extraction_result:
@@ -749,6 +829,65 @@ def extract_invoice_task(self, job_id: str, file_path: str, extraction_options: 
         logger.info(f"Invoice extraction job {job_id} completed successfully")
         return extraction_result
 
+    except (DBAPIError, OperationalError, IntegrityError) as db_e:
+        logger.error(f"Database error in invoice extraction task for job {job_id}: {str(db_e)}")
+        try:
+            job = Job.query.filter_by(job_id=job_id).first()
+            if job:
+                job.status = JobStatus.FAILED.value
+                job.error = str(db_e)
+                db.session.commit()
+        except (DBAPIError, OperationalError, IntegrityError) as db_err:
+            logger.error(f"Failed to update job status due to database error: {db_err}")
+
+        current_task.update_state(
+            state='FAILURE',
+            meta={'error': str(db_e), 'job_id': job_id}
+        )
+
+        if self.request.retries < self.max_retries:
+            logger.info(f"Retrying invoice extraction job {job_id} due to database error (attempt {self.request.retries + 1})")
+            raise self.retry(countdown=60 * (self.request.retries + 1))
+        raise
+    except ExtractionValidationError as val_e:
+        logger.error(f"Validation error in invoice extraction task for job {job_id}: {str(val_e)}")
+        try:
+            job = Job.query.filter_by(job_id=job_id).first()
+            if job:
+                job.status = JobStatus.FAILED.value
+                job.error = str(val_e)
+                db.session.commit()
+        except (DBAPIError, OperationalError, IntegrityError) as db_err:
+            logger.error(f"Failed to update job status due to database error: {db_err}")
+
+        current_task.update_state(
+            state='FAILURE',
+            meta={'error': str(val_e), 'job_id': job_id}
+        )
+        
+        # Don't retry validation errors - they won't succeed on retry
+        logger.error(f"Validation error - not retrying: {val_e}")
+        raise Ignore()
+    except ExtractionError as ext_e:
+        logger.error(f"Extraction error in invoice extraction task for job {job_id}: {str(ext_e)}")
+        try:
+            job = Job.query.filter_by(job_id=job_id).first()
+            if job:
+                job.status = JobStatus.FAILED.value
+                job.error = str(ext_e)
+                db.session.commit()
+        except (DBAPIError, OperationalError, IntegrityError) as db_err:
+            logger.error(f"Failed to update job status due to database error: {db_err}")
+
+        current_task.update_state(
+            state='FAILURE',
+            meta={'error': str(ext_e), 'job_id': job_id}
+        )
+
+        if self.request.retries < self.max_retries:
+            logger.info(f"Retrying invoice extraction job {job_id} due to extraction error (attempt {self.request.retries + 1})")
+            raise self.retry(countdown=60 * (self.request.retries + 1))
+        raise
     except Exception as e:
         logger.error(f"Invoice extraction task failed for job {job_id}: {str(e)}")
         try:
@@ -757,8 +896,8 @@ def extract_invoice_task(self, job_id: str, file_path: str, extraction_options: 
                 job.status = JobStatus.FAILED.value
                 job.error = str(e)
                 db.session.commit()
-        except Exception as db_err:
-            logger.error(f"Failed to update job status: {db_err}")
+        except (DBAPIError, OperationalError, IntegrityError) as db_err:
+            logger.error(f"Failed to update job status due to database error: {db_err}")
 
         current_task.update_state(
             state='FAILURE',
@@ -815,9 +954,9 @@ def extract_bank_statement_task(self, job_id: str, file_path: str, extraction_op
             }
         )
         
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         extraction_result = bank_statement_extraction_service.extract_statement_data(file_path, extraction_options)
-        processing_time = (datetime.utcnow() - start_time).total_seconds()
+        processing_time = (datetime.now(timezone.utc) - start_time).total_seconds()
         
         # Add processing time to metadata
         if 'metadata' in extraction_result:
@@ -863,6 +1002,65 @@ def extract_bank_statement_task(self, job_id: str, file_path: str, extraction_op
         logger.info(f"Bank statement extraction job {job_id} completed successfully")
         return extraction_result
 
+    except (DBAPIError, OperationalError, IntegrityError) as db_e:
+        logger.error(f"Database error in bank statement extraction task for job {job_id}: {str(db_e)}")
+        try:
+            job = Job.query.filter_by(job_id=job_id).first()
+            if job:
+                job.status = JobStatus.FAILED.value
+                job.error = str(db_e)
+                db.session.commit()
+        except (DBAPIError, OperationalError, IntegrityError) as db_err:
+            logger.error(f"Failed to update job status due to database error: {db_err}")
+
+        current_task.update_state(
+            state='FAILURE',
+            meta={'error': str(db_e), 'job_id': job_id}
+        )
+
+        if self.request.retries < self.max_retries:
+            logger.info(f"Retrying bank statement extraction job {job_id} due to database error (attempt {self.request.retries + 1})")
+            raise self.retry(countdown=60 * (self.request.retries + 1))
+        raise
+    except ExtractionValidationError as val_e:
+        logger.error(f"Validation error in bank statement extraction task for job {job_id}: {str(val_e)}")
+        try:
+            job = Job.query.filter_by(job_id=job_id).first()
+            if job:
+                job.status = JobStatus.FAILED.value
+                job.error = str(val_e)
+                db.session.commit()
+        except (DBAPIError, OperationalError, IntegrityError) as db_err:
+            logger.error(f"Failed to update job status due to database error: {db_err}")
+
+        current_task.update_state(
+            state='FAILURE',
+            meta={'error': str(val_e), 'job_id': job_id}
+        )
+        
+        # Don't retry validation errors - they won't succeed on retry
+        logger.error(f"Validation error - not retrying: {val_e}")
+        raise Ignore()
+    except ExtractionError as ext_e:
+        logger.error(f"Extraction error in bank statement extraction task for job {job_id}: {str(ext_e)}")
+        try:
+            job = Job.query.filter_by(job_id=job_id).first()
+            if job:
+                job.status = JobStatus.FAILED.value
+                job.error = str(ext_e)
+                db.session.commit()
+        except (DBAPIError, OperationalError, IntegrityError) as db_err:
+            logger.error(f"Failed to update job status due to database error: {db_err}")
+
+        current_task.update_state(
+            state='FAILURE',
+            meta={'error': str(ext_e), 'job_id': job_id}
+        )
+
+        if self.request.retries < self.max_retries:
+            logger.info(f"Retrying bank statement extraction job {job_id} due to extraction error (attempt {self.request.retries + 1})")
+            raise self.retry(countdown=60 * (self.request.retries + 1))
+        raise
     except Exception as e:
         logger.error(f"Bank statement extraction task failed for job {job_id}: {str(e)}")
         try:
@@ -871,8 +1069,8 @@ def extract_bank_statement_task(self, job_id: str, file_path: str, extraction_op
                 job.status = JobStatus.FAILED.value
                 job.error = str(e)
                 db.session.commit()
-        except Exception as db_err:
-            logger.error(f"Failed to update job status: {db_err}")
+        except (DBAPIError, OperationalError, IntegrityError) as db_err:
+            logger.error(f"Failed to update job status due to database error: {db_err}")
 
         current_task.update_state(
             state='FAILURE',

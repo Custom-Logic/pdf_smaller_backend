@@ -764,6 +764,49 @@ if not job:
 result = job.to_dict()
 ```
 
+### Exception Handling
+
+❌ **Don't**:
+```python
+# Generic exception handling
+try:
+    result = process_file(file_path)
+except Exception as e:
+    logger.error(f"Processing failed: {e}")
+    raise
+```
+
+✅ **Do**:
+```python
+# Specific exception handling with intelligent retry logic
+from sqlalchemy.exc import DBAPIError, OperationalError, IntegrityError
+from src.exceptions.extraction_exceptions import ExtractionError, ExtractionValidationError
+from celery.exceptions import Ignore, Retry
+
+try:
+    result = process_file(file_path)
+except (DBAPIError, OperationalError, IntegrityError) as db_e:
+    logger.error(f"Database error: {db_e}")
+    # Retry database errors with exponential backoff
+    if self.request.retries < self.max_retries:
+        raise self.retry(countdown=60 * (self.request.retries + 1))
+    raise
+except ExtractionValidationError as val_e:
+    logger.error(f"Validation error: {val_e}")
+    # Don't retry validation errors
+    raise Ignore()
+except ExtractionError as ext_e:
+    logger.error(f"Extraction error: {ext_e}")
+    # Retry extraction errors
+    if self.request.retries < self.max_retries:
+        raise self.retry(countdown=60 * (self.request.retries + 1))
+    raise
+except EnvironmentError as env_e:
+    logger.error(f"Environment error: {env_e}")
+    # Don't retry environment errors (missing dependencies)
+    raise Ignore()
+```
+
 ### Configuration
 
 ❌ **Don't**:

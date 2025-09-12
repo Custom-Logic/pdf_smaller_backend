@@ -332,6 +332,42 @@ def test_file_service_error_handling():
     
     with pytest.raises(IOError):
         service.process_upload(b'test_data', 'test.pdf')
+
+# Pattern 4: Mock intelligent exception handling and retry logic
+def test_intelligent_exception_handling():
+    """Test intelligent exception handling with different error types"""
+    from sqlalchemy.exc import OperationalError
+    from src.exceptions.extraction_exceptions import ExtractionValidationError, ExtractionError
+    from celery.exceptions import Ignore, Retry
+    
+    mock_file_service = Mock(spec=FileManagementService)
+    service = CompressionService(file_service=mock_file_service)
+    
+    # Mock the service's request object for retry testing
+    service.request = Mock()
+    service.request.retries = 0
+    service.max_retries = 3
+    
+    # Test database error retry logic
+    with patch.object(service, '_do_processing') as mock_process:
+        mock_process.side_effect = OperationalError("Connection lost", None, None)
+        
+        with pytest.raises(Retry):
+            service.process_with_intelligent_retry({'job_id': 'test'})
+    
+    # Test validation error (no retry)
+    with patch.object(service, '_do_processing') as mock_process:
+        mock_process.side_effect = ExtractionValidationError("Invalid input")
+        
+        with pytest.raises(Ignore):
+            service.process_with_intelligent_retry({'job_id': 'test'})
+    
+    # Test extraction error retry logic
+    with patch.object(service, '_do_processing') as mock_process:
+        mock_process.side_effect = ExtractionError("Processing failed")
+        
+        with pytest.raises(Retry):
+            service.process_with_intelligent_retry({'job_id': 'test'})
 ```
 
 ### External Service Mocking

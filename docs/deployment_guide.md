@@ -153,6 +153,46 @@ file_service = FileManagementService(
 compression_service = CompressionService(file_service=file_service)
 ```
 
+#### Exception Handling Configuration
+
+Configure intelligent exception handling for production environments:
+
+```python
+# production_config.py
+# Exception handling settings
+EXCEPTION_RETRY_SETTINGS = {
+    'database_errors': {
+        'max_retries': 3,
+        'countdown_base': 60,  # seconds
+        'exponential_backoff': True
+    },
+    'extraction_errors': {
+        'max_retries': 2,
+        'countdown_base': 60
+    },
+    'timeout_errors': {
+        'max_retries': 1,
+        'countdown_base': 300  # 5 minutes
+    }
+}
+
+# Non-retryable error types
+NON_RETRYABLE_ERRORS = [
+    'ExtractionValidationError',
+    'EnvironmentError',
+    'FileNotFoundError',
+    'PermissionError'
+]
+
+# Error logging configuration
+ERROR_LOGGING = {
+    'log_level': 'ERROR',
+    'include_traceback': True,
+    'log_job_context': True,
+    'sentry_integration': True
+}
+```
+
 #### Environment Variables for File Management
 
 ```bash
@@ -833,6 +873,43 @@ health_response=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/a
 if [ $health_response -ne 200 ]; then
     echo "WARNING: Health check failed with status $health_response"
 fi
+
+# Check error rates
+error_count=$(tail -1000 /var/log/pdfsmaller/app.log | grep -c "ERROR")
+retry_count=$(tail -1000 /var/log/pdfsmaller/celery.log | grep -c "Retry")
+
+echo "Recent Errors: $error_count"
+echo "Recent Retries: $retry_count"
+
+# Alert on high error rates
+if [ "$error_count" -gt 50 ]; then
+    echo "HIGH ERROR RATE: $error_count errors detected" | \
+        mail -s "PDF Smaller High Error Rate" admin@example.com
+fi
+```
+
+#### Exception Monitoring
+```bash
+#!/bin/bash
+# /usr/local/bin/exception_monitor.sh
+
+# Monitor exception patterns
+echo "=== Exception Summary (Last Hour) ==="
+grep "$(date -d '1 hour ago' '+%Y-%m-%d %H')" /var/log/pdfsmaller/app.log | \
+    grep -E "(ExtractionError|ValidationError|DatabaseError|TimeoutError)" | \
+    awk '{print $NF}' | sort | uniq -c | sort -nr
+
+# Check retry patterns
+echo "\n=== Retry Patterns ==="
+grep "Retry" /var/log/pdfsmaller/celery.log | tail -20 | \
+    grep -oE "(DatabaseError|ExtractionError|TimeoutError)" | sort | uniq -c
+
+# Alert on high error rates
+error_rate=$(grep "$(date '+%Y-%m-%d %H')" /var/log/pdfsmaller/app.log | grep -c "ERROR")
+if [ "$error_rate" -gt 100 ]; then
+    echo "HIGH ERROR RATE: $error_rate errors in the last hour" | \
+        mail -s "PDF Smaller High Error Rate" admin@example.com
+fi
 ```
 
 Add to crontab:
@@ -856,6 +933,9 @@ sudo -u pdfsmaller /var/app/pdfsmaller/venv/bin/python -c "from app import app; 
 
 # Check database
 sudo -u pdfsmaller /var/app/pdfsmaller/venv/bin/python manage_db.py status
+
+# Verify exception handling configuration
+sudo -u pdfsmaller /var/app/pdfsmaller/venv/bin/python -c "from config import EXCEPTION_RETRY_SETTINGS; print(EXCEPTION_RETRY_SETTINGS)"
 ```
 
 #### 2. Celery Workers Not Processing Jobs
@@ -868,6 +948,9 @@ redis-cli ping
 
 # Monitor celery logs
 sudo tail -f /var/log/pdfsmaller/celery-worker.log
+
+# Monitor retry patterns
+grep "Retry" /var/log/pdfsmaller/celery.log | tail -20
 ```
 
 #### 3. File Upload Issues
@@ -880,6 +963,9 @@ df -h /var/app
 
 # Check nginx configuration
 sudo nginx -t
+
+# Verify FileManagementService initialization
+grep "FileManagementService" /var/log/pdfsmaller/app.log | tail -10
 ```
 
 #### 4. High Memory Usage
@@ -892,6 +978,24 @@ redis-cli info memory
 
 # Check for memory leaks in application
 sudo -u pdfsmaller /var/app/pdfsmaller/venv/bin/python -c "import psutil; print(f'Memory: {psutil.virtual_memory().percent}%')"
+
+# Monitor exception handling overhead
+grep "Max retries exceeded" /var/log/pdfsmaller/celery.log | wc -l
+```
+
+#### 5. Exception Handling Issues
+```bash
+# Check exception hierarchy imports
+sudo -u pdfsmaller /var/app/pdfsmaller/venv/bin/python -c "from src.exceptions import *; print('Exception imports OK')"
+
+# Monitor retry loops
+grep "Max retries exceeded" /var/log/pdfsmaller/celery.log
+
+# Verify non-retryable errors are properly ignored
+grep "ValidationError" /var/log/pdfsmaller/celery.log | grep -v "Retry"
+
+# Test intelligent retry logic
+curl -f http://localhost:5000/api/health
 ```
 
 ### Performance Optimization

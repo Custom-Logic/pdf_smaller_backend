@@ -372,13 +372,36 @@ uploads/
 }
 ```
 
+### Exception Handling Strategy
+
+The system implements intelligent exception handling with specific exception types:
+
+**Database Exceptions**:
+- `DBAPIError`, `OperationalError`, `IntegrityError` for database operations
+- Automatic retry with exponential backoff for transient database issues
+- Proper cleanup and status updates on database failures
+
+**Service-Specific Exceptions**:
+- `ExtractionError`: Retryable extraction failures
+- `ExtractionValidationError`: Non-retryable validation failures
+- `ExportError`, `FormatError`: Export and format-related errors
+- `EnvironmentError`: System environment issues (e.g., missing Ghostscript)
+- `TimeoutError`: Processing timeout failures
+
+**Celery Exception Handling**:
+- `Ignore()`: Used for non-retryable errors (validation, environment)
+- `Retry()`: Used for transient errors with exponential backoff
+- `Reject()`: Used for malformed tasks
+
 ### Error Handling Best Practices
 
-- Always log errors with context
-- Provide meaningful error messages
-- Clean up resources on errors
-- Update job status appropriately
-- Never expose internal system details
+- Use specific exception types instead of generic `Exception`
+- Implement intelligent retry logic based on error type
+- Always log errors with context and job information
+- Provide meaningful error messages to users
+- Clean up resources on errors using centralized file service
+- Update job status appropriately with specific error details
+- Never expose internal system details in user-facing messages
 
 ## Scalability Considerations
 
