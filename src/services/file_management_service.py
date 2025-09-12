@@ -11,6 +11,7 @@ into a unified service that handles all file-related operations including:
 import os
 import uuid
 import logging
+import zipfile
 from datetime import datetime, timedelta
 from typing import Tuple, List, Dict, Any, Optional
 from pathlib import Path
@@ -218,6 +219,64 @@ class FileManagementService:
             logger.error(f"Error checking download availability for job {job_id}: {str(e)}")
             return False
     
+    # ========================= ARCHIVE OPERATIONS =========================
+    
+    def create_result_archive(self, processed_files: List[Dict[str, Any]], job_id: str) -> str:
+        """Create a ZIP archive of processed files and return the archive path
+        
+        Args:
+            processed_files: List of processed file dictionaries containing file info
+            job_id: Job identifier for naming the archive
+            
+        Returns:
+            Path to the created archive file
+            
+        Raises:
+            Exception: If archive creation fails
+        """
+        try:
+            # Create archive filename with job ID
+            archive_filename = f"processed_files_{job_id}.zip"
+            archive_path = os.path.join(self.upload_folder, archive_filename)
+            
+            # Create ZIP archive
+            with zipfile.ZipFile(archive_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for file_info in processed_files:
+                    # Get file path from the processed file info
+                    file_path = file_info.get('output_path') or file_info.get('file_path')
+                    if not file_path or not os.path.exists(file_path):
+                        logger.warning(f"Skipping missing file: {file_path}")
+                        continue
+                    
+                    # Get original filename or create one from file info
+                    original_filename = file_info.get('original_filename') or file_info.get('filename')
+                    if not original_filename:
+                        # Generate filename from path
+                        original_filename = os.path.basename(file_path)
+                    
+                    # Add file to archive with original filename
+                    zipf.write(file_path, original_filename)
+                    logger.debug(f"Added file to archive: {original_filename}")
+            
+            # Verify archive was created successfully
+            if not os.path.exists(archive_path):
+                raise Exception("Archive file was not created")
+            
+            archive_size = os.path.getsize(archive_path)
+            logger.info(f"Created result archive for job {job_id}: {archive_path} ({archive_size} bytes)")
+            
+            return archive_path
+            
+        except Exception as e:
+            logger.error(f"Error creating result archive for job {job_id}: {str(e)}")
+            # Clean up partial archive if it exists
+            if 'archive_path' in locals() and os.path.exists(archive_path):
+                try:
+                    os.remove(archive_path)
+                except:
+                    pass
+            raise
+    
     # ========================= CLEANUP OPERATIONS =========================
     
     def cleanup_old_files(self, max_age_hours: int = None) -> Dict[str, Any]:
@@ -351,19 +410,11 @@ class FileManagementService:
             Statistics dictionary
         """
         try:
-            stats = {
-                'total_jobs': 0,
-                'expired_jobs': 0,
-                'estimated_space_to_free_mb': 0,
-                'jobs_by_status': {},
-                'jobs_by_age': {},
-                'upload_folder_size_mb': 0,
-                'upload_folder_file_count': 0
-            }
+            stats = {'total_jobs': Job.query.count(), 'expired_jobs': 0, 'estimated_space_to_free_mb': 0,
+                     'jobs_by_status': {}, 'jobs_by_age': {}, 'upload_folder_size_mb': 0, 'upload_folder_file_count': 0}
             
             # Get total job count
-            stats['total_jobs'] = Job.query.count()
-            
+
             # Get job counts by status
             status_counts = db.session.query(
                 Job.status,

@@ -15,8 +15,6 @@ from src.utils.error_handlers import register_error_handlers
 from src.utils.scheduler import start_background_scheduler
 
 
-import sentry_sdk
-
 def create_app(config_name=None, config_override=None):
     """
     Application factory function with enhanced configuration management
@@ -29,12 +27,21 @@ def create_app(config_name=None, config_override=None):
         Flask: Configured Flask application instance
     """
 
-    sentry_sdk.init(
-        dsn="https://ad33a061c36eab16eaba8e51bb76e4f9@o544206.ingest.us.sentry.io/4509991179124736",
-        # Add data like request headers and IP for users,
-        # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
-        send_default_pii=True,
-    )
+    # Initialize Sentry only in production/staging environments
+    if config_name not in ['development', 'testing'] and not (config_override and getattr(config_override, 'TESTING', False)):
+        try:
+            import sentry_sdk
+            sentry_sdk.init(
+                dsn="https://ad33a061c36eab16eaba8e51bb76e4f9@o544206.ingest.us.sentry.io/4509991179124736",
+                # Add data like request headers and IP for users,
+                # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
+                send_default_pii=True,
+            )
+            logging.info("Sentry SDK initialized for production environment")
+        except ImportError:
+            logging.warning("Sentry SDK not available, continuing without error monitoring")
+    else:
+        logging.info("Sentry SDK skipped for development/testing environment")
     # Create Flask application
     app = Flask(__name__)
     

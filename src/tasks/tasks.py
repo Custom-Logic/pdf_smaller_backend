@@ -11,13 +11,14 @@ from celery import current_task
 from src.celery_app import get_celery_app
 
 # Get the Celery app instance
+from flask import current_app
 celery_app = get_celery_app()
 from src.config.config import Config
 from src.models import Job, JobStatus
 from src.models.base import db
 # TODO all services could just be imported from src.services
 from src.services.ai_service import AIService
-from src.services.bulk_compression_service import BulkCompressionService
+
 from src.services.compression_service import CompressionService
 from src.services.conversion_service import ConversionService
 from src.services.ocr_service import OCRService
@@ -36,11 +37,11 @@ from .app_context import *   # noqa: F401,F403  (registers signals)
 logger = logging.getLogger(__name__)
 config = Config()
 
-compression_service = CompressionService(config.UPLOAD_FOLDER)
-conversion_service = ConversionService(config.UPLOAD_FOLDER)
-ocr_service = OCRService(config.UPLOAD_FOLDER)
+compression_service = CompressionService()
+conversion_service = ConversionService()
+ocr_service = OCRService()
 ai_service = AIService()
-bulk_service = BulkCompressionService(config.UPLOAD_FOLDER)
+
 invoice_extraction_service = InvoiceExtractionService()
 bank_statement_extraction_service = BankStatementExtractionService()
 export_service = ExportService()
@@ -157,43 +158,48 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
         result_path = None
         if processed_files:
             try:
-                result_path = bulk_service.create_result_archive(processed_files, job_id)
-                logger.info(f"Created result archive for job {job_id}: {result_path}")
+                # Create archive of processed files and store on disk
+                output_path = compression_service.file_service.create_result_archive(processed_files, job_id)
+                result_data = {
+                    'processed_files': len(processed_files),
+                    'output_path': output_path,
+                    'total_files': total_files,
+                    'errors': errors,
+                    'processed_files_info': processed_files
+                }
+
+                logger.info(f"Created result archive for job {job_id}: {output_path}")
+
+                if errors and not processed_files:
+                    job.mark_as_failed(f"All files failed: {len(errors)} errors")
+                elif errors:
+                    job.mark_as_completed(result=result_data)
+                    job.result['warning'] = f"Completed with {len(errors)} errors"
+                else:
+                    job.mark_as_completed(result=result_data)
+
+                db.session.commit()
+
+                current_task.update_state(
+                    state='SUCCESS',
+                    meta={
+                        'current': total_files,
+                        'total': total_files,
+                        'progress': 100,
+                        'status': 'Bulk compression completed',
+                        'processed_count': len(processed_files),
+                        'error_count': len(errors)
+                    }
+                )
+                logger.info(f"Bulk compression task completed for job {job_id}")
+                return result_data
+
             except Exception as e:
                 logger.error(f"Error creating result archive for job {job_id}: {str(e)}")
                 errors.append({'operation': 'archive_creation', 'error': str(e)})
 
-        result_data = {
-            'processed_files': len(processed_files),
-            'total_files': total_files,
-            'errors': errors,
-            'result_path': result_path,
-            'processed_files_info': processed_files
-        }
 
-        if errors and not processed_files:
-            job.mark_as_failed(f"All files failed: {len(errors)} errors")
-        elif errors:
-            job.mark_as_completed(result=result_data)
-            job.result['warning'] = f"Completed with {len(errors)} errors"
-        else:
-            job.mark_as_completed(result=result_data)
 
-        db.session.commit()
-
-        current_task.update_state(
-            state='SUCCESS',
-            meta={
-                'current': total_files,
-                'total': total_files,
-                'progress': 100,
-                'status': 'Bulk compression completed',
-                'processed_count': len(processed_files),
-                'error_count': len(errors)
-            }
-        )
-        logger.info(f"Bulk compression task completed for job {job_id}")
-        return result_data
 
     except Exception as e:
         logger.error(f"Error in bulk compression task {job_id}: {str(e)}")
@@ -409,14 +415,9 @@ def ocr_process_task(
 
 
 @celery_app.task(bind=True, name="tasks.ocr_preview_task", max_retries=2)
-def ocr_preview_task(
-    self,
-    job_id: str,
-    file_data: bytes,
-    options: Dict[str, Any],
-) -> Dict[str, Any]:
+def ocr_preview_task(self,job_id: str,file_data: bytes,options: Dict[str, Any]) -> Dict[str, Any]:
     """OCR preview – context-safe, uniform payload."""
-    from flask import current_app
+
 
     try:
         with current_app.app_context():

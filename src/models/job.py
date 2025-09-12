@@ -35,10 +35,30 @@ class Job(BaseModel):
     error = db.Column(db.Text)  # Error message if job failed
 
     def __init__(self, task_type=None, input_data=None, job_id=None):
+        super().__init__()
         self.job_id = job_id  # Now required since it's the primary key
         self.task_type = task_type
         self.input_data = input_data or {}
         self.status = JobStatus.PENDING.value
+
+    @property
+    def task_type_is_compression(self):
+        """Check if job is a compression task"""
+        return self.task_type == TaskType.COMPRESS.value
+    @property
+    def task_type_is_conversion(self):
+        """Check if job is a conversion task"""
+        return self.task_type == TaskType.CONVERT.value
+
+    @property
+    def task_type_is_ocr(self):
+        """Check if job is an OCR task"""
+        return self.task_type == TaskType.OCR.value
+
+    @property
+    def task_type_is_ai(self):
+        """Check if job is an AI task"""
+        return self.task_type == TaskType.AI.value
 
     def mark_as_processing(self):
         """Mark job as currently processing"""
@@ -51,7 +71,7 @@ class Job(BaseModel):
         self.updated_at = datetime.now(timezone.utc)
         if result:
             self.result = result
-    
+
     def mark_as_failed(self, error=None):
         """Mark job as failed with optional error message"""
         self.status = JobStatus.FAILED.value

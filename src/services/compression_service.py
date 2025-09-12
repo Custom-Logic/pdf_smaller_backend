@@ -2,7 +2,7 @@ import logging
 import os
 import subprocess
 import tempfile
-from unittest import result
+
 import uuid
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -18,9 +18,8 @@ class CompressionService:
 
     def __init__(self, file_service: Optional[FileManagementService] = None):
         self.file_service = file_service or FileManagementService()
+        self._service_available = os.path.exists(self.GHOSTSCRIPT_BINARY)
         # Verify Ghostscript exists at startup
-        if not os.path.exists(self.GHOSTSCRIPT_BINARY):
-            raise EnvironmentError(f"Ghostscript binary not found at {self.GHOSTSCRIPT_BINARY}")
 
     def process_file_data(self, file_data: bytes, settings: Dict[str, Any], original_filename: str = None) -> Dict[str, Any]:
         """Process file data and save result to persistent location"""
@@ -86,6 +85,8 @@ class CompressionService:
             'high': '/ebook',
             'maximum': '/screen'
         }
+        if not self._service_available:
+            raise EnvironmentError(message="Ghost Script not available")
 
         gs_setting = compression_settings.get(compression_level, '/default')
 
@@ -164,7 +165,7 @@ class CompressionService:
             db.session.add(job)
             db.session.commit()
             
-            logger.info(f"Created compression job {job_id} (client_job_id: {client_job_id})")
+            logger.info(f"Created compression job {job_id} (client_job_id: {job_id})")
             return job
             
         except Exception as e:
@@ -177,49 +178,44 @@ class CompressionService:
         Process a compression job synchronously
         """
         try:
-            job:Job = Job.query.get(job_id)
+            job = Job.query().filter_by(job_id=job_id).first()
+
             if not job:
                 raise ValueError(f"Job {job_id} not found")
-            
-            if job.task_type != 'compress':
+
+            if not job.task_type_is_compression:
                 raise ValueError(f"Job {job_id} is not a compression job")
-            
+
             # Update job status
             job.mark_as_processing()
             db.session.commit()
-            
+
             # Get job data
             input_data = job.input_data
             settings = input_data.get('settings', {})
             file_size = input_data.get('file_size', 0)
             original_filename = input_data.get('original_filename')
-            
-            # Note: In async processing, file_data would be retrieved from storage
-            # For this synchronous version, we assume the file data is available elsewhere
-            # or the job was created with all necessary data
-            
+
             # Create temporary directory
             with tempfile.TemporaryDirectory() as temp_dir:
                 # For demonstration - in real implementation, file_data would be passed
                 # or retrieved from a temporary storage
                 input_path = os.path.join(temp_dir, f"input_{job_id}.pdf")
                 output_path = os.path.join(temp_dir, f"compressed_{job_id}.pdf")
-                
+
                 # Extract compression settings
                 compression_level = settings.get('compression_level', 'medium')
                 image_quality = settings.get('image_quality', 80)
-                
+
                 # Perform compression (in real implementation, use actual file_data)
                 self.compress_pdf(input_path, output_path, compression_level, image_quality)
-                
+
                 # Get compressed size
-                compressed_size = get_file_size(output_path)
-                
+                compressed_size = self.file_service.get_file_size(output_path)
+
                 # Calculate compression ratio
                 compression_ratio = ((file_size - compressed_size) / file_size) * 100
-                
-                # Update job with results                
-                job.mark_as_completed(result={
+                result = {
                     'original_size': file_size,
                     'compressed_size': compressed_size,
                     'compression_ratio': compression_ratio,
@@ -227,16 +223,18 @@ class CompressionService:
                     'image_quality': image_quality,
                     'original_filename': original_filename,
                     'output_path': output_path
-                })
+                }
+                # Update job with results                
+                job.mark_as_completed(result=result)
                 db.session.commit()
-                
+
                 return job.result
-                
+
         except Exception as e:
             if 'job' in locals():
                 job.mark_as_failed(error=str(e))
                 db.session.commit()
-            
+
             logger.error(f"Error processing compression job {job_id}: {str(e)}")
             raise
 
