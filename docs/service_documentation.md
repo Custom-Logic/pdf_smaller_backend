@@ -523,9 +523,13 @@ def get_available_models(self) -> List[Dict[str, Any]]:
 - Anthropic (direct)
 
 **Available Models**:
-- GPT-4 Turbo, GPT-4, GPT-3.5 Turbo
-- Claude-3 Opus, Sonnet, Haiku
-- Gemini Pro, Mistral Large, Llama-3 70B
+- **DeepSeek V3 Models**: deepseek-v3, deepseek-v3-free, deepseek-chat, deepseek-coder, deepseek-r1 (and distilled variants)
+- **Moonshot K2 Models**: moonshot-k2-free, moonshot-k2-premium, moonshot-v1-8k/32k/128k
+- **OpenAI Models**: GPT-4 Turbo, GPT-4, GPT-3.5 Turbo
+- **Anthropic Models**: Claude-3 Opus, Sonnet, Haiku
+- **Other Models**: Gemini Pro, Mistral Large, Llama-3 70B
+
+**Default Model**: `deepseek/deepseek-v3-free` (cost-effective option)
 
 ### ConversionService
 

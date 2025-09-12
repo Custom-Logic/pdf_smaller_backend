@@ -2,6 +2,7 @@ import logging
 import os
 import subprocess
 import tempfile
+from unittest import result
 import uuid
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -176,7 +177,7 @@ class CompressionService:
         Process a compression job synchronously
         """
         try:
-            job = Job.query.get(job_id)
+            job:Job = Job.query.get(job_id)
             if not job:
                 raise ValueError(f"Job {job_id} not found")
             
@@ -184,7 +185,7 @@ class CompressionService:
                 raise ValueError(f"Job {job_id} is not a compression job")
             
             # Update job status
-            job.status = JobStatus.PROCESSING
+            job.mark_as_processing()
             db.session.commit()
             
             # Get job data
@@ -217,8 +218,8 @@ class CompressionService:
                 # Calculate compression ratio
                 compression_ratio = ((file_size - compressed_size) / file_size) * 100
                 
-                # Update job with results
-                job.result = {
+                # Update job with results                
+                job.mark_as_completed(result={
                     'original_size': file_size,
                     'compressed_size': compressed_size,
                     'compression_ratio': compression_ratio,
@@ -226,16 +227,14 @@ class CompressionService:
                     'image_quality': image_quality,
                     'original_filename': original_filename,
                     'output_path': output_path
-                }
-                job.status = JobStatus.COMPLETED
+                })
                 db.session.commit()
                 
                 return job.result
                 
         except Exception as e:
             if 'job' in locals():
-                job.status = JobStatus.FAILED
-                job.error = str(e)
+                job.mark_as_failed(error=str(e))
                 db.session.commit()
             
             logger.error(f"Error processing compression job {job_id}: {str(e)}")

@@ -39,6 +39,65 @@ Created comprehensive refactoring specification for standardizing file managemen
 
 **Estimated Timeline**: 7-14 days total implementation
 
+### 2025-01-11: AI Service Model Updates
+
+**Task Executed**: Updated AI Service to include DeepSeek and Moonshot models
+
+**Files Modified**:
+- `src/services/ai_service.py` - Added DeepSeek and Moonshot models to supported models list
+- `.env.example` - Added OpenRouter AI configuration with DeepSeek as default model
+
+**Status**: ✅ **COMPLETED**
+
+**Summary**:
+Updated the AI service to include the requested DeepSeek models (including free variants) and Moonshot models:
+
+**DeepSeek Models Added**:
+- deepseek/deepseek-chat (set as new default)
+- deepseek/deepseek-coder
+- deepseek/deepseek-r1
+- deepseek/deepseek-r1-distill-llama-70b
+- deepseek/deepseek-r1-distill-qwen-32b
+- deepseek/deepseek-r1-distill-qwen-14b
+- deepseek/deepseek-r1-distill-qwen-7b
+- deepseek/deepseek-r1-distill-qwen-1.5b
+
+**Moonshot Models Added**:
+- moonshot/moonshot-v1-8k
+- moonshot/moonshot-v1-32k
+- moonshot/moonshot-v1-128k
+
+**Configuration Updates**:
+- Changed default model from `openai/gpt-3.5-turbo` to `deepseek/deepseek-v3-free`
+- Added comprehensive OpenRouter configuration to `.env.example`
+- Organized model list with clear categorization and comments
+
+### 2025-01-11: AI Service Model Updates (Additional)
+
+**Task Executed**: Added Moonshot K2 and DeepSeek V3 models as requested
+
+**Files Modified**:
+- `src/services/ai_service.py` - Added DeepSeek V3 and Moonshot K2 models
+- `.env.example` - Updated default model to DeepSeek V3 free
+
+**Status**: ✅ **COMPLETED**
+
+**Summary**:
+Added the latest model variants as requested in the TODO comment:
+
+**New DeepSeek V3 Models**:
+- deepseek/deepseek-v3 (premium)
+- deepseek/deepseek-v3-free (new default)
+
+**New Moonshot K2 Models**:
+- moonshot/moonshot-k2-free
+- moonshot/moonshot-k2-premium
+
+**Updated Configuration**:
+- Changed default model to `deepseek/deepseek-v3-free` for cost optimization
+- Restored all previously removed model variants
+- Maintained comprehensive model categorization
+
 ---
 
 ## Project Overview

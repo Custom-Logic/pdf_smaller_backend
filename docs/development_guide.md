@@ -11,12 +11,13 @@
 7. [Database Management](#database-management)
 8. [API Development](#api-development)
 9. [Service Layer Guidelines](#service-layer-guidelines)
-10. [Error Handling](#error-handling)
-11. [Security Best Practices](#security-best-practices)
-12. [Performance Considerations](#performance-considerations)
-13. [Contribution Guidelines](#contribution-guidelines)
-14. [Common Pitfalls](#common-pitfalls)
-15. [Troubleshooting](#troubleshooting)
+10. [AI Service Configuration](#ai-service-configuration)
+11. [Error Handling](#error-handling)
+12. [Security Best Practices](#security-best-practices)
+13. [Performance Considerations](#performance-considerations)
+14. [Contribution Guidelines](#contribution-guidelines)
+15. [Common Pitfalls](#common-pitfalls)
+16. [Troubleshooting](#troubleshooting)
 
 ## Getting Started
 
@@ -395,6 +396,221 @@ class CompressionService:
 3. **Error Handling**: Use custom exceptions for business logic errors
 4. **Logging**: Log important operations and errors
 5. **Configuration**: Use configuration objects, not global variables
+
+## AI Service Configuration
+
+### Overview
+
+The AI Service provides document processing capabilities including summarization and translation using various AI models through OpenRouter.
+
+### Configuration
+
+#### Environment Variables
+
+Configure AI service in your `.env` file:
+
+```bash
+# OpenRouter Configuration
+OPENROUTER_API_KEY=sk-or-v1-your-api-key-here
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_DEFAULT_MODEL=deepseek/deepseek-v3-free
+OPENROUTER_MAX_TOKENS=4000
+OPENROUTER_TIMEOUT=30
+OPENROUTER_REFERER=https://www.pdfsmaller.site
+OPENROUTER_TITLE=PDF Smaller
+```
+
+#### Available Models
+
+The AI service supports multiple model providers through OpenRouter:
+
+**DeepSeek Models** (Cost-effective):
+- `deepseek/deepseek-v3` - Latest DeepSeek model
+- `deepseek/deepseek-v3-free` - Free tier (default)
+- `deepseek/deepseek-chat` - Optimized for conversations
+- `deepseek/deepseek-coder` - Code-focused model
+- `deepseek/deepseek-r1` - Reasoning-focused model
+
+**Moonshot Models** (Good balance):
+- `moonshot/moonshot-k2-free` - Free tier
+- `moonshot/moonshot-k2-premium` - Premium version
+- `moonshot/moonshot-v1-32k` - 32K context window
+- `moonshot/moonshot-v1-128k` - 128K context window
+
+**OpenAI Models**:
+- `openai/gpt-4-turbo` - Latest GPT-4
+- `openai/gpt-3.5-turbo` - Most affordable OpenAI option
+
+**Anthropic Models**:
+- `anthropic/claude-3-haiku` - Fastest and most affordable
+- `anthropic/claude-3-sonnet` - Balanced performance
+- `anthropic/claude-3-opus` - Highest capability
+
+### Usage Examples
+
+#### Basic Service Usage
+
+```python
+from src.services.ai_service import AIService
+
+# Initialize service (uses environment configuration)
+ai_service = AIService()
+
+# Check available models
+models = ai_service.get_available_models()
+print(f"Available models: {len(models['openrouter'])}")
+
+# Test connectivity
+status = ai_service.test_connectivity()
+if status['success']:
+    print("AI service is ready")
+else:
+    print(f"AI service error: {status['error']}")
+```
+
+#### Document Summarization
+
+```python
+# Prepare summarization job
+job_data = {
+    'job_id': 'summary-123',
+    'file_path': '/path/to/document.pdf',
+    'style': 'professional',  # concise, detailed, academic, casual, professional
+    'model': 'deepseek/deepseek-v3-free',  # Optional: override default
+    'provider': 'openrouter'
+}
+
+# Process summarization
+result = ai_service.process_summarization_job(job_data)
+
+if result['success']:
+    print(f"Summary: {result['summary']}")
+    print(f"Word count: {result['metadata']['word_count']}")
+else:
+    print(f"Error: {result['error']}")
+```
+
+#### Document Translation
+
+```python
+# Prepare translation job
+job_data = {
+    'job_id': 'translate-456',
+    'file_path': '/path/to/document.pdf',
+    'target_language': 'es',  # Spanish
+    'quality': 'balanced',  # fast, balanced, high_quality
+    'preserve_formatting': True,
+    'model': 'moonshot/moonshot-v1-32k',  # Good for longer documents
+    'provider': 'openrouter'
+}
+
+# Process translation
+result = ai_service.process_translation_job(job_data)
+
+if result['success']:
+    print(f"Translated text: {result['translated_text']}")
+    print(f"Source language detected: {result['metadata']['source_language']}")
+else:
+    print(f"Error: {result['error']}")
+```
+
+### Model Selection Guidelines
+
+#### Cost Considerations
+
+```python
+# Get cost guidance from ModelConfig
+from src.services.ai_service import ModelConfig
+
+model_config = ModelConfig()
+cost_info = model_config.estimate_cost_considerations()
+
+# Most cost-effective options
+print("Most cost-effective:", cost_info['most_cost_effective'])
+# Best value for capability
+print("Best value:", cost_info['best_value'])
+# Premium options
+print("Premium capability:", cost_info['premium_capability'])
+```
+
+#### Task-Specific Recommendations
+
+- **Quick summaries**: `deepseek/deepseek-v3-free`, `anthropic/claude-3-haiku`
+- **Long documents**: `moonshot/moonshot-v1-128k`, `openai/gpt-4-turbo`
+- **Technical content**: `deepseek/deepseek-coder`, `deepseek/deepseek-r1`
+- **High accuracy**: `anthropic/claude-3-opus`, `openai/gpt-4-turbo`
+
+### Error Handling
+
+```python
+from src.services.ai_service import AIService
+from src.utils.exceptions import AIServiceError
+
+try:
+    ai_service = AIService()
+    result = ai_service.process_summarization_job(job_data)
+except AIServiceError as e:
+    logger.error(f"AI service error: {e}")
+    # Handle AI-specific errors (API limits, model unavailable, etc.)
+except Exception as e:
+    logger.error(f"Unexpected error: {e}")
+    # Handle general errors
+```
+
+### Best Practices
+
+1. **Model Selection**: Choose models based on task requirements and cost constraints
+2. **Error Handling**: Always handle API failures gracefully
+3. **Rate Limiting**: Respect API rate limits and implement backoff strategies
+4. **Monitoring**: Monitor API usage and costs
+5. **Fallbacks**: Consider fallback models for high availability
+6. **Caching**: Cache results when appropriate to reduce API calls
+
+### Testing AI Service
+
+```python
+import pytest
+from unittest.mock import Mock, patch
+from src.services.ai_service import AIService
+
+class TestAIService:
+    """Test cases for AI Service."""
+    
+    @patch('requests.post')
+    def test_summarization_success(self, mock_post):
+        """Test successful summarization."""
+        # Mock API response
+        mock_response = Mock()
+        mock_response.json.return_value = {
+            'choices': [{
+                'message': {
+                    'content': '{"summary": "Test summary", "word_count": 50}'
+                }
+            }]
+        }
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+        
+        # Test service
+        service = AIService()
+        result = service.process_summarization_job({
+            'job_id': 'test-job',
+            'text': 'Test document content',
+            'style': 'concise'
+        })
+        
+        assert result['success'] is True
+        assert 'summary' in result
+    
+    def test_connectivity(self):
+        """Test AI service connectivity."""
+        service = AIService()
+        status = service.test_connectivity()
+        
+        # Should return status dict with success field
+        assert 'success' in status
+        assert 'timestamp' in status
+```
 
 ## Error Handling
 

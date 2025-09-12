@@ -291,6 +291,11 @@ paths:
                   enum: [openrouter, openai, anthropic]
                   default: openrouter
                   description: AI provider to use
+                model:
+                  type: string
+                  enum: [deepseek/deepseek-v3, deepseek/deepseek-v3-free, deepseek/deepseek-chat, deepseek/deepseek-coder, deepseek/deepseek-r1, moonshot/moonshot-k2-free, moonshot/moonshot-k2-premium, moonshot/moonshot-v1-8k, moonshot/moonshot-v1-32k, moonshot/moonshot-v1-128k, openai/gpt-4-turbo, openai/gpt-4, openai/gpt-3.5-turbo, anthropic/claude-3-opus, anthropic/claude-3-sonnet, anthropic/claude-3-haiku, google/gemini-pro, mistral/mistral-large, meta/llama-3-70b]
+                  default: deepseek/deepseek-v3-free
+                  description: Specific AI model to use for summarization
               required:
                 - file
       responses:
@@ -344,6 +349,11 @@ paths:
                   enum: [openrouter, openai, anthropic]
                   default: openrouter
                   description: AI provider to use
+                model:
+                  type: string
+                  enum: [deepseek/deepseek-v3, deepseek/deepseek-v3-free, deepseek/deepseek-chat, deepseek/deepseek-coder, deepseek/deepseek-r1, moonshot/moonshot-k2-free, moonshot/moonshot-k2-premium, moonshot/moonshot-v1-8k, moonshot/moonshot-v1-32k, moonshot/moonshot-v1-128k, openai/gpt-4-turbo, openai/gpt-4, openai/gpt-3.5-turbo, anthropic/claude-3-opus, anthropic/claude-3-sonnet, anthropic/claude-3-haiku, google/gemini-pro, mistral/mistral-large, meta/llama-3-70b]
+                  default: deepseek/deepseek-v3-free
+                  description: Specific AI model to use for translation
               required:
                 - file
                 - targetLanguage

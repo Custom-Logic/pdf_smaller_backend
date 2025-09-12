@@ -109,6 +109,25 @@ The application environment is determined by the `FLASK_ENV` variable:
 | `METRICS_ENABLED` | `false` | Enable metrics collection | `true` |
 | `SENTRY_DSN` | `None` | Sentry error tracking DSN | `https://...@sentry.io/...` |
 
+### AI Configuration (OpenRouter)
+
+| Variable | Default | Description | Example |
+|----------|---------|-------------|----------|
+| `OPENROUTER_API_KEY` | *Required* | OpenRouter API key for AI services | `sk-or-v1-...` |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | OpenRouter API base URL | `https://openrouter.ai/api/v1` |
+| `OPENROUTER_DEFAULT_MODEL` | `deepseek/deepseek-v3-free` | Default AI model for processing | `moonshot/moonshot-k2-premium` |
+| `OPENROUTER_MAX_TOKENS` | `4000` | Maximum tokens per AI request | `8000` |
+| `OPENROUTER_TIMEOUT` | `30` | API request timeout (seconds) | `60` |
+| `OPENROUTER_REFERER` | `https://www.pdfsmaller.site` | HTTP referer for API requests | `https://yourdomain.com` |
+| `OPENROUTER_TITLE` | `PDF Smaller` | Application title for API requests | `Your App Name` |
+
+**Available Models:**
+- **DeepSeek V3**: `deepseek/deepseek-v3`, `deepseek/deepseek-v3-free`, `deepseek/deepseek-chat`, `deepseek/deepseek-coder`, `deepseek/deepseek-r1`
+- **Moonshot K2**: `moonshot/moonshot-k2-free`, `moonshot/moonshot-k2-premium`, `moonshot/moonshot-v1-8k`, `moonshot/moonshot-v1-32k`, `moonshot/moonshot-v1-128k`
+- **OpenAI**: `openai/gpt-4-turbo`, `openai/gpt-4`, `openai/gpt-3.5-turbo`
+- **Anthropic**: `anthropic/claude-3-opus`, `anthropic/claude-3-sonnet`, `anthropic/claude-3-haiku`
+- **Other**: `google/gemini-pro`, `mistral/mistral-large`, `meta/llama-3-70b`
+
 ## Environment-Specific Configurations
 
 ### Development Environment
@@ -155,6 +174,15 @@ LOG_FILE=dev.log
 # Monitoring
 HEALTH_CHECK_ENABLED=true
 METRICS_ENABLED=false
+
+# AI Configuration (OpenRouter)
+OPENROUTER_API_KEY=your-openrouter-api-key-here
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_DEFAULT_MODEL=deepseek/deepseek-v3-free
+OPENROUTER_MAX_TOKENS=4000
+OPENROUTER_TIMEOUT=30
+OPENROUTER_REFERER=http://localhost:3000
+OPENROUTER_TITLE=PDF Smaller Dev
 ```
 
 ### Testing Environment
@@ -193,6 +221,15 @@ LOG_FILE=test.log
 # Monitoring
 HEALTH_CHECK_ENABLED=true
 METRICS_ENABLED=false
+
+# AI Configuration (OpenRouter) - Use test API key or mock
+OPENROUTER_API_KEY=test-api-key-or-mock
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_DEFAULT_MODEL=deepseek/deepseek-v3-free
+OPENROUTER_MAX_TOKENS=1000
+OPENROUTER_TIMEOUT=10
+OPENROUTER_REFERER=http://localhost:3000
+OPENROUTER_TITLE=PDF Smaller Test
 ```
 
 ### Production Environment
@@ -253,6 +290,15 @@ LOG_BACKUP_COUNT=5
 HEALTH_CHECK_ENABLED=true
 METRICS_ENABLED=true
 SENTRY_DSN=https://your-sentry-dsn@sentry.io/project-id
+
+# AI Configuration (OpenRouter)
+OPENROUTER_API_KEY=your-production-openrouter-api-key
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_DEFAULT_MODEL=deepseek/deepseek-v3-free
+OPENROUTER_MAX_TOKENS=4000
+OPENROUTER_TIMEOUT=30
+OPENROUTER_REFERER=https://www.pdfsmaller.site
+OPENROUTER_TITLE=PDF Smaller
 ```
 
 ## Security Considerations

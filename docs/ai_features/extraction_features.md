@@ -4,7 +4,7 @@ This document provides comprehensive information about the AI-powered document e
 
 ## Overview
 
-The PDF Suite Backend now includes advanced AI extraction services that can automatically extract structured data from invoices and bank statements. These services leverage OpenAI's GPT models to intelligently parse and extract relevant information from PDF documents.
+The PDF Suite Backend now includes advanced AI extraction services that can automatically extract structured data from invoices and bank statements. These services leverage multiple AI providers through OpenRouter, including DeepSeek, Moonshot, OpenAI, and Anthropic models to intelligently parse and extract relevant information from PDF documents.
 
 ## Supported Document Types
 
@@ -22,7 +22,7 @@ The PDF Suite Backend now includes advanced AI extraction services that can auto
 
 ### Core Capabilities
 - **Intelligent Text Recognition**: Advanced OCR and text extraction from PDF documents
-- **AI-Powered Parsing**: Uses GPT models to understand document structure and extract relevant data
+- **AI-Powered Parsing**: Uses advanced AI models (DeepSeek, Moonshot, GPT, Claude) to understand document structure and extract relevant data
 - **Data Validation**: Validates extracted data for completeness and accuracy
 - **Multiple Export Formats**: Export extracted data in JSON, CSV, or Excel formats
 - **Async Processing**: Non-blocking processing with real-time job status updates
@@ -269,10 +269,14 @@ GET /api/pdf-suite/extract/bank-statement/capabilities
 ### Environment Variables
 
 ```bash
-# AI Service Configuration
-OPENAI_API_KEY=your_openai_api_key
-OPENAI_MODEL=gpt-4
-OPENAI_MAX_TOKENS=4000
+# AI Service Configuration (OpenRouter)
+OPENROUTER_API_KEY=sk-or-v1-your-api-key-here
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_DEFAULT_MODEL=deepseek/deepseek-v3-free
+OPENROUTER_MAX_TOKENS=4000
+OPENROUTER_TIMEOUT=30
+OPENROUTER_REFERER=https://www.pdfsmaller.site
+OPENROUTER_TITLE=PDF Smaller
 
 # Extraction Service Configuration
 EXTRACTION_MAX_FILE_SIZE=10485760  # 10MB
@@ -298,11 +302,50 @@ class Config:
     EXPORT_MAX_RECORDS = 10000
     EXPORT_FORMATS = ['json', 'csv', 'excel']
     
-    # AI Model Settings
-    OPENAI_MODEL = 'gpt-4'
-    OPENAI_MAX_TOKENS = 4000
-    OPENAI_TEMPERATURE = 0.1
+    # AI Model Settings (OpenRouter)
+    OPENROUTER_DEFAULT_MODEL = 'deepseek/deepseek-v3-free'
+    OPENROUTER_MAX_TOKENS = 4000
+    OPENROUTER_TIMEOUT = 30
+    OPENROUTER_TEMPERATURE = 0.1
 ```
+
+### Available AI Models
+
+The extraction service supports multiple AI models through OpenRouter:
+
+**DeepSeek Models** (Cost-effective, recommended for most extractions):
+- `deepseek/deepseek-v3` - Latest DeepSeek model with high accuracy
+- `deepseek/deepseek-v3-free` - Free tier, excellent for basic extractions (default)
+- `deepseek/deepseek-chat` - Optimized for conversational understanding
+- `deepseek/deepseek-coder` - Enhanced for technical document processing
+- `deepseek/deepseek-r1` - Advanced reasoning for complex document structures
+
+**Moonshot Models** (Good balance of cost and capability):
+- `moonshot/moonshot-k2-free` - Free tier with good performance
+- `moonshot/moonshot-k2-premium` - Premium version with enhanced accuracy
+- `moonshot/moonshot-v1-32k` - 32K context window for longer documents
+- `moonshot/moonshot-v1-128k` - 128K context window for very large documents
+
+**OpenAI Models** (High accuracy, higher cost):
+- `openai/gpt-4-turbo` - Latest GPT-4 with excellent extraction capabilities
+- `openai/gpt-3.5-turbo` - Most affordable OpenAI option
+
+**Anthropic Models** (Excellent for complex documents):
+- `anthropic/claude-3-haiku` - Fastest and most affordable Claude model
+- `anthropic/claude-3-sonnet` - Balanced performance and cost
+- `anthropic/claude-3-opus` - Highest capability for complex extractions
+
+### Model Selection Guidelines
+
+**For Invoice Extraction:**
+- **Simple invoices**: `deepseek/deepseek-v3-free`, `moonshot/moonshot-k2-free`
+- **Complex invoices**: `deepseek/deepseek-v3`, `anthropic/claude-3-sonnet`
+- **High accuracy required**: `openai/gpt-4-turbo`, `anthropic/claude-3-opus`
+
+**For Bank Statement Extraction:**
+- **Standard statements**: `deepseek/deepseek-v3-free`, `moonshot/moonshot-k2-premium`
+- **Multi-page statements**: `moonshot/moonshot-v1-128k`, `openai/gpt-4-turbo`
+- **Complex formats**: `deepseek/deepseek-r1`, `anthropic/claude-3-opus`
 
 ## Performance Considerations
 

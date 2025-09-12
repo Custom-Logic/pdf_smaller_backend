@@ -30,6 +30,153 @@ class TranslationQuality(Enum):
     FAST = "fast"
     BALANCED = "balanced"
     HIGH_QUALITY = "high_quality"
+from enum import Enum
+
+class AIProvider(Enum):
+    OPENROUTER = "openrouter"
+
+class TaskType(Enum):
+    SUMMARIZATION = "summarization"
+    PDF_EXTRACTION = "pdf_text_extraction"
+    BANK_STATEMENT_EXTRACTION = "bank_statement_extraction"
+    INVOICE_EXTRACTION = "invoice_extraction"
+
+class ModelConfig:
+    def __init__(self):
+        # Supported models focused on cost-effectiveness and capability
+        self.supported_models = {
+            AIProvider.OPENROUTER: [
+                # DeepSeek models (generally more cost-effective)
+                "deepseek/deepseek-v3",
+                "deepseek/deepseek-chat",
+                "deepseek/deepseek-r1",
+                "deepseek/deepseek-r1-distill-llama-70b",
+                "deepseek/deepseek-r1-distill-qwen-32b",
+                "deepseek/deepseek-r1-distill-qwen-14b",
+                
+                # Moonshot models (good balance of cost and capability)
+                "moonshot/moonshot-k2-premium",  # Better than free version
+                "moonshot/moonshot-v1-32k",      # Good context window
+                "moonshot/moonshot-v1-128k",     # Best for long documents
+                
+                # OpenAI's more affordable options (compared to GPT-4 Turbo)
+                "openai/gpt-3.5-turbo",          # Most affordable OpenAI option
+                
+                # Anthropic's cost-effective option
+                "anthropic/claude-3-haiku",      # Fastest and most affordable Claude
+                
+                # Other capable and relatively affordable models
+                "google/gemini-pro",             # Good multimodal capabilities
+                "meta/llama-3-70b"              # Strong open-weight option
+            ]
+        }
+        
+        # Task-specific model preferences with cost considerations
+        # Ordered by recommendation priority (considering capability and cost)
+        self.task_preferences = {
+            TaskType.SUMMARIZATION: [
+                "deepseek/deepseek-v3",          # Strong summarization at lower cost
+                "moonshot/moonshot-v1-128k",     # Long context for document summarization
+                "anthropic/claude-3-haiku",      # Fast and affordable
+                "openai/gpt-3.5-turbo",          # Cost-effective
+                "google/gemini-pro"              # Good alternative
+            ],
+            TaskType.PDF_EXTRACTION: [
+                "google/gemini-pro",             # Native multimodal support
+                "moonshot/moonshot-v1-128k",     # Long context for full PDF processing
+                "deepseek/deepseek-r1",          # Strong reasoning for complex extraction
+                "anthropic/claude-3-haiku",      # Affordable with decent capabilities
+                "openai/gpt-3.5-turbo"           # Budget option (may need OCR preprocessing)
+            ],
+            TaskType.BANK_STATEMENT_EXTRACTION: [
+                "deepseek/deepseek-r1",          # Strong reasoning for structured data
+                "google/gemini-pro",             # Good with financial documents
+                "moonshot/moonshot-v1-128k",     # Long context for detailed statements
+                "anthropic/claude-3-haiku",      # Affordable option
+                "openai/gpt-3.5-turbo"           # Most budget-friendly
+            ],
+            TaskType.INVOICE_EXTRACTION: [
+                "google/gemini-pro",             # Specifically tested for invoice extraction
+                "deepseek/deepseek-r1",          # Strong reasoning for field extraction
+                "moonshot/moonshot-v1-32k",      # Good for standard invoices
+                "anthropic/claude-3-haiku",      # Affordable alternative
+                "openai/gpt-3.5-turbo"           # Budget option
+            ]
+        }
+        
+        # Cost efficiency tiers (for general guidance)
+        self.cost_tiers = {
+            "high_cost": ["openai/gpt-4-turbo", "openai/gpt-4", "anthropic/claude-3-opus"],
+            "medium_cost": ["anthropic/claude-3-sonnet", "google/gemini-pro", "mistral/mistral-large"],
+            "low_cost": [
+                "openai/gpt-3.5-turbo", 
+                "anthropic/claude-3-haiku",
+                "deepseek/deepseek-v3",
+                "deepseek/deepseek-chat",
+                "moonshot/moonshot-k2-premium",
+                "moonshot/moonshot-v1-32k",
+                "meta/llama-3-70b"
+            ]
+        }
+    
+    def get_recommended_models(self, task_type, consider_cost=True):
+        """
+        Get recommended models for a specific task type
+        consider_cost: If True, prioritizes cost-effective options
+        """
+        if not consider_cost:
+            return self.task_preferences.get(task_type, [])
+        
+        # Return cost-aware recommendations (already built into task_preferences)
+        return self.task_preferences.get(task_type, [])
+    
+    def get_cost_efficient_models(self, task_type=None):
+        """
+        Get the most cost-efficient models overall or for a specific task
+        """
+        if task_type:
+            # Return the first two recommendations (most cost-effective capable)
+            return self.task_preferences.get(task_type, [])[:2]
+        else:
+            # Return generally cost-effective models across all tasks
+            return [
+                "deepseek/deepseek-v3",
+                "openai/gpt-3.5-turbo", 
+                "anthropic/claude-3-haiku",
+                "moonshot/moonshot-v1-32k",
+                "google/gemini-pro"
+            ]
+    
+    def get_all_supported_models(self, provider):
+        """Get all supported models for a provider"""
+        return self.supported_models.get(provider, [])
+    
+    def is_model_supported(self, provider, model_name):
+        """Check if a model is supported for a provider"""
+        return model_name in self.supported_models.get(provider, [])
+    
+    def estimate_cost_considerations(self):
+        """
+        Provide general cost guidance based on model capabilities
+        """
+        return {
+            "most_cost_effective": [
+                "openai/gpt-3.5-turbo",
+                "anthropic/claude-3-haiku", 
+                "deepseek/deepseek-v3"
+            ],
+            "best_value": [
+                "google/gemini-pro",  # Good capabilities at reasonable cost
+                "moonshot/moonshot-v1-128k",  # Long context good for documents
+                "deepseek/deepseek-r1"  # Strong reasoning for complex tasks
+            ],
+            "premium_capability": [
+                "openai/gpt-4-turbo",
+                "anthropic/claude-3-opus",
+                "anthropic/claude-3-sonnet"
+            ]
+        }
+
 
 class AIService:
     """Service for AI-powered features using OpenRouter AI - Job-Oriented"""
@@ -39,25 +186,12 @@ class AIService:
             'en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'ja', 'ko', 'zh', 'ar', 'hi'
         ]
         
+        # Initialize ModelConfig for intelligent model selection
+        self.model_config = ModelConfig()
+        
         # Load OpenRouter configuration
         self.config = self._load_config()
         self.api_clients = self._initialize_api_clients()
-        
-        # Supported models through OpenRouter
-        self.supported_models = {
-            # TODO - please use deepseek models, including free variants and moonshot models.
-            AIProvider.OPENROUTER: [
-                "openai/gpt-4-turbo",
-                "openai/gpt-4",
-                "openai/gpt-3.5-turbo",
-                "anthropic/claude-3-opus",
-                "anthropic/claude-3-sonnet",
-                "anthropic/claude-3-haiku",
-                "google/gemini-pro",
-                "mistral/mistral-large",
-                "meta/llama-3-70b"
-            ]
-        }
     
     def _load_config(self) -> Dict[str, Any]:
         """Load AI service configuration with OpenRouter"""
@@ -65,7 +199,7 @@ class AIService:
             'openrouter': {
                 'api_key': os.getenv('OPENROUTER_API_KEY', ''),
                 'base_url': os.getenv('OPENROUTER_BASE_URL', 'https://openrouter.ai/api/v1'),
-                'default_model': os.getenv('OPENROUTER_DEFAULT_MODEL', 'openai/gpt-3.5-turbo'),
+                'default_model': os.getenv('OPENROUTER_DEFAULT_MODEL', 'deepseek/deepseek-v3-free'),
                 'max_tokens': int(os.getenv('OPENROUTER_MAX_TOKENS', '4000')),
                 'timeout': int(os.getenv('OPENROUTER_TIMEOUT', '30'))
             }
@@ -195,12 +329,17 @@ class AIService:
             }
     
     def _prepare_summary_request(self, text: str, options: Dict[str, Any]) -> Dict[str, Any]:
-        """Prepare structured summarization request"""
+        """Prepare structured summarization request using ModelConfig"""
         style = SummaryStyle(options.get('style', SummaryStyle.CONCISE.value))
         max_length = options.get('maxLength', 'medium')
         include_key_points = options.get('includeKeyPoints', True)
         language = options.get('language', 'en')
-        model = options.get('model', self.config['openrouter']['default_model'])
+        
+        # Use ModelConfig to get recommended model for summarization
+        model = options.get('model')
+        if not model:
+            recommended_models = self.model_config.get_recommended_models(TaskType.SUMMARIZATION)
+            model = recommended_models[0] if recommended_models else self.config['openrouter']['default_model']
         
         # Build structured prompt
         prompt = self._build_structured_summary_prompt(style, max_length, include_key_points, language)
@@ -217,10 +356,15 @@ class AIService:
         }
     
     def _prepare_translation_request(self, text: str, target_language: str, options: Dict[str, Any]) -> Dict[str, Any]:
-        """Prepare structured translation request"""
+        """Prepare structured translation request using ModelConfig"""
         quality = TranslationQuality(options.get('quality', TranslationQuality.BALANCED.value))
         preserve_formatting = options.get('preserveFormatting', True)
-        model = options.get('model', self.config['openrouter']['default_model'])
+        
+        # Use ModelConfig to get recommended model for translation (using summarization as proxy)
+        model = options.get('model')
+        if not model:
+            recommended_models = self.model_config.get_recommended_models(TaskType.SUMMARIZATION)
+            model = recommended_models[0] if recommended_models else self.config['openrouter']['default_model']
         
         return {
             'text': text,
@@ -547,31 +691,32 @@ class AIService:
             }
     
     def get_available_models(self) -> List[Dict[str, Any]]:
-        """Get list of available AI models"""
+        """Get list of available AI models using ModelConfig"""
         models = []
         
-        for provider, model_list in self.supported_models.items():
-            for model in model_list:
-                models.append({
-                    'id': model,
-                    'provider': provider.value,
-                    'name': model.split('/')[-1].replace('-', ' ').title(),
-                    'capabilities': ['summarize', 'translate']
-                })
+        # Get all supported models from ModelConfig
+        model_list = self.model_config.get_all_supported_models(AIProvider.OPENROUTER)
+        
+        for model in model_list:
+            models.append({
+                'id': model,
+                'provider': AIProvider.OPENROUTER.value,
+                'name': model.split('/')[-1].replace('-', ' ').title(),
+                'capabilities': ['summarize', 'translate']
+            })
         
         return models
     
     def get_model_info(self, model_id: str) -> Dict[str, Any]:
-        """Get information about a specific model"""
-        for provider, model_list in self.supported_models.items():
-            if model_id in model_list:
-                return {
-                    'id': model_id,
-                    'provider': provider.value,
-                    'available': True,
-                    'max_tokens': self.config['openrouter']['max_tokens'],
-                    'supports_json': True
-                }
+        """Get information about a specific model using ModelConfig"""
+        if self.model_config.is_model_supported(AIProvider.OPENROUTER, model_id):
+            return {
+                'id': model_id,
+                'provider': AIProvider.OPENROUTER.value,
+                'available': True,
+                'max_tokens': self.config['openrouter']['max_tokens'],
+                'supports_json': True
+            }
         
         return {
             'id': model_id,
@@ -632,8 +777,48 @@ class AIService:
             }
 
 
+    def get_recommended_models_for_task(self, task_type: str, consider_cost: bool = True) -> List[str]:
+        """Get recommended models for a specific task type using ModelConfig"""
+        try:
+            # Map string task types to TaskType enum
+            task_mapping = {
+                'summarization': TaskType.SUMMARIZATION,
+                'summarize': TaskType.SUMMARIZATION,
+                'pdf_extraction': TaskType.PDF_EXTRACTION,
+                'bank_statement_extraction': TaskType.BANK_STATEMENT_EXTRACTION,
+                'invoice_extraction': TaskType.INVOICE_EXTRACTION
+            }
+            
+            task_enum = task_mapping.get(task_type.lower())
+            if not task_enum:
+                return self.model_config.get_cost_efficient_models()
+            
+            return self.model_config.get_recommended_models(task_enum, consider_cost)
+        except Exception as e:
+            logger.warning(f"Error getting recommended models: {str(e)}")
+            return [self.config['openrouter']['default_model']]
+    
+    def get_cost_efficient_models(self, task_type: str = None) -> List[str]:
+        """Get cost-efficient models using ModelConfig"""
+        try:
+            if task_type:
+                task_mapping = {
+                    'summarization': TaskType.SUMMARIZATION,
+                    'summarize': TaskType.SUMMARIZATION,
+                    'pdf_extraction': TaskType.PDF_EXTRACTION,
+                    'bank_statement_extraction': TaskType.BANK_STATEMENT_EXTRACTION,
+                    'invoice_extraction': TaskType.INVOICE_EXTRACTION
+                }
+                task_enum = task_mapping.get(task_type.lower())
+                return self.model_config.get_cost_efficient_models(task_enum)
+            else:
+                return self.model_config.get_cost_efficient_models()
+        except Exception as e:
+            logger.warning(f"Error getting cost-efficient models: {str(e)}")
+            return [self.config['openrouter']['default_model']]
+    
     def extract_text_from_pdf_data(self, pdf_data: Any):
         """
-            Use AI to Extrat Text from PDF Documenta
+            Use AI to Extract Text from PDF Documents
         """
         pass
