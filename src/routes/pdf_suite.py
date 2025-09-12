@@ -17,7 +17,20 @@ from src.services.conversion_service import ConversionService
 from src.services.ocr_service import OCRService
 from src.services.invoice_extraction_service import InvoiceExtractionService
 from src.services.bank_statement_extraction_service import BankStatementExtractionService
+from src.services.file_management_service import FileManagementService
 from src.utils.response_helpers import success_response, error_response
+from src.utils.security_utils import get_file_and_validate
+from src.tasks.tasks import (
+    convert_pdf_task,
+    conversion_preview_task,
+    ocr_process_task,
+    ocr_preview_task,
+    ai_summarize_task,
+    ai_translate_task,
+    extract_text_task,
+    extract_invoice_task,
+    extract_bank_statement_task
+)
 
 # Initialize blueprint
 pdf_suite_bp = Blueprint('pdf_suite', __name__)
@@ -34,45 +47,7 @@ bank_statement_extraction_service = BankStatementExtractionService()
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# File upload configuration
-ALLOWED_EXTENSIONS = {
-    'conversion': {'pdf'},
-    'ocr': {'pdf', 'png', 'jpg', 'jpeg', 'tiff', 'bmp'},
-    'ai': {'pdf'},
-    'extraction': {'pdf'},
-}
-
-MAX_FILE_SIZES = {
-    'conversion': 100 * 1024 * 1024,  # 100MB
-
-    'ocr': 50 * 1024 * 1024,          # 50MB
-    'ai': 25 * 1024 * 1024            # 25MB
-}
-
-def allowed_file(filename, feature_type):
-    """Check if file extension is allowed for the feature"""
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS.get(feature_type, set())
-
-def get_file_and_validate(feature_type, max_size_mb=None):
-    """Helper function to get and validate uploaded file"""
-    if 'file' not in request.files:
-        return None, error_response(message="No file provided", status_code=400)
-
-    file = request.files['file']
-    if file.filename == '':
-        return None, error_response(message="No file selected", status_code=400)
-
-    if not allowed_file(file.filename, feature_type):
-        allowed = ', '.join(ALLOWED_EXTENSIONS.get(feature_type, set()))
-        return None, error_response(message=f"Invalid file type. Allowed: {allowed}", status_code=400)
-
-    max_size = MAX_FILE_SIZES.get(feature_type, 25 * 1024 * 1024)
-    if file.content_length and file.content_length > max_size:
-        size_mb = max_size // (1024 * 1024)
-        return None, error_response(message=f"File too large. Maximum size is {size_mb}MB.", status_code=400)
-
-    return file, None
+# Note: File validation logic moved to src.utils.security_utils for centralization
 
 # ============================================================================
 # CONVERSION ROUTES (Job-Oriented)
@@ -108,7 +83,6 @@ def convert_pdf():
 
         # Enqueue conversion task using .delay() pattern
         try:
-            from src.tasks.tasks import convert_pdf_task
             task = convert_pdf_task.delay(
                 job_id,
                 file_data,
@@ -156,7 +130,6 @@ def get_conversion_preview():
         file_data = file.read()
 
         # Enqueue conversion preview task using .delay() pattern
-        from src.tasks.tasks import conversion_preview_task
         task = conversion_preview_task.delay(
             job_id,
             file_data,
@@ -202,7 +175,6 @@ def process_ocr():
         file_data = file.read()
 
         # Enqueue OCR task using .delay() pattern
-        from src.tasks.tasks import ocr_process_task
         task = ocr_process_task.delay(
             job_id=job_id,
             file_data=file_data,
@@ -242,7 +214,6 @@ def get_ocr_preview():
         file_data = file.read()
 
         # Enqueue OCR preview task using .delay() pattern
-        from src.tasks.tasks import ocr_preview_task
         task = ocr_preview_task.delay(
             job_id,
             file_data,
@@ -284,7 +255,6 @@ def summarize_pdf():
 
 
         # Enqueue AI summarization task using .delay() pattern
-        from src.tasks.tasks import ai_summarize_task
         task = ai_summarize_task.delay(
             job_id,
             text,
@@ -322,13 +292,11 @@ def translate_text():
 
 
         # Enqueue AI translation task using .delay() pattern
-        from src.tasks.tasks import ai_translate_task
         task = ai_translate_task.delay(
             job_id,
             text,
             target_language,
-            options,
-
+            options
         )
 
         logger.info(f"AI translation job {job_id} enqueued (task_id: {task.id})")
@@ -361,7 +329,6 @@ def extract_text():
         file_data = file.read()
 
         # Enqueue text extraction task using .delay() pattern
-        from src.tasks.tasks import extract_text_task
         task = extract_text_task.delay(
             job_id,
             file_data,
@@ -404,12 +371,10 @@ def extract_invoice():
         job_id = request.form.get('job_id', str(uuid.uuid4()))
         
         # Save file temporarily
-        from src.services.file_management_service import FileManagementService
         file_service = FileManagementService()
         file_path = file_service.save_file(file, job_id)
 
         # Enqueue invoice extraction task using .delay() pattern
-        from src.tasks.tasks import extract_invoice_task
         task = extract_invoice_task.delay(
             job_id,
             file_path,
@@ -463,12 +428,10 @@ def extract_bank_statement():
         job_id = request.form.get('job_id', str(uuid.uuid4()))
         
         # Save file temporarily
-        from src.services.file_management_service import FileManagementService
         file_service = FileManagementService()
         file_path = file_service.save_file(file, job_id)
 
         # Enqueue bank statement extraction task using .delay() pattern
-        from src.tasks.tasks import extract_bank_statement_task
         task = extract_bank_statement_task.delay(
             job_id,
             file_path,

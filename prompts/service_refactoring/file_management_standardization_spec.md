@@ -2,7 +2,7 @@
 
 ## Overview
 
-This specification outlines the refactoring plan to standardize file handling across all services in the PDF processing backend. The goal is to replace direct file operations with the unified `FileManagementService`, deprecate the legacy `FileManager` class, and establish consistent patterns for file management throughout the application.
+This specification outlines the refactoring plan to standardize file handling across all services in the PDF processing backend. The goal is to replace direct file operations with the unified `FileManagementService`, deprecate the legacy `FileManagementService` class, and establish consistent patterns for file management throughout the application.
 
 ## Current State Analysis
 
@@ -84,7 +84,7 @@ cleanup_temp_files() -> Dict[str, Any]
 - Manual error cleanup
 - No integration with job-based retention policies
 
-#### 5. FileManager (Legacy - To Be Deprecated)
+#### 5. FileManagementService (Legacy - To Be Deprecated)
 **Location**: `src/services/file_manager.py`
 **Status**: ⚠️ Legacy service - to be deprecated
 
@@ -211,15 +211,15 @@ def __init__(self, file_service: FileManagementService = None):
     self.file_service = file_service or FileManagementService()
 ```
 
-### Phase 4: FileManager Deprecation
+### Phase 4: FileManagementService Deprecation
 
 **Files to Update**:
 - `src/services/file_manager.py` - Add deprecation warnings
-- All files importing FileManager - Update to use FileManagementService
+- All files importing FileManagementService - Update to use FileManagementService
 - Test files - Update or mark as legacy
 
 **Deprecation Strategy**:
-1. Add deprecation warnings to all FileManager methods
+1. Add deprecation warnings to all FileManagementService methods
 2. Update documentation to point to FileManagementService
 3. Create migration guide for existing code
 4. Schedule removal for future version
@@ -273,7 +273,7 @@ def test_service_with_mock_file_service():
 
 1. **Constructor Compatibility**: New constructors should maintain backward compatibility where possible
 2. **Gradual Migration**: Services can be updated incrementally
-3. **Legacy Support**: FileManager remains available with deprecation warnings
+3. **Legacy Support**: FileManagementService remains available with deprecation warnings
 4. **Test Updates**: Update tests to use new patterns while maintaining coverage
 
 ### Rollout Plan
@@ -281,7 +281,7 @@ def test_service_with_mock_file_service():
 1. **Phase 1**: Update OCRService (lowest risk)
 2. **Phase 2**: Update ConversionService 
 3. **Phase 3**: Update CompressionService (highest complexity)
-4. **Phase 4**: Deprecate FileManager and update remaining references
+4. **Phase 4**: Deprecate FileManagementService and update remaining references
 5. **Phase 5**: Update all tests and documentation
 
 ### Validation Criteria
@@ -318,7 +318,7 @@ def test_service_with_mock_file_service():
 - Test coverage maintained or improved
 - Performance benchmarks show no regression
 - All file operations go through FileManagementService
-- Legacy FileManager usage eliminated
+- Legacy FileManagementService usage eliminated
 - Documentation updated and accurate
 
 ---

@@ -1,0 +1,18 @@
+{
+  "description": "Template configuration for this project. See https://www.codebuff.com/config for all options.",
+  "startupProcesses": [
+    {
+      "name": "celery-worker",
+      "command": "python celery_worker.py",
+      "enabled": true,
+      "stdoutFile": "logs/celery-worker.log"
+    },
+    {
+      "name": "celery-beat",
+      "command": "python celery_beat.py",
+      "enabled": true,
+      "stdoutFile": "logs/celery-beat.log"
+    }
+  ],
+  "fileChangeHooks": []
+}

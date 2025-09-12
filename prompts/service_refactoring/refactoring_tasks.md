@@ -237,7 +237,7 @@ compressed_size = get_file_size(output_path)
 compressed_size = self.file_service._get_file_size(output_path)
 ```
 
-## Phase 4: FileManager Deprecation
+## Phase 4: FileManagementService Deprecation
 
 ### Task 4.1: Add Deprecation Warnings
 
@@ -251,7 +251,7 @@ import warnings
 ```python
 def save_file(self, file_data: bytes, original_filename: str = None) -> Tuple[str, str]:
     warnings.warn(
-        "FileManager is deprecated. Use FileManagementService instead.",
+        "FileManagementService is deprecated. Use FileManagementService instead.",
         DeprecationWarning,
         stacklevel=2
     )
@@ -267,7 +267,7 @@ def save_file(self, file_data: bytes, original_filename: str = None) -> Tuple[st
 
 **Search for**:
 ```python
-from src.services.file_manager import FileManager
+from src.services.file_manager import FileManagementService
 ```
 
 **Replace with**:
@@ -279,7 +279,7 @@ from src.services.file_management_service import FileManagementService
 
 **Search and replace patterns**:
 - `file_manager` → `file_service`
-- `FileManager()` → `FileManagementService()`
+- `FileManagementService()` → `FileManagementService()`
 - `.file_manager` → `.file_service`
 
 ## Phase 5: Test Updates

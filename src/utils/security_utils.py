@@ -18,24 +18,84 @@ THREAT_TRACKING = {
 }
 
 
-def validate_file(file) -> Optional[str]:
-    """Enhanced file validation with security scanning"""
+# File upload configuration for different features
+ALLOWED_EXTENSIONS = {
+    'compression': {'pdf'},
+    'conversion': {'pdf'},
+    'ocr': {'pdf', 'png', 'jpg', 'jpeg', 'tiff', 'bmp'},
+    'ai': {'pdf'},
+    'extraction': {'pdf'},
+    'default': {'pdf'}
+}
+
+MAX_FILE_SIZES = {
+    'compression': 100 * 1024 * 1024,  # 100MB
+    'conversion': 100 * 1024 * 1024,   # 100MB
+    'ocr': 50 * 1024 * 1024,           # 50MB
+    'ai': 25 * 1024 * 1024,            # 25MB
+    'extraction': 100 * 1024 * 1024,   # 100MB
+    'default': 100 * 1024 * 1024       # 100MB
+}
+
+def get_file_and_validate(feature_type: str = 'default'):
+    """Helper function to get and validate uploaded file from request
+    
+    Args:
+        feature_type: The type of feature (compression, conversion, ocr, ai, extraction)
+        
+    Returns:
+        Tuple of (file, error_response) - file is None if validation fails
+    """
+    from flask import request
+    from src.utils.response_helpers import error_response
+    
+    if 'file' not in request.files:
+        return None, error_response(message="No file provided", status_code=400)
+
+    file = request.files['file']
+    
+    # Validate the file
+    validation_error = validate_file(file, feature_type)
+    if validation_error:
+        return None, error_response(message=validation_error, status_code=400)
+    
+    return file, None
+
+
+def validate_file(file, feature_type: str = 'default') -> Optional[str]:
+    """Enhanced file validation with security scanning for different feature types
+    
+    Args:
+        file: The uploaded file object
+        feature_type: The type of feature (compression, conversion, ocr, ai, extraction)
+        
+    Returns:
+        None if valid, error message string if invalid
+    """
     if not file or file.filename == '':
         return 'No file selected'
     
+    # Get allowed extensions and max size for this feature type
+    allowed_extensions = ALLOWED_EXTENSIONS.get(feature_type, ALLOWED_EXTENSIONS['default'])
+    max_size = MAX_FILE_SIZES.get(feature_type, MAX_FILE_SIZES['default'])
+    
     # Basic filename validation
-    allowed_extensions = {'pdf'}
-    if '.' not in file.filename or \
-       file.filename.rsplit('.', 1)[1].lower() not in allowed_extensions:
-        return 'Invalid file type. Only PDF files are allowed.'
+    if '.' not in file.filename:
+        return 'Invalid file format'
+        
+    file_extension = file.filename.rsplit('.', 1)[1].lower()
+    if file_extension not in allowed_extensions:
+        allowed_list = ', '.join(sorted(allowed_extensions))
+        return f'Invalid file type. Allowed extensions: {allowed_list}'
     
     # Check file size
     file.seek(0, os.SEEK_END)
     file_length = file.tell()
     file.seek(0)  # Reset file pointer
     
-    if file_length > 100 * 1024 * 1024:  # 100MB
-        return 'File too large. Maximum size is 100MB.'
+    if file_length > max_size:
+        size_mb = max_size // (1024 * 1024)
+        return f'File too large. Maximum size is {size_mb}MB.'
     
     if file_length == 0:
         return 'File is empty'

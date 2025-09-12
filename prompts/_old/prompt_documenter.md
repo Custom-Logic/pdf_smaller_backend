@@ -1,11 +1,11 @@
 # File Management Service Documentation Refactoring Prompt
 
 ## Overview
-This prompt provides instructions for refactoring documentation across the codebase to reflect the new `FileManagementService` that combines the functionality of `FileManager` and `CleanupService`.
+This prompt provides instructions for refactoring documentation across the codebase to reflect the new `FileManagementService` that combines the functionality of `FileManagementService` and `CleanupService`.
 
 ## Context
 A new `FileManagementService` has been created at `src/services/file_management_service.py` that:
-- Combines file storage/retrieval functionality from `FileManager`
+- Combines file storage/retrieval functionality from `FileManagementService`
 - Integrates cleanup and retention policies from `CleanupService`
 - Adds file download capabilities for job routes
 - Maintains backward compatibility with existing services
@@ -30,7 +30,7 @@ A new `FileManagementService` has been created at `src/services/file_management_
 
 #### Required Changes:
 - Update file upload/download endpoint documentation
-- Reference `FileManagementService` instead of separate `FileManager`/`CleanupService`
+- Reference `FileManagementService` instead of separate `FileManagementService`/`CleanupService`
 - Update cleanup operation documentation
 - Add new combined service capabilities to API docs
 
@@ -96,10 +96,10 @@ Look for and update these patterns:
 
 ```markdown
 # OLD PATTERNS:
-- "FileManager and CleanupService"
+- "FileManagementService and CleanupService"
 - "file_manager.py and cleanup_service.py"
 - "separate file management services"
-- References to individual FileManager/CleanupService imports
+- References to individual FileManagementService/CleanupService imports
 
 # NEW PATTERNS:
 - "FileManagementService"
@@ -113,10 +113,10 @@ Replace code examples that show:
 
 ```python
 # OLD:
-from src.services.file_manager import FileManager
+from src.services.file_manager import FileManagementService
 from src.services.cleanup_service import CleanupService
 
-file_manager = FileManager()
+file_manager = FileManagementService()
 cleanup_service = CleanupService()
 
 # NEW:
@@ -134,7 +134,7 @@ Modify configuration documentation to reflect:
 ## Implementation Guidelines
 
 ### 1. Backward Compatibility Notes
-- Document that `FileManager` and `CleanupService` are still available
+- Document that `FileManagementService` and `CleanupService` are still available
 - Explain migration path for existing code
 - Provide compatibility examples
 
@@ -153,7 +153,7 @@ Modify configuration documentation to reflect:
 
 After refactoring documentation:
 
-- [ ] All references to separate FileManager/CleanupService are updated
+- [ ] All references to separate FileManagementService/CleanupService are updated
 - [ ] Code examples use FileManagementService
 - [ ] API documentation reflects new service structure
 - [ ] Architecture diagrams show unified service
@@ -195,8 +195,8 @@ docs/changelog/
 Use these search patterns to find files that need updates:
 
 ```bash
-# Find files mentioning FileManager or CleanupService
-grep -r "FileManager\|CleanupService" docs/
+# Find files mentioning FileManagementService or CleanupService
+grep -r "FileManagementService\|CleanupService" docs/
 grep -r "file_manager\|cleanup_service" docs/
 
 # Find files with old import patterns

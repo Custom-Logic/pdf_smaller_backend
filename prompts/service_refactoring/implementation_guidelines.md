@@ -337,14 +337,14 @@ def process_with_streaming(self, file_data: bytes) -> Dict[str, Any]:
 - Memory usage stable under load
 - Error handling and cleanup work correctly
 
-#### Phase 4: FileManager Deprecation (Low Risk)
+#### Phase 4: FileManagementService Deprecation (Low Risk)
 
 **Timeline**: 1-2 days
 **Risk Level**: Low
 **Dependencies**: Phases 1-3 complete
 
 **Steps**:
-1. Add deprecation warnings to FileManager
+1. Add deprecation warnings to FileManagementService
 2. Update remaining imports
 3. Update variable names
 4. Update documentation
@@ -352,7 +352,7 @@ def process_with_streaming(self, file_data: bytes) -> Dict[str, Any]:
 6. Code review and merge
 
 **Validation Criteria**:
-- No FileManager usage in production code
+- No FileManagementService usage in production code
 - All tests pass
 - Deprecation warnings appear correctly
 - Documentation updated
@@ -467,8 +467,8 @@ class ServiceName:
             self.file_service = file_service or FileManagementService()
         else:
             # Fallback to old implementation
-            from src.services.file_manager import FileManager
-            self.file_manager = FileManager()
+            from src.services.file_manager import FileManagementService
+            self.file_manager = FileManagementService()
 ```
 
 ### Success Metrics

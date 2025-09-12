@@ -41,16 +41,35 @@ def make_celery(app=None):
         
         # Task routing
         task_routes={
+            # Compression tasks
             'tasks.compress_task': {'queue': 'compression'},
             'tasks.bulk_compress_task': {'queue': 'compression'},
-            'tasks.convert_pdf_task': {'queue': 'default'},
-            'tasks.conversion_preview_task': {'queue': 'default'},
-            'tasks.ocr_process_task': {'queue': 'default'},
-            'tasks.ocr_preview_task': {'queue': 'default'},
-            'tasks.ai_summarize_task': {'queue': 'default'},
-            'tasks.ai_translate_task': {'queue': 'default'},
-            'tasks.extract_text_task': {'queue': 'default'},
-            'tasks.cleanup_expired_jobs': {'queue': 'cleanup'},
+            
+            # Conversion tasks
+            'tasks.convert_pdf_task': {'queue': 'conversion'},
+            'tasks.conversion_preview_task': {'queue': 'conversion'},
+            
+            # OCR tasks
+            'tasks.ocr_process_task': {'queue': 'ocr'},
+            'tasks.ocr_preview_task': {'queue': 'ocr'},
+            
+            # AI tasks
+            'tasks.ai_summarize_task': {'queue': 'ai'},
+            'tasks.ai_translate_task': {'queue': 'ai'},
+            
+            # Extraction tasks
+            'tasks.extract_text_task': {'queue': 'extraction'},
+            'tasks.extract_invoice_task': {'queue': 'extraction'},
+            'tasks.extract_bank_statement_task': {'queue': 'extraction'},
+            
+            # File management tasks
+            'tasks.merge_pdfs_task': {'queue': 'file_ops'},
+            'tasks.split_pdf_task': {'queue': 'file_ops'},
+            
+            # Maintenance tasks
+            'tasks.cleanup_expired_jobs': {'queue': 'maintenance'},
+            'tasks.cleanup_temp_files_task': {'queue': 'maintenance'},
+            'tasks.health_check_task': {'queue': 'maintenance'},
             'tasks.get_task_status': {'queue': 'default'}
         },
         
@@ -76,6 +95,17 @@ def make_celery(app=None):
                 'task': 'tasks.cleanup_expired_jobs',
                 'schedule': 3600.0,  # Run every hour
                 'options': {'queue': 'cleanup'}
+            },
+            'cleanup-temp-files': {
+                'task': 'tasks.cleanup_temp_files_task',
+                'schedule': 1800.0,  # Run every 30 minutes
+                'options': {'queue': 'maintenance'},
+                'kwargs': {'max_age_hours': 24}
+            },
+            'health-check': {
+                'task': 'tasks.health_check_task',
+                'schedule': 900.0,  # Run every 15 minutes
+                'options': {'queue': 'maintenance'}
             }
         },
     )

@@ -657,7 +657,7 @@ def _cleanup_job_files(job_id):
 ### Temporary File Handling
 
 ```python
-class TemporaryFileManager:
+class TemporaryFileManagementService:
     """Context manager for temporary file handling in tasks"""
     
     def __init__(self, job_id, file_prefix="temp"):
@@ -711,7 +711,7 @@ class TemporaryFileManager:
 # Usage in tasks
 @celery.task(bind=True, base=ContextTask)
 def example_task_with_temp_files(self, job_id):
-    with TemporaryFileManager(job_id, "example") as temp_mgr:
+    with TemporaryFileManagementService(job_id, "example") as temp_mgr:
         temp_file = temp_mgr.create_temp_file(".pdf")
         temp_dir = temp_mgr.create_temp_dir()
         
@@ -1027,7 +1027,7 @@ def new_task_template(self, job_id: str, **kwargs):
         progress.update(0, "Initializing task", stage="initialization")
         
         # 5. Set up temporary file management
-        temp_mgr = TemporaryFileManager(job_id, "new_task")
+        temp_mgr = TemporaryFileManagementService(job_id, "new_task")
         
         # 6. Service instantiation
         service = get_service_instance(RequiredService, **kwargs)
@@ -1192,7 +1192,7 @@ class TestNewTask:
         """Test resource cleanup on task failure"""
         job_id = sample_job.job_id
         
-        with patch('src.tasks.tasks.TemporaryFileManager') as mock_temp_mgr:
+        with patch('src.tasks.tasks.TemporaryFileManagementService') as mock_temp_mgr:
             mock_temp_mgr.return_value.__enter__.return_value.cleanup = Mock()
             
             with patch('src.tasks.tasks.RequiredService') as mock_service:
@@ -1266,7 +1266,7 @@ except ServiceError as e:
 
 ```python
 # Always use context managers for resource management
-with TemporaryFileManager(job_id, task_name) as temp_mgr:
+with TemporaryFileManagementService(job_id, task_name) as temp_mgr:
     temp_file = temp_mgr.create_temp_file(".pdf")
     # Process files...
     # Cleanup happens automatically

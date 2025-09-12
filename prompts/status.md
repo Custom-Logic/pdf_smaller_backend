@@ -33,7 +33,7 @@ This file tracks the execution of prompts and their relationship to specificatio
 **Summary**:
 Created comprehensive refactoring specification for standardizing file management across all services. The specification includes:
 
-- **Current State Analysis**: Documented existing file handling patterns in OCRService, ConversionService, CompressionService, and legacy FileManager
+- **Current State Analysis**: Documented existing file handling patterns in OCRService, ConversionService, CompressionService, and legacy FileManagementService
 - **Target Architecture**: Defined standardized pattern using FileManagementService with dependency injection
 - **Implementation Plan**: 5-phase migration strategy with detailed tasks for each service
 - **Risk Assessment**: Identified risk levels and mitigation strategies for each phase
@@ -44,7 +44,7 @@ Created comprehensive refactoring specification for standardizing file managemen
 - ❌ OCRService (needs refactoring - Low risk)
 - ❌ ConversionService (needs refactoring - Medium risk) 
 - ❌ CompressionService (needs refactoring - High risk)
-- ⚠️ FileManager (legacy - to be deprecated)
+- ⚠️ FileManagementService (legacy - to be deprecated)
 
 **Next Steps**:
 1. Begin Phase 1: OCRService refactoring

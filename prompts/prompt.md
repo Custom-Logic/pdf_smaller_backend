@@ -2,7 +2,7 @@ I have created the following plan after thorough exploration and analysis of the
 
 ### Observations
 
-I analyzed the current service architecture and found that while some services (InvoiceExtractionService, BankStatementExtractionService, ExportService) already use the FileManagementService properly, others (OCRService, ConversionService, CompressionService) handle file operations directly with their own custom methods. There's also a legacy FileManager class that should be replaced. The goal is to standardize all services to use the unified FileManagementService for consistent file handling, cleanup, and management across the entire application.
+I analyzed the current service architecture and found that while some services (InvoiceExtractionService, BankStatementExtractionService, ExportService) already use the FileManagementService properly, others (OCRService, ConversionService, CompressionService) handle file operations directly with their own custom methods. There's also a legacy FileManagementService class that should be replaced. The goal is to standardize all services to use the unified FileManagementService for consistent file handling, cleanup, and management across the entire application.
 
 ### Approach
 
@@ -10,7 +10,7 @@ I will create a comprehensive specification document that outlines the refactori
 
 ### Reasoning
 
-I examined the project structure and identified all services in the `src/services` directory. I analyzed the InvoiceExtractionService and FileManagementService to understand the proper pattern, then examined other services (OCRService, ConversionService, CompressionService, ExportService, BankStatementExtractionService, FileManager) to identify which ones follow the pattern and which need refactoring. I found clear inconsistencies in file handling approaches that need to be standardized.
+I examined the project structure and identified all services in the `src/services` directory. I analyzed the InvoiceExtractionService and FileManagementService to understand the proper pattern, then examined other services (OCRService, ConversionService, CompressionService, ExportService, BankStatementExtractionService, FileManagementService) to identify which ones follow the pattern and which need refactoring. I found clear inconsistencies in file handling approaches that need to be standardized.
 
 ## Proposed File Changes
 
@@ -25,7 +25,7 @@ Create a comprehensive specification document that outlines the refactoring plan
 ## Current State Analysis
 - Document which services already use FileManagementService properly (`InvoiceExtractionService`, `BankStatementExtractionService`, `ExportService`)
 - Identify services that need refactoring (`OCRService`, `ConversionService`, `CompressionService`)
-- Document the legacy `FileManager` class that should be replaced
+- Document the legacy `FileManagementService` class that should be replaced
 
 ## Target Architecture
 - Define the standard pattern: all services should initialize `self.file_service = FileManagementService()` in their `__init__` method
@@ -52,10 +52,10 @@ Create a comprehensive specification document that outlines the refactoring plan
 - Update file size operations to use `self.file_service.get_file_size()`
 - Standardize file path handling through FileManagementService
 
-### FileManager Deprecation
-- Mark the legacy `FileManager` class as deprecated
-- Create migration guide for any code still using FileManager
-- Plan for eventual removal of the FileManager class
+### FileManagementService Deprecation
+- Mark the legacy `FileManagementService` class as deprecated
+- Create migration guide for any code still using FileManagementService
+- Plan for eventual removal of the FileManagementService class
 
 ## Implementation Guidelines
 - Step-by-step refactoring process for each service

@@ -9,6 +9,7 @@ from flask import Blueprint, request, jsonify
 from src.models import db, Job, JobStatus
 from src.utils.security_utils import validate_file
 from src.utils.response_helpers import success_response, error_response
+from src.tasks.tasks import compress_task, bulk_compress_task
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +30,9 @@ def compress_pdf():
         file = request.files['file']
         
         # Validate file
-        validation_error = validate_file(file)
+        validation_error = validate_file(file, 'compression')
         if validation_error:
-            return  error_response(message='Invalid file', errors={'file': [validation_error]}, status_code=400)
+            return error_response(message=validation_error, status_code=400)
 
         # Get compression parameters
         compression_level = request.form.get('compressionLevel', 'medium')
@@ -53,7 +54,6 @@ def compress_pdf():
 
         # Enqueue compression task (async processing)
         try:
-            from src.tasks.tasks import compress_task
             compress_task.delay(job_id, file_data, compression_settings, file.filename)
             logger.info(f"Compression job {job_id} enqueued (job_id: {job_id})")
             
@@ -110,7 +110,7 @@ def bulk_compress():
         original_filenames = []
         
         for file in files:
-            validation_error = validate_file(file)
+            validation_error = validate_file(file, 'compression')
             if validation_error:
                 continue  # Skip invalid files
             file_data_list.append(file.read())
@@ -120,7 +120,6 @@ def bulk_compress():
             return error_response(message='No valid files provided', error_code='NO_VALID_FILES', status_code=400)
 
         # Enqueue bulk compression task
-        from src.tasks.tasks import bulk_compress_task
         bulk_compress_task.delay(
             job_id=job_id,
             file_data_list=file_data_list,

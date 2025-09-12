@@ -25,6 +25,7 @@ from src.services.ocr_service import OCRService
 from src.services.invoice_extraction_service import InvoiceExtractionService
 from src.services.bank_statement_extraction_service import BankStatementExtractionService
 from src.services.export_service import ExportService
+from src.services.file_management_service import FileManagementService
 from src.exceptions.extraction_exceptions import ExtractionError, ExtractionValidationError
 from src.exceptions.export_exceptions import ExportError, FormatError
 
@@ -35,7 +36,8 @@ from celery.exceptions import Retry, WorkerLostError, Ignore, Reject
 # ------------------------------------------------------
 #  IMPORT THE HELPER – keeps context for every task
 # ------------------------------------------------------
-from .app_context import *   # noqa: F401,F403  (registers signals)
+# Context handling is now done via ContextTask class in celery_app.py
+# No imports needed from app_context as it only contains pass
 
 # ------------------------------------------------------
 #  identical initialisation
@@ -51,6 +53,73 @@ ai_service = AIService()
 invoice_extraction_service = InvoiceExtractionService()
 bank_statement_extraction_service = BankStatementExtractionService()
 export_service = ExportService()
+
+# Three-tier error handling configuration
+RETRYABLE_ERRORS = {
+    # Tier 1: Transient errors - retry with exponential backoff
+    'transient': {
+        'exceptions': (DBAPIError, OperationalError, ConnectionError, TimeoutError),
+        'max_retries': 3,
+        'countdown': lambda retry_count: 60 * (2 ** retry_count),  # Exponential backoff
+        'description': 'Database connection issues, network timeouts'
+    },
+    # Tier 2: Resource errors - retry with linear backoff
+    'resource': {
+        'exceptions': (MemoryError, OSError, IOError),
+        'max_retries': 2,
+        'countdown': lambda retry_count: 30 * (retry_count + 1),  # Linear backoff
+        'description': 'Memory issues, file system errors'
+    },
+    # Tier 3: Processing errors - limited retry
+    'processing': {
+        'exceptions': (ExtractionError, RuntimeError),
+        'max_retries': 1,
+        'countdown': lambda retry_count: 120,  # Fixed delay
+        'description': 'Processing failures that might be temporary'
+    }
+}
+
+NON_RETRYABLE_ERRORS = {
+    ExtractionValidationError, ValueError, 
+    TypeError, AttributeError, KeyError
+}
+
+def handle_task_error(task_instance, exc, job_id, job=None):
+    """Centralized error handling for all tasks."""
+    from flask import current_app
+    
+    # Determine error tier and retry strategy
+    error_tier = None
+    for tier_name, tier_config in RETRYABLE_ERRORS.items():
+        if isinstance(exc, tier_config['exceptions']):
+            error_tier = tier_name
+            break
+    
+    # Update job status in database
+    try:
+        with current_app.app_context():
+            if not job:
+                job = Job.query.filter_by(job_id=job_id).first()
+            if job:
+                job.mark_as_failed(str(exc))
+                db.session.commit()
+    except Exception:
+        logger.exception(f"Failed to update job {job_id} status")
+    
+    # Handle non-retryable errors
+    if type(exc) in NON_RETRYABLE_ERRORS:
+        logger.error(f"Non-retryable error in job {job_id}: {exc}")
+        raise Ignore()
+    
+    # Handle retryable errors
+    if error_tier and task_instance.request.retries < RETRYABLE_ERRORS[error_tier]['max_retries']:
+        countdown = RETRYABLE_ERRORS[error_tier]['countdown'](task_instance.request.retries)
+        logger.warning(f"Retrying job {job_id} ({error_tier} error, attempt {task_instance.request.retries + 1}): {exc}")
+        raise task_instance.retry(countdown=countdown, exc=exc)
+    
+    # Max retries exceeded or unknown error
+    logger.error(f"Task failed permanently for job {job_id}: {exc}")
+    raise exc
 
 # ------------------------------------------------------
 #  helper – unchanged
@@ -673,8 +742,8 @@ def cleanup_expired_jobs(self) -> Dict[str, Any]:
         cleaned_count = error_count = total_size_freed = 0
         for job in expired_jobs:
             try:
-                job_size = _cleanup_job_files(job)
-                total_size_freed += job_size
+                job_size_mb = FileManagementService._cleanup_job_files(job)
+                total_size_freed += job_size_mb
                 cleaned_count += 1
                 db.session.delete(job)
                 logger.info(f"Cleaned up expired job {job.job_id}")
@@ -695,26 +764,7 @@ def cleanup_expired_jobs(self) -> Dict[str, Any]:
         current_task.update_state(state='FAILURE', meta={'error': str(e)})
         raise
 
-def _cleanup_job_files(job: Job) -> int:
-    """Clean up files associated with a job – identical behaviour."""
-    total_size = 0
-    try:
-        if job.result and 'output_path' in job.result:
-            result_path = job.result['output_path']
-            if os.path.exists(result_path):
-                total_size += os.path.getsize(result_path)
-                os.remove(result_path)
-                logger.debug(f"Removed result file: {result_path}")
-
-        if job.result and 'temp_files' in job.result:
-            for temp_file in job.result['temp_files']:
-                if os.path.exists(temp_file):
-                    total_size += os.path.getsize(temp_file)
-                    os.remove(temp_file)
-                    logger.debug(f"Removed temp file: {temp_file}")
-    except Exception as e:
-        logger.error(f"Error cleaning up files for job {job.job_id}: {str(e)}")
-    return total_size
+# _cleanup_job_files function removed - use FileManagementService._cleanup_job_files instead
 
 @celery_app.task(bind=True, name='tasks.get_task_status')
 def get_task_status(self, task_id: str) -> Dict[str, Any]:
@@ -908,6 +958,284 @@ def extract_invoice_task(self, job_id: str, file_path: str, extraction_options: 
             logger.info(f"Retrying invoice extraction job {job_id} (attempt {self.request.retries + 1})")
             raise self.retry(countdown=60 * (self.request.retries + 1))
         raise
+
+
+# ------------------------------------------------------
+#  NEW TASK IMPLEMENTATIONS
+# ------------------------------------------------------
+
+@celery_app.task(bind=True, name='tasks.merge_pdfs_task', max_retries=3)
+def merge_pdfs_task(self, job_id: str, file_paths: List[str], options: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Merge multiple PDF files into a single PDF."""
+    from flask import current_app
+    
+    options = options or {}
+    job = None
+    
+    try:
+        with current_app.app_context():
+            job = Job.query.filter_by(job_id=job_id).first()
+            if not job:
+                job = Job(
+                    job_id=job_id,
+                    task_type='merge_pdfs',
+                    input_data={
+                        'file_count': len(file_paths),
+                        'options': options
+                    }
+                )
+                db.session.add(job)
+            
+            job.mark_as_processing()
+            db.session.commit()
+            
+            # Use task context for progress reporting and temp file management
+            with task_context(job, total_steps=len(file_paths) + 2) as (progress, temp_manager):
+                metrics = TaskMetrics(job)
+                
+                progress.update(step=1, message="Initializing PDF merge")
+                
+                # Validate input files
+                valid_files = []
+                for i, file_path in enumerate(file_paths):
+                    if os.path.exists(file_path):
+                        valid_files.append(file_path)
+                        file_size = os.path.getsize(file_path)
+                        metrics.record_file_processed(file_size)
+                    else:
+                        logger.warning(f"File not found: {file_path}")
+                    
+                    progress.update(step=i + 2, message=f"Validating file {i + 1}/{len(file_paths)}")
+                
+                if not valid_files:
+                    raise ValidationError("No valid PDF files found for merging")
+                
+                # Perform merge operation
+                progress.update(step=len(file_paths) + 1, message="Merging PDF files")
+                
+                # Create output file in temp directory
+                output_path = temp_manager.create_temp_file(suffix=".pdf")
+                
+                # Use file management service for merge operation
+                merge_result = file_management_service.merge_pdfs(
+                    input_files=valid_files,
+                    output_path=output_path,
+                    options=options
+                )
+                
+                progress.complete("PDF merge completed successfully")
+                metrics.finalize()
+                
+                result = {
+                    'success': True,
+                    'output_path': output_path,
+                    'merged_files': len(valid_files),
+                    'output_size': os.path.getsize(output_path),
+                    **merge_result
+                }
+                
+                job.mark_as_completed(result)
+                db.session.commit()
+                
+                return result
+    
+    except Exception as exc:
+        logger.exception(f"PDF merge task failed for job {job_id}")
+        handle_task_error(self, exc, job_id, job)
+
+
+@celery_app.task(bind=True, name='tasks.split_pdf_task', max_retries=3)
+def split_pdf_task(self, job_id: str, file_path: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
+    """Split a PDF file into multiple files."""
+    from flask import current_app
+    
+    options = options or {}
+    job = None
+    
+    try:
+        with current_app.app_context():
+            job = Job.query.filter_by(job_id=job_id).first()
+            if not job:
+                job = Job(
+                    job_id=job_id,
+                    task_type='split_pdf',
+                    input_data={
+                        'file_path': file_path,
+                        'options': options
+                    }
+                )
+                db.session.add(job)
+            
+            job.mark_as_processing()
+            db.session.commit()
+            
+            with task_context(job, total_steps=4) as (progress, temp_manager):
+                metrics = TaskMetrics(job)
+                
+                progress.update(step=1, message="Analyzing PDF structure")
+                
+                if not os.path.exists(file_path):
+                    raise ResourceNotFoundError("PDF file", file_path)
+                
+                file_size = os.path.getsize(file_path)
+                metrics.record_file_processed(file_size)
+                
+                progress.update(step=2, message="Preparing split operation")
+                
+                # Create output directory in temp space
+                output_dir = temp_manager.create_temp_dir()
+                
+                progress.update(step=3, message="Splitting PDF file")
+                
+                # Use file management service for split operation
+                split_result = file_management_service.split_pdf(
+                    input_file=file_path,
+                    output_dir=output_dir,
+                    options=options
+                )
+                
+                progress.complete("PDF split completed successfully")
+                metrics.finalize()
+                
+                result = {
+                    'success': True,
+                    'output_directory': output_dir,
+                    'split_files': split_result.get('split_files', []),
+                    'total_pages': split_result.get('total_pages', 0),
+                    **split_result
+                }
+                
+                job.mark_as_completed(result)
+                db.session.commit()
+                
+                return result
+    
+    except Exception as exc:
+        logger.exception(f"PDF split task failed for job {job_id}")
+        handle_task_error(self, exc, job_id, job)
+
+
+# ------------------------------------------------------
+#  MAINTENANCE TASKS
+# ------------------------------------------------------
+
+@celery_app.task(bind=True, name='tasks.cleanup_temp_files_task')
+def cleanup_temp_files_task(self, max_age_hours: int = 24) -> Dict[str, Any]:
+    """Clean up temporary files older than specified age."""
+    try:
+        logger.info(f"Starting cleanup of temporary files older than {max_age_hours} hours")
+        
+        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
+        temp_dirs = [tempfile.gettempdir(), '/tmp', './uploads/temp']
+        
+        cleaned_files = 0
+        cleaned_size = 0
+        errors = 0
+        
+        for temp_dir in temp_dirs:
+            if not os.path.exists(temp_dir):
+                continue
+                
+            try:
+                for root, dirs, files in os.walk(temp_dir):
+                    for file in files:
+                        if file.startswith('pdf_task_') or file.startswith('temp_'):
+                            file_path = os.path.join(root, file)
+                            try:
+                                file_stat = os.stat(file_path)
+                                file_time = datetime.fromtimestamp(file_stat.st_mtime, tz=timezone.utc)
+                                
+                                if file_time < cutoff_time:
+                                    file_size = file_stat.st_size
+                                    os.unlink(file_path)
+                                    cleaned_files += 1
+                                    cleaned_size += file_size
+                                    logger.debug(f"Cleaned temp file: {file_path}")
+                            except Exception as e:
+                                errors += 1
+                                logger.warning(f"Error cleaning file {file_path}: {e}")
+            except Exception as e:
+                logger.error(f"Error accessing temp directory {temp_dir}: {e}")
+                errors += 1
+        
+        result = {
+            'cleaned_files': cleaned_files,
+            'cleaned_size_bytes': cleaned_size,
+            'errors': errors,
+            'max_age_hours': max_age_hours
+        }
+        
+        logger.info(f"Temp file cleanup completed: {cleaned_files} files, {cleaned_size} bytes freed")
+        return result
+        
+    except Exception as exc:
+        logger.exception("Temp file cleanup task failed")
+        raise
+
+
+@celery_app.task(bind=True, name='tasks.health_check_task')
+def health_check_task(self) -> Dict[str, Any]:
+    """Perform system health checks."""
+    from flask import current_app
+    
+    try:
+        health_status = {
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'status': 'healthy',
+            'checks': {}
+        }
+        
+        # Database connectivity check
+        try:
+            with current_app.app_context():
+                db.session.execute('SELECT 1')
+                health_status['checks']['database'] = {'status': 'healthy', 'response_time_ms': 0}
+        except Exception as e:
+            health_status['checks']['database'] = {'status': 'unhealthy', 'error': str(e)}
+            health_status['status'] = 'degraded'
+        
+        # Service availability checks
+        services_to_check = [
+            ('compression', compression_service),
+            ('conversion', conversion_service),
+            ('ocr', ocr_service),
+            ('ai', ai_service)
+        ]
+        
+        for service_name, service_instance in services_to_check:
+            try:
+                # Basic service health check (if method exists)
+                if hasattr(service_instance, 'health_check'):
+                    service_health = service_instance.health_check()
+                    health_status['checks'][service_name] = service_health
+                else:
+                    health_status['checks'][service_name] = {'status': 'healthy', 'note': 'No health check method'}
+            except Exception as e:
+                health_status['checks'][service_name] = {'status': 'unhealthy', 'error': str(e)}
+                health_status['status'] = 'degraded'
+        
+        # Disk space check
+        try:
+            disk_usage = shutil.disk_usage('.')
+            free_space_gb = disk_usage.free / (1024**3)
+            health_status['checks']['disk_space'] = {
+                'status': 'healthy' if free_space_gb > 1.0 else 'warning',
+                'free_space_gb': round(free_space_gb, 2)
+            }
+            if free_space_gb <= 1.0:
+                health_status['status'] = 'degraded'
+        except Exception as e:
+            health_status['checks']['disk_space'] = {'status': 'unhealthy', 'error': str(e)}
+        
+        return health_status
+        
+    except Exception as exc:
+        logger.exception("Health check task failed")
+        return {
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'status': 'unhealthy',
+            'error': str(exc)
+        }
 
 
 @celery_app.task(bind=True, max_retries=3, name='tasks.extract_bank_statement_task')
