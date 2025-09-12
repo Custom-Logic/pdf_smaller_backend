@@ -7,8 +7,7 @@ import uuid
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
-from src.services.ai_service import AIService
-from src.services.file_management_service import FileManagementService
+from src.services.service_registry import ServiceRegistry
 from src.utils.exceptions import ExtractionError, ExtractionValidationError
 from src.config import Config
 
@@ -20,8 +19,8 @@ class BankStatementExtractionService:
     
     def __init__(self):
         """Initialize the bank statement extraction service."""
-        self.ai_service = AIService()
-        self.file_service = FileManagementService()
+        self.ai_service = ServiceRegistry.get_ai_service()
+        self.file_service = ServiceRegistry.get_file_management_service()
         self.logger = logging.getLogger(__name__)
         
         # Supported extraction modes

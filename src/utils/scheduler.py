@@ -7,7 +7,7 @@ from typing import Callable, Dict, Any
 
 from flask import Flask
 
-from src.services.file_management_service import FileManagementService
+from src.services.service_registry import ServiceRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +107,7 @@ scheduler = TaskScheduler()
 def setup_cleanup_scheduler(upload_folder: str, app: Flask):
     """Set up the cleanup scheduler with default tasks using FileManagementService"""
     with app.app_context():
-        file_management_service = FileManagementService(upload_folder=upload_folder)
+        file_management_service = ServiceRegistry.get_file_management_service(upload_folder=upload_folder)
         
         def cleanup_expired_jobs():
             """Wrapper for expired jobs cleanup"""

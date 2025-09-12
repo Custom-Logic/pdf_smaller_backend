@@ -68,6 +68,24 @@ def session(db):
     session.remove()
 
 
+@pytest.fixture(scope='function')
+def db_session(db):
+    """Create a fresh database session for each test (alias for session)."""
+    connection = db.engine.connect()
+    transaction = connection.begin()
+    
+    options = dict(bind=connection, binds={})
+    session = db.create_scoped_session(options=options)
+    
+    db.session = session
+    
+    yield session
+    
+    transaction.rollback()
+    connection.close()
+    session.remove()
+
+
 @pytest.fixture
 def client(app):
     """Create a test client for the Flask application."""

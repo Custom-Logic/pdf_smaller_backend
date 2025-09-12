@@ -12,12 +12,7 @@ from datetime import datetime
 from flask import Blueprint, request
 
 from src.models import JobStatus
-from src.services.ai_service import AIService
-from src.services.conversion_service import ConversionService
-from src.services.ocr_service import OCRService
-from src.services.invoice_extraction_service import InvoiceExtractionService
-from src.services.bank_statement_extraction_service import BankStatementExtractionService
-from src.services.file_management_service import FileManagementService
+from src.services.service_registry import ServiceRegistry
 from src.utils.response_helpers import success_response, error_response
 from src.utils.security_utils import get_file_and_validate
 from src.tasks.tasks import (
@@ -36,12 +31,8 @@ from src.tasks.tasks import (
 pdf_suite_bp = Blueprint('pdf_suite', __name__)
 # CORS(pdf_suite_bp, resources={r"/api": {"origins": ["https://www.pdfsmaller.site"]}})
 
-# Initialize services
-conversion_service = ConversionService()
-ocr_service = OCRService()
-ai_service = AIService()
-invoice_extraction_service = InvoiceExtractionService()
-bank_statement_extraction_service = BankStatementExtractionService()
+# Services are now managed through ServiceRegistry
+# No need for global service instances
 
 
 # Configure logging
@@ -59,7 +50,7 @@ def convert_pdf():
     try:
         target_format = request.form.get('format', 'txt').lower()
         # Validate format
-        if target_format not in conversion_service.supported_formats:
+        if target_format not in ServiceRegistry.get_conversion_service().supported_formats:
             return error_response(message=f"Unsupported format: {target_format}", status_code=400)
 
         # Get and validate file
@@ -324,7 +315,6 @@ def extract_text():
             return error
 
         job_id = request.form.get('job_id', str(uuid.uuid4()))
-        session_id = request.form.get('session_id', str(uuid.uuid4()))
 
         file_data = file.read()
 
@@ -371,7 +361,7 @@ def extract_invoice():
         job_id = request.form.get('job_id', str(uuid.uuid4()))
         
         # Save file temporarily
-        file_service = FileManagementService()
+        file_service = ServiceRegistry.get_file_management_service()
         file_path = file_service.save_file(file, job_id)
 
         # Enqueue invoice extraction task using .delay() pattern
@@ -398,7 +388,7 @@ def extract_invoice():
 def get_invoice_capabilities():
     """Get invoice extraction capabilities"""
     try:
-        capabilities = invoice_extraction_service.get_extraction_capabilities()
+        capabilities = ServiceRegistry.get_invoice_extraction_service().get_extraction_capabilities()
         return success_response(message="Invoice extraction capabilities retrieved successfully", data=capabilities)
     except Exception as e:
         logger.error(f"Invoice capabilities retrieval failed: {str(e)}")
@@ -428,7 +418,7 @@ def extract_bank_statement():
         job_id = request.form.get('job_id', str(uuid.uuid4()))
         
         # Save file temporarily
-        file_service = FileManagementService()
+        file_service = ServiceRegistry.get_file_management_service()
         file_path = file_service.save_file(file, job_id)
 
         # Enqueue bank statement extraction task using .delay() pattern
@@ -455,7 +445,7 @@ def extract_bank_statement():
 def get_bank_statement_capabilities():
     """Get bank statement extraction capabilities"""
     try:
-        capabilities = bank_statement_extraction_service.get_extraction_capabilities()
+        capabilities = ServiceRegistry.get_bank_statement_extraction_service().get_extraction_capabilities()
         return success_response(message="Bank statement extraction capabilities retrieved successfully", data=capabilities)
     except Exception as e:
         logger.error(f"Bank statement capabilities retrieval failed: {str(e)}")

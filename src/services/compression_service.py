@@ -10,6 +10,7 @@ from typing import Dict, Any, Optional
 from src.models import Job, JobStatus
 from src.models.base import db
 from src.services.file_management_service import FileManagementService
+from src.utils.job_manager import JobStatusManager
 
 logger = logging.getLogger(__name__)
 
@@ -152,7 +153,7 @@ class CompressionService:
         Create a compression job record for async processing
         """
         try:
-            job = Job(
+            job = JobStatusManager.get_or_create_job(
                 job_id=job_id,
                 task_type='compress',
                 input_data={
@@ -162,14 +163,10 @@ class CompressionService:
                 }
             )
             
-            db.session.add(job)
-            db.session.commit()
-            
             logger.info(f"Created compression job {job_id} (client_job_id: {job_id})")
             return job
             
         except Exception as e:
-            db.session.rollback()
             logger.error(f"Error creating compression job: {str(e)}")
             raise
 
@@ -187,8 +184,7 @@ class CompressionService:
                 raise ValueError(f"Job {job_id} is not a compression job")
 
             # Update job status
-            job.mark_as_processing()
-            db.session.commit()
+            JobStatusManager.update_job_status(job_id, JobStatus.PROCESSING)
 
             # Get job data
             input_data = job.input_data
@@ -225,15 +221,13 @@ class CompressionService:
                     'output_path': output_path
                 }
                 # Update job with results                
-                job.mark_as_completed(result=result)
-                db.session.commit()
+                JobStatusManager.update_job_status(job_id, JobStatus.COMPLETED, result=result)
 
                 return job.result
 
         except Exception as e:
             if 'job' in locals():
-                job.mark_as_failed(error=str(e))
-                db.session.commit()
+                JobStatusManager.update_job_status(job_id, JobStatus.FAILED, error_message=str(e))
 
             logger.error(f"Error processing compression job {job_id}: {str(e)}")
             raise

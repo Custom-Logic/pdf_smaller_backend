@@ -15,7 +15,7 @@ except ImportError:
     PANDAS_AVAILABLE = False
     pd = None
 
-from src.services.file_management_service import FileManagementService
+from src.services.service_registry import ServiceRegistry
 from src.utils.exceptions import ExportError
 from src.config import Config
 
@@ -27,7 +27,7 @@ class ExportService:
     
     def __init__(self):
         """Initialize the export service."""
-        self.file_service = FileManagementService()
+        self.file_service = ServiceRegistry.get_file_management_service()
         self.logger = logging.getLogger(__name__)
         
         # Supported export formats

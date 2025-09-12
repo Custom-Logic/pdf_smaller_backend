@@ -22,6 +22,7 @@ from src.models import Job, JobStatus
 from src.models.base import db
 from src.utils.file_utils import cleanup_old_files, _get_file_size
 from src.utils.response_helpers import error_response
+from src.utils.job_manager import JobStatusManager
 
 logger = logging.getLogger(__name__)
 
@@ -339,11 +340,14 @@ class FileManagementService:
                     logger.error(error_msg)
                     cleanup_summary['errors'].append(error_msg)
             
-            # Commit all deletions
-            db.session.commit()
-            
-            logger.info(f"Job cleanup completed: {cleanup_summary['jobs_cleaned']} jobs cleaned, "
-                       f"{cleanup_summary['total_space_freed_mb']:.2f}MB freed")
+            # Use JobStatusManager for cleanup operations
+            try:
+                db.session.commit()
+                logger.info(f"Job cleanup completed: {cleanup_summary['jobs_cleaned']} jobs cleaned, "
+                           f"{cleanup_summary['total_space_freed_mb']:.2f}MB freed")
+            except Exception as commit_error:
+                db.session.rollback()
+                raise commit_error
             
         except Exception as e:
             db.session.rollback()

@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from bz2 import compress
 from enum import Enum
+from sqlalchemy import Index, CheckConstraint
 from .base import db, BaseModel
 
 class JobStatus(Enum):
@@ -33,6 +34,22 @@ class Job(BaseModel):
     result = db.Column(db.JSON)  # Store output results
     # Error handling
     error = db.Column(db.Text)  # Error message if job failed
+    
+    # Add database constraints and indexes for data integrity
+    __table_args__ = (
+        CheckConstraint(
+            status.in_([s.value for s in JobStatus]),
+            name='valid_status'
+        ),
+        CheckConstraint(
+            'created_at <= updated_at',
+            name='valid_timestamps'
+        ),
+        # Add indexes for common queries
+        Index('idx_job_status_created', 'status', 'created_at'),
+        Index('idx_job_updated', 'updated_at'),
+        Index('idx_job_task_type', 'task_type'),
+    )
 
     def __init__(self, task_type=None, input_data=None, job_id=None):
         super().__init__()
@@ -61,23 +78,23 @@ class Job(BaseModel):
         return self.task_type == TaskType.AI.value
 
     def mark_as_processing(self):
-        """Mark job as currently processing"""
+        """Mark job as currently processing with timestamp update"""
         self.status = JobStatus.PROCESSING.value
         self.updated_at = datetime.now(timezone.utc)
     
     def mark_as_completed(self, result=None):
-        """Mark job as successfully completed"""
+        """Mark job as successfully completed with result and timestamp"""
         self.status = JobStatus.COMPLETED.value
         self.updated_at = datetime.now(timezone.utc)
         if result:
             self.result = result
 
-    def mark_as_failed(self, error=None):
-        """Mark job as failed with optional error message"""
+    def mark_as_failed(self, error_message=None):
+        """Mark job as failed with error message and timestamp"""
         self.status = JobStatus.FAILED.value
         self.updated_at = datetime.now(timezone.utc)
-        if error:
-            self.error = error
+        if error_message:
+            self.error = error_message
     
     def is_completed(self):
         """Check if job is completed (successfully or with error)"""
@@ -86,6 +103,22 @@ class Job(BaseModel):
     def is_successful(self):
         """Check if job completed successfully"""
         return self.status == JobStatus.COMPLETED.value
+    
+    def is_terminal(self):
+        """Check if job is in terminal state (completed or failed)"""
+        return self.status in [JobStatus.COMPLETED.value, JobStatus.FAILED.value]
+    
+    def can_transition_to(self, new_status):
+        """Check if transition to new status is valid"""
+        valid_transitions = {
+            JobStatus.PENDING.value: [JobStatus.PROCESSING.value, JobStatus.FAILED.value],
+            JobStatus.PROCESSING.value: [JobStatus.COMPLETED.value, JobStatus.FAILED.value],
+            JobStatus.COMPLETED.value: [],  # Terminal state
+            JobStatus.FAILED.value: [JobStatus.PROCESSING.value]  # Allow retry
+        }
+        
+        target_status = new_status.value if hasattr(new_status, 'value') else new_status
+        return target_status in valid_transitions.get(self.status, [])
     def to_dict(self):
         """Convert job to dictionary for JSON serialization"""
         return {
