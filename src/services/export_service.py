@@ -1,13 +1,12 @@
 """Export Service - Handle data export to various formats (CSV, Excel, JSON)"""
 
-import os
-import json
 import csv
+import json
 import logging
-import uuid
-from typing import Dict, Any, List, Optional, Union
-from datetime import datetime
-from io import StringIO, BytesIO
+import os
+from datetime import datetime, timezone
+from mailbox import FormatError
+from typing import Dict, Any, List, Optional
 
 try:
     import pandas as pd
@@ -75,7 +74,9 @@ class ExportService:
                 result = self._export_invoice_csv(invoice_data, filename)
             elif export_format == 'excel':
                 result = self._export_invoice_excel(invoice_data, filename)
-            
+            else:
+                raise FormatError('could not understand file format to export to')
+
             self.logger.info(f"Invoice data exported successfully to {result['output_path']}")
             return result
             
@@ -119,7 +120,9 @@ class ExportService:
                 result = self._export_statement_csv(statement_data, filename)
             elif export_format == 'excel':
                 result = self._export_statement_excel(statement_data, filename)
-            
+            else:
+                raise FormatError('could not understand file format to export to')
+
             self.logger.info(f"Bank statement data exported successfully to {result['output_path']}")
             return result
             
@@ -147,7 +150,7 @@ class ExportService:
                 'export_info': {
                     'type': 'invoice',
                     'format': 'json',
-                    'exported_at': datetime.utcnow().isoformat(),
+                    'exported_at': datetime.now(timezone.utc).isoformat(),
                     'version': '1.0'
                 },
                 'data': invoice_data
@@ -225,6 +228,7 @@ class ExportService:
             output_path = os.path.join(self.export_dir, f"{filename}.xlsx")
             
             # Create Excel writer
+            # noinspection PyUnresolvedReferences
             with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
                 # Invoice summary sheet
                 self._create_invoice_summary_sheet(invoice_data, writer)
@@ -266,7 +270,7 @@ class ExportService:
                 'export_info': {
                     'type': 'bank_statement',
                     'format': 'json',
-                    'exported_at': datetime.utcnow().isoformat(),
+                    'exported_at': datetime.now(timezone.utc).isoformat(),
                     'version': '1.0'
                 },
                 'data': statement_data
@@ -354,6 +358,7 @@ class ExportService:
             output_path = os.path.join(self.export_dir, f"{filename}.xlsx")
             
             # Create Excel writer
+            # noinspection PyUnresolvedReferences
             with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
                 # Account summary sheet
                 self._create_statement_summary_sheet(statement_data, writer)
@@ -377,7 +382,8 @@ class ExportService:
         except Exception as e:
             raise ExportError(f"Excel export failed: {str(e)}")
     
-    def _create_invoice_summary_csv(self, invoice_data: Dict[str, Any], output_path: str) -> None:
+    @staticmethod
+    def _create_invoice_summary_csv(invoice_data: Dict[str, Any], output_path: str) -> None:
         """Create invoice summary CSV file."""
         data = invoice_data.get('data', {})
         
@@ -406,7 +412,8 @@ class ExportService:
                 writer.writerow(['Customer Name', customer.get('name', '')])
                 writer.writerow(['Customer Address', customer.get('address', '')])
     
-    def _create_invoice_detailed_csv(self, invoice_data: Dict[str, Any], output_path: str) -> None:
+    @staticmethod
+    def _create_invoice_detailed_csv(invoice_data: Dict[str, Any], output_path: str) -> None:
         """Create detailed invoice CSV with line items."""
         line_items = invoice_data.get('data', {}).get('line_items', [])
         
@@ -422,7 +429,8 @@ class ExportService:
                 writer.writeheader()
                 writer.writerows(line_items)
     
-    def _create_invoice_summary_sheet(self, invoice_data: Dict[str, Any], writer) -> None:
+    @staticmethod
+    def _create_invoice_summary_sheet(invoice_data: Dict[str, Any], writer) -> None:
         """Create invoice summary Excel sheet."""
         data = invoice_data.get('data', {})
         
@@ -452,16 +460,20 @@ class ExportService:
             ])
         
         # Create DataFrame and write to Excel
+        # noinspection PyUnresolvedReferences
         df = pd.DataFrame(summary_data, columns=['Field', 'Value'])
         df.to_excel(writer, sheet_name='Invoice Summary', index=False)
     
-    def _create_line_items_sheet(self, line_items: List[Dict[str, Any]], writer) -> None:
+    @staticmethod
+    def _create_line_items_sheet(line_items: List[Dict[str, Any]], writer) -> None:
         """Create line items Excel sheet."""
         if line_items:
+            # noinspection PyUnresolvedReferences
             df = pd.DataFrame(line_items)
             df.to_excel(writer, sheet_name='Line Items', index=False)
     
-    def _create_statement_summary_sheet(self, statement_data: Dict[str, Any], writer) -> None:
+    @staticmethod
+    def _create_statement_summary_sheet(statement_data: Dict[str, Any], writer) -> None:
         """Create bank statement summary Excel sheet."""
         data = statement_data.get('data', {})
         account_info = data.get('account_info', {})
@@ -480,12 +492,15 @@ class ExportService:
         ]
         
         # Create DataFrame and write to Excel
+        # noinspection PyUnresolvedReferences
         df = pd.DataFrame(summary_data, columns=['Field', 'Value'])
         df.to_excel(writer, sheet_name='Account Summary', index=False)
     
-    def _create_transactions_sheet(self, transactions: List[Dict[str, Any]], writer) -> None:
+    @staticmethod
+    def _create_transactions_sheet(transactions: List[Dict[str, Any]], writer) -> None:
         """Create transactions Excel sheet."""
         if transactions:
+            # noinspection PyUnresolvedReferences
             df = pd.DataFrame(transactions)
             df.to_excel(writer, sheet_name='Transactions', index=False)
     

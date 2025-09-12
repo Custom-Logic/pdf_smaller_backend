@@ -2,8 +2,6 @@
 Handles PDF → Word, Text, HTML, Images
 Crash-hardened edition – 2025-09
 """
-from __future__ import annotations
-
 import logging
 import os
 import re
@@ -57,13 +55,8 @@ class ConversionService:
     # --------------------------------------------------------------------------
     # PUBLIC ENTRY POINTS
     # --------------------------------------------------------------------------
-    def convert_pdf_data(
-        self,
-        file_data: bytes,
-        target_format: str,
-        options: Optional[Dict[str, Any]] = None,
-        original_filename: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    def convert_pdf_data(self,file_data: bytes,target_format: str,options: Optional[Dict[str, Any]] = None,
+        original_filename: Optional[str] = None) -> Dict[str, Any]:
         """Convert *in-memory* PDF → target format.  Always returns the same keys."""
         options = options or {}
         if target_format not in self.supported_formats:
@@ -75,7 +68,7 @@ class ConversionService:
         temp_pdf: Optional[Path] = None
         try:
             temp_pdf = self._save_file_data(file_data, original_filename)
-            pdf_content = self._extract_pdf_content(temp_pdf, options)
+            pdf_content = self._extract_pdf_content(pdf_path=temp_pdf)
 
             converter = {
                 "docx": self._convert_to_docx,
@@ -83,10 +76,11 @@ class ConversionService:
                 "html": self._convert_to_html,
                 "images": self._convert_to_images,
                 "xlsx": self._convert_to_xlsx,
-            }[target_format]
-            
+            }
 
-            payload = converter(pdf_content, options)  # may raise
+            _method = converter[target_format]
+            # noinspection PyArgumentList
+            payload = _method(content=pdf_content, opts=options)  # may raise
             # guarantee keys that callers / frontend always read
             payload.setdefault("success", True)
             payload.setdefault("format", target_format)
@@ -125,7 +119,7 @@ class ConversionService:
         temp_pdf: Optional[Path] = None
         try:
             temp_pdf = self._save_file_data(file_data, "preview.pdf")
-            pdf_content = self._extract_pdf_content(temp_pdf, options)
+            pdf_content = self._extract_pdf_content(temp_pdf)
             return {
                 "success": True,
                 "original_size": len(file_data),
@@ -152,7 +146,7 @@ class ConversionService:
         file_id, file_path = self.file_service.save_file(data, filename)
         return Path(file_path)
 
-    def _extract_pdf_content(self, pdf_path: Path, _: Dict[str, Any]) -> Dict[str, Any]:
+    def _extract_pdf_content(self, pdf_path: Path) -> Dict[str, Any]:
         """Return unified dict with pages, tables, images, text, meta."""
         doc = fitz.open(pdf_path)
         content = {
@@ -286,7 +280,9 @@ class ConversionService:
         if not OPENPYXL_AVAILABLE:
             raise RuntimeError("openpyxl not installed – Excel export unavailable")
 
+        # noinspection PyUnresolvedReferences
         from openpyxl import Workbook
+        # noinspection PyUnresolvedReferences
         from openpyxl.utils import get_column_letter
 
         wb = Workbook()
@@ -506,8 +502,3 @@ class ConversionService:
             "message": "Conversion job created",
         }
 
-    def cleanup_temp_files(self) -> None:
-        """Wipe service temp directory."""
-        import shutil
-        shutil.rmtree(self.upload_folder, ignore_errors=True)
-        self.upload_folder.mkdir(parents=True, exist_ok=True)

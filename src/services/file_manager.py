@@ -3,7 +3,7 @@ import uuid
 import warnings
 from typing import Tuple
 from src.config import Config
-from src.utils.file_utils import cleanup_old_files, get_file_size
+from src.utils.file_utils import cleanup_old_files, _get_file_size
 
 
 class FileManager:
@@ -102,4 +102,4 @@ class FileManager:
         Returns:
             File size in bytes
         """
-        return get_file_size(file_path)
+        return _get_file_size(file_path)

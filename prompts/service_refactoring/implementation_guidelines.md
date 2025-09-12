@@ -33,41 +33,42 @@ class ServiceName:
 #### 2. Error Handling Standards
 
 **Standard Error Handling Pattern**:
+
 ```python
-def process_data(self, file_data: bytes, options: Dict[str, Any] = None, 
-                original_filename: str = None) -> Dict[str, Any]:
+def process_data(self, file_data: bytes, options: Dict[str, Any] = None,
+                 original_filename: str = None) -> Dict[str, Any]:
     """Process data with standardized error handling"""
     temp_files = []  # Track temporary files for cleanup
-    
+
     try:
         # Save input file
         file_id, temp_path = self.file_service.save_file(file_data, original_filename)
         temp_files.append(temp_path)
-        
+
         # Process the file
         result = self._process_internal(temp_path, options)
-        
+
         # Return standardized success response
         return {
             'success': True,
             'output_path': result['output_path'],
             'filename': result['filename'],
             'mime_type': result['mime_type'],
-            'file_size': self.file_service.get_file_size(result['output_path']),
+            'file_size': self.file_service._get_file_size(result['output_path']),
             'original_filename': original_filename,
             'original_size': len(file_data)
         }
-        
+
     except Exception as e:
         logger.error(f"Processing failed for {original_filename}: {str(e)}")
-        
+
         # Clean up temporary files
         for temp_file in temp_files:
             try:
                 self.file_service.delete_file(temp_file)
             except Exception as cleanup_error:
                 logger.warning(f"Failed to cleanup {temp_file}: {cleanup_error}")
-        
+
         # Return standardized error response
         return {
             'success': False,

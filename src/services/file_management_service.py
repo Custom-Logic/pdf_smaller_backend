@@ -12,7 +12,7 @@ import os
 import uuid
 import logging
 import zipfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Tuple, List, Dict, Any, Optional
 from pathlib import Path
 from flask import send_file
@@ -20,7 +20,7 @@ from flask import send_file
 from src.config import Config
 from src.models import Job, JobStatus
 from src.models.base import db
-from src.utils.file_utils import cleanup_old_files, get_file_size
+from src.utils.file_utils import cleanup_old_files, _get_file_size
 from src.utils.response_helpers import error_response
 
 logger = logging.getLogger(__name__)
@@ -103,7 +103,8 @@ class FileManagementService:
         filename = f"{file_id}{extension}"
         return os.path.join(self.upload_folder, filename)
     
-    def file_exists(self, file_path: str) -> bool:
+    @staticmethod
+    def file_exists(file_path: str) -> bool:
         """Check if a file exists
         
         Args:
@@ -113,8 +114,9 @@ class FileManagementService:
             True if file exists, False otherwise
         """
         return os.path.isfile(file_path)
-    
-    def get_file_size(self, file_path: str) -> int:
+
+    @staticmethod
+    def get_file_size(file_path: str) -> int:
         """Get file size in bytes
         
         Args:
@@ -123,14 +125,16 @@ class FileManagementService:
         Returns:
             File size in bytes
         """
-        return get_file_size(file_path)
-    
-    def delete_file(self, file_path: str) -> bool:
+        try:
+            return os.path.getsize(file_path)
+        except OSError as e:
+            raise e
+
+    @staticmethod
+    def delete_file(file_path: str) -> bool:
         """Delete a file safely
-        
         Args:
             file_path: Path to the file to delete
-            
         Returns:
             True if file was deleted successfully, False otherwise
         """
@@ -145,13 +149,12 @@ class FileManagementService:
             return False
     
     # ========================= FILE DOWNLOAD OPERATIONS =========================
-    
-    def get_job_download_response(self, job_id: str):
+
+    @staticmethod
+    def get_job_download_response(job_id: str):
         """Get Flask response for downloading job result file
-        
         Args:
             job_id: Job identifier
-            
         Returns:
             Flask response object or error response
         """
@@ -193,13 +196,12 @@ class FileManagementService:
         except Exception as e:
             logger.error(f"Error preparing download for job {job_id}: {str(e)}")
             return error_response(message="Error preparing file download", status_code=500)
-    
-    def is_download_available(self, job_id: str) -> bool:
+
+    @staticmethod
+    def is_download_available(job_id: str) -> bool:
         """Check if download is available for a job
-        
         Args:
             job_id: Job identifier
-            
         Returns:
             True if download is available, False otherwise
         """
@@ -367,7 +369,7 @@ class FileManagementService:
             if not os.path.exists(self.upload_folder):
                 return cleanup_summary
             
-            cutoff_time = datetime.utcnow() - timedelta(hours=self.TEMP_FILE_MAX_AGE_HOURS)
+            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=self.TEMP_FILE_MAX_AGE_HOURS)
             
             for filename in os.listdir(self.upload_folder):
                 file_path = os.path.join(self.upload_folder, filename)
@@ -507,7 +509,7 @@ class FileManagementService:
             
             # Get jobs older than retention period based on status
             for status, retention_hours in self.DEFAULT_RETENTION_PERIODS.items():
-                cutoff_time = datetime.utcnow() - timedelta(hours=retention_hours)
+                cutoff_time = datetime.now(timezone.utc) - timedelta(hours=retention_hours)
                 
                 # Query jobs with this status that are older than cutoff
                 jobs = Job.query \
@@ -525,13 +527,12 @@ class FileManagementService:
         except Exception as e:
             logger.error(f"Error getting expired jobs: {str(e)}")
             return []
-    
-    def _cleanup_job_files(self, job: Job) -> float:
+
+    @staticmethod
+    def _cleanup_job_files(job: Job) -> float:
         """Clean up files associated with a job
-        
         Args:
             job: Job object to clean up files for
-            
         Returns:
             Space freed in MB
         """
@@ -594,7 +595,6 @@ class FileManagementService:
     
     def get_service_status(self) -> Dict[str, Any]:
         """Get current status of the file management service
-        
         Returns:
             Service status dictionary
         """

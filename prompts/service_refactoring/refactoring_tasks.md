@@ -232,8 +232,9 @@ compressed_size = get_file_size(output_path)
 ```
 
 **With**:
+
 ```python
-compressed_size = self.file_service.get_file_size(output_path)
+compressed_size = self.file_service._get_file_size(output_path)
 ```
 
 ## Phase 4: FileManager Deprecation
