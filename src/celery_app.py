@@ -18,7 +18,7 @@ def make_celery(app=None):
         Configured Celery instance
     """
     # Get configuration
-    from .tasks import tasks
+    from src.tasks import tasks
 
     config = Config()
     

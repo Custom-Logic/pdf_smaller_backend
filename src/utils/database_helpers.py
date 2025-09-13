@@ -8,6 +8,7 @@ from typing import Callable, Any, Optional
 from sqlalchemy.exc import DBAPIError, OperationalError, IntegrityError
 from src.models.base import db
 from src.models.job import Job, JobStatus
+from src.utils.db_transaction import safe_db_operation as new_safe_db_operation
 import logging
 import time
 
@@ -18,9 +19,11 @@ def safe_db_operation(operation: Callable, rollback_on_error: bool = True,
                      max_retries: int = 3) -> Optional[Any]:
     """Safely execute database operation with consistent error handling.
     
+    This is a compatibility wrapper around the new transaction utilities.
+    
     Args:
         operation: Callable that performs the database operation
-        rollback_on_error: Whether to rollback on database errors
+        rollback_on_error: Whether to rollback on database errors (ignored, always True in new system)
         max_retries: Maximum number of retry attempts
         
     Returns:
@@ -29,32 +32,14 @@ def safe_db_operation(operation: Callable, rollback_on_error: bool = True,
     Raises:
         Exception: Re-raises the final exception if all retries fail
     """
-    for attempt in range(max_retries + 1):
-        try:
-            result = operation()
-            db.session.commit()
-            return result
-        except (DBAPIError, OperationalError, IntegrityError) as db_err:
-            if rollback_on_error:
-                db.session.rollback()
-            
-            if attempt < max_retries:
-                # Exponential backoff for retries
-                delay = 2 ** attempt
-                logger.warning(
-                    f"Database operation failed (attempt {attempt + 1}/{max_retries + 1}), "
-                    f"retrying in {delay}s: {db_err}"
-                )
-                time.sleep(delay)
-                continue
-            else:
-                logger.error(f"Database operation failed permanently after {max_retries + 1} attempts: {db_err}")
-                raise
-        except Exception as e:
-            if rollback_on_error:
-                db.session.rollback()
-            logger.error(f"Unexpected error in database operation: {e}")
-            raise
+    # Use the new transaction system with a unique operation name
+    operation_name = f"legacy_db_operation_{id(operation)}"
+    return new_safe_db_operation(
+        operation,
+        operation_name,
+        max_retries=max_retries,
+        default_return=None
+    )
 
 
 def update_job_status_safely(job_id: str, status: JobStatus, error_msg: str = None, 

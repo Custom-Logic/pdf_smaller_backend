@@ -14,13 +14,13 @@ from flask import Flask, request, jsonify, g
 from werkzeug.exceptions import HTTPException
 from sqlalchemy.exc import SQLAlchemyError
 
-from .exceptions import (
+from src.utils.exceptions import (
     PDFCompressionError, ValidationError, AuthenticationError, 
     AuthorizationError, ResourceNotFoundError, RateLimitExceededError,
     FileProcessingError, SubscriptionError, UsageLimitExceededError,
     ExternalServiceError, ConfigurationError, DatabaseError, SecurityError
 )
-from .logging_utils import log_error_with_context
+from src.utils.logging_utils import log_error_with_context
 
 logger = logging.getLogger(__name__)
 

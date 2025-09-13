@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, Optional, List
 from flask import request, g, current_app, jsonify
 from functools import wraps
-from .security_utils import (
+from src.utils.security_utils import (
     get_client_ip, 
     validate_request_headers, 
     track_suspicious_activity,

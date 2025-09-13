@@ -1,4 +1,4 @@
-from .init_db import init_database
+from src.database.init_db import init_database
 
 
 __all__ = ['init_database']

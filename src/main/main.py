@@ -13,6 +13,7 @@ from src.utils import setup_logging
 
 from src.utils.error_handlers import register_error_handlers
 from src.utils.scheduler import start_background_scheduler
+from src.utils.db_transaction import safe_db_operation
 
 
 def create_app(config_name=None, config_override=None):
@@ -186,8 +187,16 @@ def register_health_checks(app: Flask):
 
         try:
             # Simple database query to check connection
-            db.session.execute(text('SELECT 1'))  # Wrap with text()
-            db.session.commit()
+            def test_db_connection():
+                db.session.execute(text('SELECT 1'))  # Wrap with text()
+                return True
+            
+            safe_db_operation(
+                test_db_connection,
+                "health_check_db_test",
+                max_retries=1,
+                default_return=False
+            )
             
             return jsonify({
                 'status': 'healthy',

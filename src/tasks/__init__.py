@@ -1,5 +1,5 @@
 # Import all tasks for Celery autodiscovery
-from .tasks import (
+from src.tasks.tasks import (
     compress_task,
     bulk_compress_task,
     convert_pdf_task,

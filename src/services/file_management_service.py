@@ -23,6 +23,7 @@ from src.models.base import db
 from src.utils.file_utils import cleanup_old_files, _get_file_size
 from src.utils.response_helpers import error_response
 from src.utils.job_manager import JobStatusManager
+from src.utils.db_transaction import db_transaction, safe_db_operation, transactional
 
 logger = logging.getLogger(__name__)
 
@@ -340,14 +341,17 @@ class FileManagementService:
                     logger.error(error_msg)
                     cleanup_summary['errors'].append(error_msg)
             
-            # Use JobStatusManager for cleanup operations
-            try:
-                db.session.commit()
+            # Use safe database operation for cleanup commit
+            def commit_cleanup():
                 logger.info(f"Job cleanup completed: {cleanup_summary['jobs_cleaned']} jobs cleaned, "
                            f"{cleanup_summary['total_space_freed_mb']:.2f}MB freed")
-            except Exception as commit_error:
-                db.session.rollback()
-                raise commit_error
+            
+            safe_db_operation(
+                commit_cleanup,
+                "cleanup_expired_jobs_commit",
+                max_retries=2,
+                default_return=None
+            )
             
         except Exception as e:
             db.session.rollback()

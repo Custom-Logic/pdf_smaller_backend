@@ -16,21 +16,16 @@ This document tracks the progress of the comprehensive code audit conducted in D
 
 | Status | Issue ID | Description | Priority | Phase | Notes |
 |:-------|:---------|:------------|:---------|:------|:------|
-| ⬜️ | AUDIT-001 | Create database transaction context manager | Critical | 1 | Ref: database-transaction-safety.md |
+| ⬜️ | AUDIT-001 | Create database transaction context manager | Critical | 1 | **VERIFIED NEEDED** - No transaction context manager exists |
 | ⬜️ | AUDIT-002 | Implement DatabaseTransactionError exception class | Critical | 1 | For proper error handling and rollbacks |
-| ⬜️ | AUDIT-003 | Create JobOperations utility class | Critical | 1 | Safe job status updates with transactions |
+| ⬜️ | AUDIT-003 | Create JobOperations utility class | Critical | 1 | **NOTE: JobStatusManager exists** - may need enhancement for transactions |
 | ⬜️ | AUDIT-004 | Implement transactional decorator | Critical | 1 | For service method transaction wrapping |
-| ⬜️ | AUDIT-005 | Fix direct db.session.commit() calls | Critical | 2 | **FOUND: 11 instances** - tasks.py (9), utils.py (2), file_management_service.py (1), database_helpers.py (1), main.py (1) |
-| ⬜️ | AUDIT-006 | Create ServiceLocator for dependency injection | High | 1 | **NOTE: ServiceRegistry already exists** - may need enhancement |
-| ⬜️ | AUDIT-007 | Implement LazyImporter for heavy dependencies | High | 1 | Standardized lazy loading utility |
-| ⬜️ | AUDIT-008 | Update relative imports to absolute imports | High | 2 | **FOUND: 15+ files** with relative imports in models, utils, tasks, services |
-| ⬜️ | AUDIT-009 | Update service files with import standards | High | 3 | All files in src/services/ directory |
+| ⬜️ | AUDIT-005 | Fix direct db.session.commit() calls | Critical | 2 | **CONFIRMED: 13 instances** - tasks.py (9), tasks/utils.py (2), file_management_service.py (1), database_helpers.py (1), main.py (1) |
+| ⬜️ | AUDIT-006 | Create comprehensive transaction safety tests | Critical | 2 | **NOTE: Some tests exist** in test_database_transaction_fixes.py - need expansion |
+| ⬜️ | AUDIT-007 | Enhance existing ServiceRegistry or create ServiceLocator | High | 1 | **NOTE: ServiceRegistry already exists** - may need enhancement |
+| ⬜️ | AUDIT-008 | Implement LazyImporter for heavy dependencies | High | 1 | Standardized lazy loading utility |
+| ⬜️ | AUDIT-009 | Convert relative imports to absolute imports | High | 2 | **CONFIRMED: 12+ files** with relative imports in models, utils, tasks, services |
 | ⬜️ | AUDIT-010 | Configure automated linting (isort, flake8) | Medium | 1 | Pre-commit hooks and CI/CD integration |
-| ⬜️ | AUDIT-011 | Create comprehensive transaction safety tests | Critical | 2 | Unit and integration tests for rollback scenarios |
-| ⬜️ | AUDIT-012 | Create import structure validation tests | High | 2 | Automated tests for import consistency |
-| ⬜️ | AUDIT-013 | Update remaining files with transaction safety | High | 3 | All remaining database operations |
-| ⬜️ | AUDIT-014 | Performance testing and monitoring setup | Medium | 4 | Transaction overhead and import time monitoring |
-| ⬜️ | AUDIT-015 | Final validation and integration testing | Critical | 4 | End-to-end testing of all fixes |
 
 ## Phase Breakdown
 

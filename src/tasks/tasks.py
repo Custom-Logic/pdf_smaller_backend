@@ -21,6 +21,8 @@ from src.services.service_registry import ServiceRegistry
 from src.exceptions.extraction_exceptions import ExtractionError, ExtractionValidationError
 from src.exceptions.export_exceptions import ExportError, FormatError
 from src.utils.job_manager import JobStatusManager
+from src.utils.db_transaction import db_transaction, transactional, safe_db_operation
+from src.utils.job_operations import JobOperations
 
 # Exception imports for specific error handling
 from sqlalchemy.exc import DBAPIError, OperationalError, IntegrityError, StatementError
@@ -584,6 +586,7 @@ def extract_text_task(self, job_id: str, file_data: bytes,
 #  MAINTENANCE TASKS  (logic 100 % preserved)
 # ------------------------------------------------------
 @celery_app.task(bind=True, name='tasks.cleanup_expired_jobs')
+@transactional("cleanup_expired_jobs")
 def cleanup_expired_jobs(self) -> Dict[str, Any]:
     """Clean up expired jobs and their associated files – identical behaviour."""
     try:
@@ -606,7 +609,7 @@ def cleanup_expired_jobs(self) -> Dict[str, Any]:
                 error_count += 1
                 logger.error(f"Error cleaning up job {job.job_id}: {str(e)}")
 
-        db.session.commit()
+        # Transaction is automatically committed by the transactional decorator
         current_task.update_state(
             state='SUCCESS',
             meta={'cleaned_count': cleaned_count, 'error_count': error_count, 'total_size_freed': total_size_freed}
@@ -643,6 +646,7 @@ def get_task_status(self, task_id: str) -> Dict[str, Any]:
 #  AI EXTRACTION TASKS
 # ------------------------------------------------------
 @celery_app.task(bind=True, max_retries=3, name='tasks.extract_invoice_task')
+@transactional("extract_invoice_task")
 def extract_invoice_task(self, job_id: str, file_path: str, extraction_options: Dict[str, Any]) -> Dict[str, Any]:
     """Async invoice extraction task – uses centralized error handling."""
     job = None
@@ -663,7 +667,7 @@ def extract_invoice_task(self, job_id: str, file_path: str, extraction_options: 
             db.session.add(job)
 
         job.mark_as_processing()
-        db.session.commit()
+        # Transaction will be committed automatically by decorator
         logger.debug(f"Job {job_id} marked as processing")
 
         # Update task progress
@@ -732,7 +736,7 @@ def extract_invoice_task(self, job_id: str, file_path: str, extraction_options: 
         )
 
         job.mark_as_completed(result=extraction_result)
-        db.session.commit()
+        # Transaction will be committed automatically by decorator
         logger.info(f"Invoice extraction job {job_id} completed successfully")
         return extraction_result
 
@@ -745,6 +749,7 @@ def extract_invoice_task(self, job_id: str, file_path: str, extraction_options: 
 # ------------------------------------------------------
 
 @celery_app.task(bind=True, name='tasks.merge_pdfs_task', max_retries=3)
+@transactional("merge_pdfs_task")
 def merge_pdfs_task(self, job_id: str, file_paths: List[str], options: Dict[str, Any] = None) -> Dict[str, Any]:
     """Merge multiple PDF files into a single PDF.
     
@@ -770,7 +775,7 @@ def merge_pdfs_task(self, job_id: str, file_paths: List[str], options: Dict[str,
                 db.session.add(job)
             
             job.mark_as_processing()
-            db.session.commit()
+            # Transaction will be committed automatically by decorator
             
             # Use task context for progress reporting and temp file management
             with task_context(job, total_steps=len(file_paths) + 2) as (progress, temp_manager):
@@ -818,7 +823,7 @@ def merge_pdfs_task(self, job_id: str, file_paths: List[str], options: Dict[str,
                 }
                 
                 job.mark_as_completed(result)
-                db.session.commit()
+                # Transaction will be committed automatically by decorator
                 
                 return result
     
@@ -827,6 +832,7 @@ def merge_pdfs_task(self, job_id: str, file_paths: List[str], options: Dict[str,
 
 
 @celery_app.task(bind=True, name='tasks.split_pdf_task', max_retries=3)
+@transactional("split_pdf_task")
 def split_pdf_task(self, job_id: str, file_path: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
     """Split a PDF file into multiple files.
     
@@ -852,7 +858,7 @@ def split_pdf_task(self, job_id: str, file_path: str, options: Dict[str, Any] = 
                 db.session.add(job)
             
             job.mark_as_processing()
-            db.session.commit()
+            # Transaction will be committed automatically by decorator
             
             with task_context(job, total_steps=4) as (progress, temp_manager):
                 metrics = TaskMetrics(job)
@@ -891,7 +897,7 @@ def split_pdf_task(self, job_id: str, file_path: str, options: Dict[str, Any] = 
                 }
                 
                 job.mark_as_completed(result)
-                db.session.commit()
+                # Transaction will be committed automatically by decorator
                 
                 return result
     
@@ -1023,6 +1029,7 @@ def health_check_task(self) -> Dict[str, Any]:
 
 
 @celery_app.task(bind=True, max_retries=3, name='tasks.extract_bank_statement_task')
+@transactional("extract_bank_statement_task")
 def extract_bank_statement_task(self, job_id: str, file_path: str, extraction_options: Dict[str, Any]) -> Dict[str, Any]:
     """Async bank statement extraction task.
     
@@ -1045,7 +1052,7 @@ def extract_bank_statement_task(self, job_id: str, file_path: str, extraction_op
             db.session.add(job)
 
         job.mark_as_processing()
-        db.session.commit()
+        # Transaction automatically committed by @transactional decorator
         logger.debug(f"Job {job_id} marked as processing")
 
         # Update task progress
@@ -1114,7 +1121,7 @@ def extract_bank_statement_task(self, job_id: str, file_path: str, extraction_op
         )
 
         job.mark_as_completed(result=extraction_result)
-        db.session.commit()
+        # Transaction automatically committed by @transactional decorator
         logger.info(f"Bank statement extraction job {job_id} completed successfully")
         return extraction_result
 

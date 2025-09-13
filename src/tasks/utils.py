@@ -6,8 +6,9 @@ import shutil
 from typing import Optional, Dict, Any, List
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from ..models.job import Job
-from ..models.base import db
+from src.models.job import Job
+from src.models.base import db
+from src.utils.db_transaction import db_transaction, safe_db_operation
 
 
 class ProgressReporter:
@@ -60,11 +61,17 @@ class ProgressReporter:
             }
         })
         
-        # Commit to database
-        try:
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
+        # Use safe database operation for progress updates
+        def update_progress():
+            # Database changes are already made above, just need to commit
+            pass
+        
+        safe_db_operation(
+            update_progress,
+            f"update_progress_{self.job.job_id}",
+            max_retries=1,
+            default_return=None
+        )
     
     def complete(self, final_message: str = "Task completed successfully"):
         """Mark progress as complete."""
@@ -212,7 +219,14 @@ class TaskMetrics:
         
         self.job.result['metrics'] = self.metrics
         
-        try:
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
+        # Use safe database operation for metrics finalization
+        def finalize_metrics():
+            # Database changes are already made above, just need to commit
+            pass
+        
+        safe_db_operation(
+            finalize_metrics,
+            f"finalize_metrics_{self.job.job_id}",
+            max_retries=1,
+            default_return=None
+        )

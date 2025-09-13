@@ -6,7 +6,7 @@ import logging
 from flask import request, g
 from typing import Dict, Any, List, Optional, Set
 from datetime import datetime, timedelta
-from .validation import validate_file_content, sanitize_input
+from src.utils.validation import validate_file_content, sanitize_input
 
 logger = logging.getLogger(__name__)
 
