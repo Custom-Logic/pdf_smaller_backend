@@ -105,6 +105,23 @@ This guide provides a comprehensive overview of the PDF Smaller Backend architec
 - **compression_job.py**: Compression-specific job data
 - **base.py**: Common model functionality
 
+### 6. Utility Modules (`src/utils/`)
+- **job_manager.py**: Thread-safe job status management with database locking
+- **file_utils.py**: File validation, security checks, and path utilities
+- **response_helpers.py**: Standardized API response formatting
+- **exceptions.py**: Custom exception hierarchy for error handling
+- **database_helpers.py**: Safe database operations with retry logic
+- **security_utils.py**: Security validation and sanitization functions
+- **validation.py**: Input validation and data sanitization utilities
+
+**Key Utility Features:**
+- **JobStatusManager**: Provides atomic, thread-safe job operations with row-level locking
+- **Database Safety**: Transaction management and rollback handling
+- **Security Layer**: File validation, input sanitization, and security checks
+- **Error Handling**: Comprehensive exception hierarchy with context preservation
+
+For detailed utility documentation, see [Job Manager Documentation](job_manager_documentation.md).
+
 ## Service Layer Architecture
 
 ### Service Design Pattern
@@ -287,6 +304,46 @@ Jobs (1) ←→ (1) CompressionJobs
    Indexes on job_id, status, created_at
 ```
 
+### Job Status Management
+
+The database layer includes robust job status management through the `JobStatusManager` utility:
+
+**Key Features:**
+- **Thread-Safe Operations**: Uses row-level locking (`SELECT FOR UPDATE`) to prevent race conditions
+- **Atomic Transactions**: All operations wrapped in database transactions with automatic rollback
+- **Status Validation**: Enforces job state machine rules to prevent invalid transitions
+- **Concurrency Control**: Prevents lost updates in multi-worker environments
+
+**Status Transition Rules:**
+```
+PENDING → PROCESSING → COMPLETED
+    ↓         ↓           ↑
+  FAILED ← CANCELLED    (terminal)
+    ↓
+  PENDING (retry)
+```
+
+**Usage Example:**
+```python
+from src.utils.job_manager import JobStatusManager
+
+# Thread-safe job creation
+job = JobStatusManager.get_or_create_job(
+    job_id="compress_doc_123",
+    job_type=JobType.COMPRESS,
+    file_path="/uploads/document.pdf"
+)
+
+# Atomic status update with validation
+success = JobStatusManager.update_job_status(
+    job_id="compress_doc_123",
+    status=JobStatus.COMPLETED,
+    result={"output_path": "/compressed/doc.pdf"}
+)
+```
+
+For detailed information, see [Job Manager Documentation](job_manager_documentation.md).
+
 ## File Management Strategy
 
 ### Centralized File Management Architecture
@@ -411,6 +468,29 @@ The system implements intelligent exception handling with specific exception typ
 - **Workers**: Scale Celery workers based on queue length
 - **Database**: SQLite limitations require migration to PostgreSQL for high load
 - **File Storage**: Consider distributed storage for large deployments
+
+### Concurrency Management
+
+The system handles concurrent operations through multiple mechanisms:
+
+**Database Concurrency:**
+- **Row-Level Locking**: `JobStatusManager` uses `SELECT FOR UPDATE` to prevent race conditions
+- **Atomic Transactions**: All job operations wrapped in database transactions
+- **Status Validation**: State machine prevents invalid concurrent status changes
+- **Deadlock Prevention**: Consistent lock ordering and timeout handling
+
+**Worker Concurrency:**
+- **Multiple Celery Workers**: Horizontal scaling of background processing
+- **Queue Isolation**: Separate queues for different task types
+- **Job Locking**: Prevents duplicate processing of the same job
+- **Resource Coordination**: Shared file system access coordination
+
+**API Concurrency:**
+- **Thread-Safe Operations**: All service methods designed for concurrent access
+- **Stateless Design**: No shared mutable state between requests
+- **Connection Pooling**: Database connections managed efficiently
+
+For detailed concurrency patterns, see [Job Manager Documentation](job_manager_documentation.md).
 
 ### Performance Optimization
 

@@ -289,6 +289,43 @@ class CompressionJob(BaseModel):
 3. Include rollback procedures
 4. Document breaking changes
 
+### Job Status Management
+
+For thread-safe job operations, use the `JobStatusManager` utility:
+
+```python
+from src.utils.job_manager import JobStatusManager
+
+# Initialize manager
+job_manager = JobStatusManager()
+
+# Safe status updates with row-level locking
+result = job_manager.update_job_status(
+    job_id='job-123',
+    new_status='processing',
+    progress=25
+)
+
+# Execute operations with job lock
+def process_job_safely(job):
+    # Your processing logic here
+    job.progress = 50
+    return {'success': True}
+
+result = job_manager.execute_with_job_lock(
+    job_id='job-123',
+    operation=process_job_safely
+)
+```
+
+**Key Features:**
+- Atomic transactions with automatic rollback
+- Row-level locking prevents concurrent modifications
+- Status transition validation
+- Thread-safe operations
+
+For detailed documentation, see [Job Manager Documentation](job_manager_documentation.md).
+
 ## API Development
 
 ### Route Structure
@@ -641,6 +678,57 @@ def create_app():
     register_error_handlers(app)
     return app
 ```
+
+### Job Manager Error Handling
+
+When working with job operations, handle specific exceptions:
+
+```python
+from src.utils.job_manager import JobStatusManager
+from src.utils.exceptions import (
+    JobNotFoundError,
+    InvalidStatusTransitionError,
+    DatabaseTransactionError
+)
+
+def process_job_safely(job_id: str):
+    """Example of proper job manager error handling."""
+    job_manager = JobStatusManager()
+    
+    try:
+        # Attempt status update with validation
+        result = job_manager.update_job_status(
+            job_id=job_id,
+            new_status='processing'
+        )
+        
+        if not result['success']:
+            logger.error(f"Failed to update job {job_id}: {result['error']}")
+            return {'success': False, 'error': result['error']}
+            
+    except JobNotFoundError:
+        logger.error(f"Job {job_id} not found")
+        return {'success': False, 'error': 'Job not found'}
+        
+    except InvalidStatusTransitionError as e:
+        logger.error(f"Invalid status transition for job {job_id}: {e}")
+        return {'success': False, 'error': 'Invalid status transition'}
+        
+    except DatabaseTransactionError as e:
+        logger.error(f"Database error for job {job_id}: {e}")
+        return {'success': False, 'error': 'Database operation failed'}
+        
+    except Exception as e:
+        logger.error(f"Unexpected error processing job {job_id}: {e}")
+        return {'success': False, 'error': 'Internal server error'}
+```
+
+**Error Handling Best Practices:**
+- Always use try-catch blocks around job manager operations
+- Log errors with sufficient context (job_id, operation, error details)
+- Return standardized error responses to maintain API consistency
+- Handle database transaction failures gracefully with rollback
+- Use specific exception types for better error categorization
 
 ## Security Best Practices
 

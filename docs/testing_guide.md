@@ -623,6 +623,170 @@ class TestCompressionService:
         }
         with pytest.raises(ValidationError):
             self.service.validate_settings(invalid_settings)
+
+### Job Manager Testing
+
+```python
+class TestJobStatusManager:
+    """Test JobStatusManager utility functionality"""
+    
+    def setup_method(self):
+        """Set up test environment"""
+        self.job_manager = JobStatusManager()
+        
+        # Create test job
+        self.test_job = Job(
+            id='test-job-123',
+            status='pending',
+            job_type='compression',
+            created_at=datetime.utcnow()
+        )
+        db.session.add(self.test_job)
+        db.session.commit()
+    
+    def test_update_job_status_success(self, app):
+        """Test successful job status update"""
+        with app.app_context():
+            result = self.job_manager.update_job_status(
+                job_id='test-job-123',
+                new_status='processing',
+                progress=25
+            )
+            
+            assert result['success'] is True
+            
+            # Verify database update
+            updated_job = Job.query.get('test-job-123')
+            assert updated_job.status == 'processing'
+            assert updated_job.progress == 25
+    
+    def test_update_job_status_invalid_transition(self, app):
+        """Test invalid status transition"""
+        with app.app_context():
+            # First, set job to completed
+            self.job_manager.update_job_status('test-job-123', 'completed')
+            
+            # Try to transition back to processing (invalid)
+            result = self.job_manager.update_job_status(
+                job_id='test-job-123',
+                new_status='processing'
+            )
+            
+            assert result['success'] is False
+            assert 'invalid transition' in result['error'].lower()
+    
+    def test_execute_with_job_lock(self, app):
+        """Test job lock execution"""
+        with app.app_context():
+            def test_operation(job):
+                job.progress = 50
+                return {'success': True, 'message': 'Operation completed'}
+            
+            result = self.job_manager.execute_with_job_lock(
+                job_id='test-job-123',
+                operation=test_operation
+            )
+            
+            assert result['success'] is True
+            assert result['message'] == 'Operation completed'
+            
+            # Verify job was updated
+            updated_job = Job.query.get('test-job-123')
+            assert updated_job.progress == 50
+    
+    def test_concurrent_job_updates(self, app):
+        """Test concurrent job updates with threading"""
+        import threading
+        import time
+        
+        results = []
+        
+        def update_job_status(status_suffix):
+            try:
+                result = self.job_manager.update_job_status(
+                    job_id='test-job-123',
+                    new_status='processing',
+                    progress=int(status_suffix)
+                )
+                results.append(result)
+            except Exception as e:
+                results.append({'success': False, 'error': str(e)})
+        
+        with app.app_context():
+            # Create multiple threads to test concurrency
+            threads = []
+            for i in range(5):
+                thread = threading.Thread(target=update_job_status, args=(str(i * 10),))
+                threads.append(thread)
+                thread.start()
+            
+            # Wait for all threads to complete
+            for thread in threads:
+                thread.join()
+            
+            # At least one should succeed (due to row-level locking)
+            successful_updates = [r for r in results if r.get('success')]
+            assert len(successful_updates) >= 1
+    
+    @patch('src.utils.job_manager.db.session.commit')
+    def test_database_error_handling(self, mock_commit, app):
+        """Test database error handling and rollback"""
+        mock_commit.side_effect = Exception("Database connection lost")
+        
+        with app.app_context():
+            result = self.job_manager.update_job_status(
+                job_id='test-job-123',
+                new_status='processing'
+            )
+            
+            assert result['success'] is False
+            assert 'database' in result['error'].lower()
+            
+            # Verify job status wasn't changed
+            job = Job.query.get('test-job-123')
+            assert job.status == 'pending'  # Original status
+    
+    def test_job_not_found_error(self, app):
+        """Test handling of non-existent job"""
+        with app.app_context():
+            result = self.job_manager.update_job_status(
+                job_id='non-existent-job',
+                new_status='processing'
+            )
+            
+            assert result['success'] is False
+            assert 'not found' in result['error'].lower()
+    
+    def test_cleanup_old_jobs(self, app):
+        """Test cleanup of old terminal jobs"""
+        with app.app_context():
+            # Create old completed job
+            old_job = Job(
+                id='old-job-456',
+                status='completed',
+                job_type='compression',
+                created_at=datetime.utcnow() - timedelta(days=8)
+            )
+            db.session.add(old_job)
+            db.session.commit()
+            
+            result = self.job_manager.cleanup_old_jobs(days=7)
+            
+            assert result['success'] is True
+            assert result['deleted_count'] >= 1
+            
+            # Verify old job was deleted
+            deleted_job = Job.query.get('old-job-456')
+            assert deleted_job is None
+```
+
+**Job Manager Testing Best Practices:**
+- Test both successful operations and error conditions
+- Verify database transactions and rollback behavior
+- Test concurrent access scenarios with threading
+- Mock database errors to test error handling
+- Verify status transition validation rules
+- Test cleanup operations with appropriate test data
 ```
 
 ## Integration Testing
