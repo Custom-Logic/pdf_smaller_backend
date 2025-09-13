@@ -32,35 +32,66 @@ PDF Smaller Backend API is a Flask-based service that provides PDF compression f
 └─────────────────┘    └───────────────────┘    └──────────────────┘
 ```
 
-## Job-Oriented Workflow
+## Agent-Based AI Framework
 
-### 1. Job Creation Flow
+### Overview
+The system now uses a unified AgentPromptFramework for all AI-driven tasks, providing consistent processing, standardized schemas, and role-based agent definitions.
+
+### Agent Roles
+- **DocumentExtractor**: Extract structured data from documents
+- **Summarizer**: Create concise text summaries
+- **Translator**: Translate between languages with quality levels
+- **DataValidator**: Validate and correct extracted data
+
+### Agent-Based Workflow
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Service
+    participant AgentFramework
+    participant AIProvider
+    participant Validator
+
+    Client->>Service: Request (e.g., extract invoice)
+    Service->>AgentFramework: Get DocumentExtractor agent
+    AgentFramework->>Service: Return agent with prompt template
+    Service->>AIProvider: Send structured request
+    AIProvider->>Service: Return AI response
+    Service->>Validator: Validate response format
+    Validator->>Service: Return validated data
+    Service->>Client: Return structured result
+```
+
+### 1. Job Creation Flow (Updated)
 ```mermaid
 sequenceDiagram
     participant Frontend
     participant Backend
+    participant AgentFramework
     participant Queue
     participant Worker
     participant Storage
 
     Frontend->>Backend: POST /api/compress (with file)
     Backend->>Backend: Validate request & create job record
-    Backend->>Queue: Enqueue compression task
+    Backend->>AgentFramework: Initialize extraction agent
+    Backend->>Queue: Enqueue compression task with agent context
     Backend->>Frontend: Return 202 Accepted with job_id
     
-    Queue->>Worker: Process task async
+    Queue->>Worker: Process task async with agent framework
     Worker->>Storage: Save temporary files
-    Worker->>Backend: Update job status
+    Worker->>AgentFramework: Use DocumentExtractor for processing
+    Worker->>Backend: Update job status with agent metadata
     Worker->>Storage: Process file (compress)
-    Worker->>Backend: Mark job completed
+    Worker->>Backend: Mark job completed with validation
     
     Frontend->>Backend: Poll GET /api/jobs/{job_id}
-    Backend->>Frontend: Return job status + result
+    Backend->>Frontend: Return job status + agent-processed result
 ```
 
-### 2. Job Status States
+### 2. Job Status States (Enhanced)
 ```
-Pending → Processing → (Completed | Failed)
+Pending → Processing → Validating → (Completed | Failed)
 ```
 
 ## API Endpoints Structure
@@ -100,6 +131,9 @@ class Job(BaseModel):
 
 ### Core Services
 - **Compression Service**: PDF compression using Ghostscript
+- **AI Services**: Agent-based AI processing with unified framework
+- **Extraction Service**: Document data extraction using DocumentExtractor agent
+- **Translation Service**: Multi-language support via Translator agent
 
 ### Infrastructure
 - **Job Manager**: Tracks job status and results

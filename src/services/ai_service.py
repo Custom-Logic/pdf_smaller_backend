@@ -1,6 +1,6 @@
 """
-AI Service - Job-Oriented Architecture with OpenRouter AI
-Handles AI-powered features like summarization and translation
+AI Service - Agent-Based Architecture with OpenRouter AI
+Handles AI-powered features using the unified AgentPromptFramework
 """
 
 import os
@@ -11,6 +11,7 @@ import uuid
 from typing import Dict, Any, Optional, List, Literal
 from datetime import datetime, timezone
 from enum import Enum
+from src.services.agent_prompt_framework import AgentPromptFramework, AgentRole
 
 logger = logging.getLogger(__name__)
 
@@ -189,6 +190,9 @@ class AIService:
         # Initialize ModelConfig for intelligent model selection
         self.model_config = ModelConfig()
         
+        # Initialize AgentPromptFramework for unified agent management
+        self.agent_framework = AgentPromptFramework()
+        
         # Load OpenRouter configuration
         self.config = self._load_config()
         self.api_clients = self._initialize_api_clients()
@@ -234,7 +238,7 @@ class AIService:
     
     def summarize_text(self, text: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
         """
-        Summarize text using AI with structured response
+        Summarize text using AI agent with structured response
         
         Args:
             text: Text to summarize
@@ -251,21 +255,36 @@ class AIService:
             if len(text) > 100000:
                 raise ValueError("Text too long. Maximum length is 100KB.")
             
-            # Prepare summarization request
-            summary_request = self._prepare_summary_request(text, options)
+            # Use agent framework for summarization
+            agent = self.agent_framework.get_agent(AgentRole.SUMMARIZER)
             
-            # Call AI provider
-            result =  self._call_openrouter_summarization(summary_request)
+            # Build agent input with structured context
+            agent_input = {
+                'text': text,
+                'style': options.get('style', 'concise'),
+                'max_length': options.get('maxLength', 'medium'),
+                'include_key_points': options.get('includeKeyPoints', True),
+                'language': options.get('language', 'en'),
+                'model': options.get('model')
+            }
+            
+            # Get recommended model from ModelConfig
+            if not agent_input['model']:
+                recommended_models = self.model_config.get_recommended_models(TaskType.SUMMARIZATION)
+                agent_input['model'] = recommended_models[0] if recommended_models else self.config['openrouter']['default_model']
+            
+            # Process with agent
+            agent_result = self._process_with_agent(agent, agent_input, TaskType.SUMMARIZATION)
             
             return {
                 'success': True,
-                'summary': result['summary'],
-                'key_points': result['key_points'],
-                'word_count': result['word_count'],
-                'reading_time': result['reading_time'],
-                'style': summary_request['style'],
-                'model': summary_request['model'],
-                'options': summary_request,
+                'summary': agent_result['summary'],
+                'key_points': agent_result.get('key_points', []),
+                'word_count': agent_result.get('word_count', len(agent_result['summary'].split())),
+                'reading_time': agent_result.get('reading_time', self._estimate_reading_time(agent_result['summary'])),
+                'style': agent_input['style'],
+                'model': agent_input['model'],
+                'options': agent_input,
                 'timestamp': datetime.now(timezone.utc).isoformat()
             }
             
@@ -279,7 +298,7 @@ class AIService:
     
     def translate_text(self, text: str, target_language: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
         """
-        Translate text using AI with structured response
+        Translate text using AI agent with structured response
         
         Args:
             text: Text to translate
@@ -301,22 +320,36 @@ class AIService:
             if target_language not in self.supported_languages:
                 raise ValueError(f"Unsupported target language: {target_language}")
             
-            # Prepare translation request
-            translation_request = self._prepare_translation_request(text, target_language, options)
+            # Use agent framework for translation
+            agent = self.agent_framework.get_agent(AgentRole.TRANSLATOR)
             
-            # Call AI provider
-            result =  self._call_openrouter_translation(translation_request)
+            # Build agent input with structured context
+            agent_input = {
+                'text': text,
+                'target_language': target_language,
+                'quality': options.get('quality', 'balanced'),
+                'preserve_formatting': options.get('preserveFormatting', True),
+                'model': options.get('model')
+            }
+            
+            # Get recommended model from ModelConfig
+            if not agent_input['model']:
+                recommended_models = self.model_config.get_recommended_models(TaskType.SUMMARIZATION)
+                agent_input['model'] = recommended_models[0] if recommended_models else self.config['openrouter']['default_model']
+            
+            # Process with agent
+            agent_result = self._process_with_agent(agent, agent_input, TaskType.SUMMARIZATION)
             
             return {
                 'success': True,
-                'translated_text': result['translated_text'],
-                'original_language': result.get('original_language', 'auto'),
+                'translated_text': agent_result['translated_text'],
+                'original_language': agent_result.get('original_language', 'auto'),
                 'target_language': target_language,
-                'word_count': result['word_count'],
-                'confidence': result.get('confidence', 0.9),
-                'model': translation_request['model'],
-                'quality': translation_request['quality'],
-                'options': translation_request,
+                'word_count': agent_result.get('word_count', len(agent_result['translated_text'].split())),
+                'confidence': agent_result.get('confidence', 0.9),
+                'model': agent_input['model'],
+                'quality': agent_input['quality'],
+                'options': agent_input,
                 'timestamp': datetime.now(timezone.utc).isoformat()
             }
             
@@ -605,6 +638,80 @@ class AIService:
         word_count = len(text.split())
         reading_time = word_count / 225  # 225 words per minute
         return max(1, round(reading_time))
+
+    def _process_with_agent(self, agent: Dict[str, Any], agent_input: Dict[str, Any], task_type: TaskType) -> Dict[str, Any]:
+        """
+        Process request using the agent framework
+        
+        Args:
+            agent: Agent configuration from framework
+            agent_input: Input parameters for the agent
+            task_type: Type of task being processed
+            
+        Returns:
+            Processed result from the agent
+        """
+        try:
+            # Build the prompt using the agent framework
+            prompt = agent['build_prompt'](agent_input)
+            
+            # Prepare API request with agent context
+            api_request = {
+                'model': agent_input.get('model', self.config['openrouter']['default_model']),
+                'messages': [
+                    {
+                        'role': 'system',
+                        'content': agent['system_prompt']
+                    },
+                    {
+                        'role': 'user',
+                        'content': prompt
+                    }
+                ],
+                'max_tokens': self.config['openrouter']['max_tokens'],
+                'temperature': agent.get('temperature', 0.3),
+                'response_format': {'type': 'json_object'}
+            }
+            
+            # Get the appropriate client
+            client = self.api_clients[AIProvider.OPENROUTER]
+            
+            # Make the API call
+            response = self._make_openrouter_request(api_request, client)
+            
+            # Parse the response
+            content = response['choices'][0]['message']['content']
+            result = json.loads(content)
+            
+            # Validate and enrich the result
+            return self._validate_agent_result(result, agent_input)
+            
+        except Exception as e:
+            logger.error(f"Agent processing failed: {str(e)}")
+            raise
+
+    def _validate_agent_result(self, result: Dict[str, Any], agent_input: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validate and enrich agent processing result
+        
+        Args:
+            result: Raw result from the agent
+            agent_input: Original input parameters
+            
+        Returns:
+            Validated and enriched result
+        """
+        # Ensure basic fields are present
+        if 'word_count' not in result:
+            if 'summary' in result:
+                result['word_count'] = len(result['summary'].split())
+            elif 'translated_text' in result:
+                result['word_count'] = len(result['translated_text'].split())
+        
+        if 'reading_time' not in result and 'summary' in result:
+            result['reading_time'] = self._estimate_reading_time(result['summary'])
+            
+        return result
     
     def create_ai_job(self, task_type: Literal["summarize", "translate"], 
                           text: str, options: Dict[str, Any] = None,
@@ -612,7 +719,11 @@ class AIService:
         """
         [DEPRECATED] Create an AI job for processing
         
-        This method is deprecated. Use JobOperations.create_job_safely instead.
+        This method is deprecated. Use the new agent-based approach via:
+        - summarize_text() for summarization tasks
+        - translate_text() for translation tasks
+        
+        These methods leverage the AgentPromptFramework for better results.
         
         Args:
             task_type: Type of AI task (summarize/translate)
@@ -623,14 +734,15 @@ class AIService:
         Returns:
             Job information (stubbed for backward compatibility)
         """
-        # Deprecated: Use JobOperations.create_job_safely instead
+        # Deprecated: Use agent-based methods instead
         # This method is kept for backward compatibility but should not be used
-        logger.warning("create_ai_job is deprecated. Use JobOperations.create_job_safely instead.")
+        logger.warning("create_ai_job is deprecated. Use agent-based methods (summarize_text/translate_text) instead.")
         
         return {
             'success': False,
-            'error': 'Method deprecated. Use JobOperations.create_job_safely instead.',
-            'deprecated': True
+            'error': 'Method deprecated. Use agent-based methods (summarize_text/translate_text) instead.',
+            'deprecated': True,
+            'agent_based_available': True
         }
     
     def process_ai_job(self, job_id: str, task_type: str, text: str, options: Dict[str, Any]) -> Dict[str, Any]:

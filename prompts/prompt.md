@@ -2,215 +2,386 @@ I have created the following plan after thorough exploration and analysis of the
 
 ### Observations
 
-I've completed a comprehensive exploration of the codebase and understand the current architecture:
+I've analyzed the current AI service architecture and found that while there are some structured approaches in place, there's no unified agent framework ensuring consistent behavior across all AI services. The current `ai_service.py` has good patterns for JSON output and model selection, but the extraction services (`invoice_extraction_service.py`, `bank_statement_extraction_service.py`) use ad-hoc prompt construction without a standardized agent framework.
 
-**Current State:**
-- Job management infrastructure exists with `JobOperations` (enhanced) and `JobStatusManager` (legacy)
-- Four services (OCR, Conversion, Compression, AI) use `FileManagementService` but have inconsistent job management
-- Celery tasks in `tasks.py` orchestrate services but use mixed job management approaches
-- Routes create jobs and enqueue tasks, but some use `JobStatusManager` directly
-- The `Job` model has proper state management methods and validation
-
-**Key Findings:**
-- Services already work functionally and integrate with `FileManagementService`
-- `JobOperations` provides transaction-safe, enhanced job management
-- Tasks use `ProgressReporter` and `TemporaryFileManager` for execution context
-- Routes follow consistent patterns but need standardization on job creation
-- Some services have redundant job creation methods that bypass the centralized system
+The system needs a central agent prompt framework that can:
+- Define agent roles and behaviors for different AI tasks
+- Enforce structured input validation across all services
+- Ensure consistent output schemas and validation
+- Provide reusable prompt templates with agent instructions
+- Handle error cases and fallback behaviors consistently
 
 ### Approach
 
-The migration will standardize all services to use `JobOperations` for job lifecycle management while maintaining full compatibility with existing tasks and file management. The approach focuses on:
+The implementation will create a comprehensive agent-based framework for AI services to ensure structured input and output across all AI interactions. This involves creating a central `AgentPromptFramework` that standardizes how AI agents are instructed, validates inputs, and formats outputs. The framework will define agent roles, input schemas, output schemas, and validation rules for each AI task type.
 
-1. **Centralized Job Creation**: Replace all service-specific job creation with `JobOperations.create_job_safely`
-2. **Standardized Status Updates**: Migrate all job status changes to use `JobOperations.update_job_status_safely`
-3. **Enhanced Progress Reporting**: Update `ProgressReporter` to use `JobOperations.execute_job_operation` for thread-safe updates
-4. **Service Cleanup**: Remove redundant job management code from services while preserving their core functionality
-5. **Task Integration**: Ensure all Celery tasks use the standardized job operations
-6. **Backward Compatibility**: Maintain existing API contracts and result schemas
+The approach focuses on:
+1. **Central Agent Framework**: Create a unified system for managing AI agent prompts and behaviors
+2. **Structured Input/Output**: Enforce consistent schemas for all AI interactions
+3. **Agent Role Definitions**: Define specific agent personas for different tasks (extraction, summarization, etc.)
+4. **Validation Layer**: Add comprehensive input validation and output verification
+5. **Service Integration**: Update all existing AI services to use the new agent framework
 
 ### Reasoning
 
-I systematically explored the codebase to understand the migration requirements. I examined the job management infrastructure (`JobOperations`, `JobStatusManager`, `FileManagementService`), analyzed all four services to understand their current structure, reviewed the tasks module to see how Celery orchestrates operations, and checked the routes to understand the API layer. I also examined the Job model to verify compatibility and understand the current job creation patterns across the system.
+I explored the repository structure to understand the current AI service implementation. I read the main AI service file to understand existing patterns for structured prompts and JSON output. I examined the extraction services to see how they currently handle AI interactions and prompt construction. I analyzed the service registry and configuration to understand how AI services are integrated. I also reviewed the existing prompt files to understand the current documentation and planning approach used in this project.
 
 ## Mermaid Diagram
 
 sequenceDiagram
-    participant Route as API Route
-    participant Task as Celery Task
-    participant JobOps as JobOperations
-    participant Service as Service Layer
-    participant FileService as FileManagementService
-    participant DB as Database
+    participant Service as AI Service
+    participant Framework as AgentPromptFramework
+    participant Agent as AI Agent
+    participant Validator as ResponseValidator
+    participant Client as API Client
 
-    Route->>Task: enqueue task with job_id and file_data
-    Task->>JobOps: create_job_safely(job_id, task_type, input_data)
-    JobOps->>DB: create job with transaction safety
-    DB-->>JobOps: job created
-    JobOps-->>Task: job instance
-
-    Task->>JobOps: update_job_status_safely(job_id, PROCESSING)
-    JobOps->>DB: update status with row lock
+    Client->>Service: Request AI processing
+    Service->>Framework: validate_agent_input(data, schema)
+    Framework->>Service: Validated input
     
-    Task->>Service: process_file_data(file_data, options)
-    Service->>FileService: save_file(file_data)
-    FileService-->>Service: file_path
-    Service->>Service: perform processing
-    Service->>FileService: save_file(result_data)
-    FileService-->>Service: output_path
-    Service-->>Task: processing result
-
-    Task->>JobOps: execute_job_operation(job_id, update_progress)
-    JobOps->>DB: update progress with row lock
+    Service->>Framework: build_agent_prompt(role, task, data)
+    Framework->>Service: Structured agent prompt
     
-    alt Success
-        Task->>JobOps: update_job_status_safely(job_id, COMPLETED, result)
-        JobOps->>DB: mark completed with result
-    else Failure
-        Task->>JobOps: update_job_status_safely(job_id, FAILED, error)
-        JobOps->>DB: mark failed with error
+    Service->>Agent: Send prompt with agent instructions
+    Agent->>Service: AI response with structured output
+    
+    Service->>Framework: validate_agent_output(response, schema)
+    Framework->>Validator: Check schema compliance
+    Validator->>Framework: Validation result
+    Framework->>Service: Validated response
+    
+    alt Validation Success
+        Service->>Client: Structured result with metadata
+    else Validation Failure
+        Service->>Client: Error with validation details
     end
-
-    Route->>DB: poll job status
-    DB-->>Route: job status and result
+    
+    Note over Framework: Ensures consistent agent behavior
+    Note over Agent: Follows role-specific instructions
+    Note over Validator: Enforces output schema compliance
 
 ## Proposed File Changes
 
-### src\tasks\utils.py(MODIFY)
+### e:\projects\pdf_smaller_backend\src\services\agent_prompt_framework.py(NEW)
 
 References: 
 
-- src\utils\job_operations.py
+- e:\projects\pdf_smaller_backend\src\services\ai_service.py(MODIFY)
+- e:\projects\pdf_smaller_backend\src\services\invoice_extraction_service.py(MODIFY)
+- e:\projects\pdf_smaller_backend\src\services\bank_statement_extraction_service.py(MODIFY)
 
-Update the `ProgressReporter` class to use `JobOperations.execute_job_operation` instead of direct job object mutation. Replace the current `update` method implementation to call `JobOperations.execute_job_operation(self.job.job_id, lambda job: self._update_job_progress(job, progress_data))` where `_update_job_progress` is a new private method that safely updates the job's result with progress information. This ensures thread-safe progress updates with proper database locking.
+Create a comprehensive agent prompt framework that standardizes AI agent behavior across all services. The framework will include:
 
-Add import for `JobOperations` from `src.utils.job_operations` and remove the direct database operation code that currently mutates `self.job.result` without proper locking.
+**Core Components:**
+- `AgentRole` enum defining different agent types (DOCUMENT_EXTRACTOR, SUMMARIZER, TRANSLATOR, DATA_VALIDATOR)
+- `InputSchema` and `OutputSchema` classes for structured data validation
+- `AgentPromptBuilder` class for constructing standardized prompts with agent instructions
+- `AgentResponseValidator` class for validating AI responses against expected schemas
 
-### src\services\ocr_service.py(MODIFY)
+**Agent Definitions:**
+- Document Extraction Agent: Specialized for extracting structured data from PDFs with strict output formatting
+- Summarization Agent: Focused on creating concise, structured summaries with key points
+- Translation Agent: Professional translator with quality assurance and formatting preservation
+- Data Validation Agent: Ensures extracted data meets business rules and validation criteria
 
-References: 
+**Prompt Templates:**
+- Standardized agent instruction templates with role definitions, behavioral guidelines, and output requirements
+- Input validation schemas with required fields, data types, and constraints
+- Output schemas with strict JSON structures and validation rules
+- Error handling instructions for agents when data is incomplete or ambiguous
 
-- src\utils\job_operations.py
+**Integration Methods:**
+- `build_agent_prompt()` method that combines agent role, input data, and task-specific instructions
+- `validate_agent_input()` method for pre-processing input validation
+- `validate_agent_output()` method for post-processing response validation
+- `get_agent_capabilities()` method returning supported features for each agent type
 
-Remove the `create_ocr_job` method (lines 400-417) as job creation will be handled centrally by `JobOperations.create_job_safely`. The method currently returns a stub job dict without database interaction, which is redundant with the new centralized approach.
+The framework will ensure all AI interactions follow consistent patterns and produce reliable, structured outputs.
 
-Update the class docstring and any references to indicate that job management is now handled externally through the job operations system. Ensure the `process_ocr_data` and `get_ocr_preview` methods continue to work as pure processing functions that return structured results.
-
-### src\services\conversion_service.py(MODIFY)
-
-References: 
-
-- src\utils\job_operations.py
-
-Remove the `create_conversion_job` method (lines 489-505) as it returns a stub job dict without database interaction, which is now redundant with centralized job creation through `JobOperations.create_job_safely`.
-
-Update the class docstring to reflect that job management is handled externally. Ensure the `convert_pdf_data` and `get_conversion_preview` methods remain as pure processing functions that work with file data and return structured results.
-
-### src\services\compression_service.py(MODIFY)
-
-References: 
-
-- src\utils\job_operations.py
-- src\utils\job_manager.py
-
-Replace all `JobStatusManager` imports and usage with `JobOperations`. Update the `create_compression_job` method (lines 150-172) to use `JobOperations.create_job_safely` instead of `JobStatusManager.get_or_create_job`.
-
-In the `process_compression_job` method (lines 173-234), replace `JobStatusManager.update_job_status` calls with `JobOperations.update_job_status_safely`. This includes the status updates to PROCESSING (line 187), COMPLETED (line 224), and FAILED (line 230).
-
-Add import for `JobOperations` from `src.utils.job_operations` and remove the `JobStatusManager` import. Update any error handling to use the enhanced transaction safety provided by `JobOperations`.
-
-### src\services\ai_service.py(MODIFY)
+### e:\projects\pdf_smaller_backend\prompts\agent_instructions.md(NEW)
 
 References: 
 
-- src\utils\job_operations.py
+- e:\projects\pdf_smaller_backend\src\services\agent_prompt_framework.py(NEW)
 
-Update the `create_ai_job` method (lines 609-656) to use `JobOperations.create_job_safely` for actual database job creation instead of just returning a stub dictionary. Replace the current implementation that only returns job metadata with a call to `JobOperations.create_job_safely(job_id, task_type, input_data)` where `input_data` includes the text, options, and metadata.
+Create comprehensive agent instruction prompts that define how AI agents should behave for different tasks. This file will contain:
 
-Ensure the method now creates an actual database job record and returns both success status and the created job information. Update the return structure to be consistent with other services while maintaining backward compatibility.
+**Agent Role Definitions:**
+- Document Extraction Agent: "You are a professional document analysis expert specializing in extracting structured data from business documents. You maintain strict accuracy standards and always return data in the specified JSON format."
+- Summarization Agent: "You are an expert content analyst who creates clear, concise summaries while preserving key information and context."
+- Translation Agent: "You are a professional translator with expertise in maintaining context, tone, and formatting across languages."
+- Data Validation Agent: "You are a data quality specialist who ensures extracted information meets business rules and validation criteria."
 
-### src\tasks\tasks.py(MODIFY)
+**Behavioral Guidelines:**
+- Consistency requirements: Always follow the exact output schema provided
+- Error handling: When information is unclear or missing, use null values or specified defaults
+- Quality standards: Maintain high accuracy and provide confidence scores when applicable
+- Validation rules: Check data integrity and flag potential issues
 
-References: 
+**Output Format Requirements:**
+- Strict JSON schema compliance with required fields
+- Standardized error reporting format
+- Confidence scoring for uncertain extractions
+- Metadata inclusion for processing information
 
-- src\utils\job_operations.py
-- src\utils\job_manager.py
-- src\tasks\utils.py(MODIFY)
+**Task-Specific Instructions:**
+- Invoice extraction: Focus on financial accuracy, validate totals, extract all line items
+- Bank statement extraction: Ensure transaction consistency, validate running balances
+- Document summarization: Preserve key points, maintain original context
+- Translation: Preserve formatting, maintain professional tone
 
-Replace all instances of `JobStatusManager` with `JobOperations` throughout the file. This includes:
+The instructions will be referenced by the `AgentPromptFramework` to ensure consistent agent behavior across all AI services.
 
-1. Update imports to use `from src.utils.job_operations import JobOperations` instead of `JobStatusManager`
-2. Replace `JobStatusManager.get_or_create_job` calls with `JobOperations.create_job_safely`
-3. Replace `JobStatusManager.update_job_status` calls with `JobOperations.update_job_status_safely`
-4. Update error handling in the `handle_task_error` function to use `JobOperations.update_job_status_safely`
-
-Ensure all task functions (compression, conversion, OCR, AI) use the standardized job operations for consistent transaction safety and error handling. Verify that progress reporting through `ProgressReporter` works correctly with the updated job operations.
-
-### src\routes\compression_routes.py(MODIFY)
-
-References: 
-
-- src\utils\job_operations.py
-- src\utils\job_manager.py
-
-Replace the `JobStatusManager` import and usage with `JobOperations`. Update the error handling in the `compress_pdf` endpoint (lines 70-75) to use `JobOperations.update_job_status_safely` instead of `JobStatusManager.update_job_status`.
-
-Ensure that job creation is handled by the Celery tasks rather than in the route handlers, maintaining the current pattern where routes enqueue tasks and tasks handle job lifecycle management. Update the import statement to use `from src.utils.job_operations import JobOperations`.
-
-### docs\job_manager_documentation.md(MODIFY)
+### e:\projects\pdf_smaller_backend\src\services\ai_service.py(MODIFY)
 
 References: 
 
-- src\utils\job_operations.py
-- src\utils\job_manager.py
-- src\tasks\utils.py(MODIFY)
+- e:\projects\pdf_smaller_backend\src\services\agent_prompt_framework.py(NEW)
+- e:\projects\pdf_smaller_backend\prompts\agent_instructions.md(NEW)
 
-Update the documentation to reflect the migration to `JobOperations` as the primary job management interface. Add a new section explaining the relationship between `JobOperations` (enhanced, transaction-safe) and `JobStatusManager` (legacy, lower-level).
+Update the AI service to use the new `AgentPromptFramework` for all AI interactions. Replace the current manual prompt construction with standardized agent-based prompts:
 
-Document the new standardized patterns for:
-1. Job creation using `JobOperations.create_job_safely`
-2. Status updates using `JobOperations.update_job_status_safely`
-3. Progress reporting through the updated `ProgressReporter`
-4. Integration with services and tasks
+**Integration Changes:**
+- Import `AgentPromptFramework`, `AgentRole` from `src.services.agent_prompt_framework`
+- Initialize the framework in `__init__()` method
+- Replace `_build_structured_summary_prompt()` with `framework.build_agent_prompt(AgentRole.SUMMARIZER, ...)`
+- Replace `_build_translation_prompt()` with `framework.build_agent_prompt(AgentRole.TRANSLATOR, ...)`
 
-Include migration notes for developers and examples of the new patterns. Mark `JobStatusManager` methods as legacy but still supported for backward compatibility.
+**Method Updates:**
+- Update `_prepare_summary_request()` to use agent framework for input validation and prompt building
+- Update `_prepare_translation_request()` to use standardized agent prompts
+- Modify `_call_openrouter_summarization()` and `_call_openrouter_translation()` to use agent response validation
+- Add `_validate_agent_response()` method that uses the framework's output validation
 
-### docs\tasks_module.md(MODIFY)
+**Enhanced Functionality:**
+- Add input validation using `framework.validate_agent_input()` before processing
+- Add output validation using `framework.validate_agent_output()` after AI response
+- Include agent confidence scores in response metadata
+- Add agent capability reporting through `get_agent_capabilities()` method
+
+**Backward Compatibility:**
+- Maintain existing method signatures and return formats
+- Ensure all current API contracts continue to work
+- Add new agent-specific metadata to responses without breaking existing clients
+
+The updated service will demonstrate the agent framework pattern that other AI services should follow.
+
+### e:\projects\pdf_smaller_backend\src\services\invoice_extraction_service.py(MODIFY)
 
 References: 
 
-- src\tasks\tasks.py(MODIFY)
-- src\tasks\utils.py(MODIFY)
-- src\utils\job_operations.py
+- e:\projects\pdf_smaller_backend\src\services\agent_prompt_framework.py(NEW)
+- e:\projects\pdf_smaller_backend\prompts\agent_instructions.md(NEW)
 
-Update the tasks module documentation to reflect the standardized use of `JobOperations` for all job lifecycle management. Document the updated patterns for:
+Refactor the invoice extraction service to use the new `AgentPromptFramework` for structured AI interactions:
 
-1. Task structure using `JobOperations.create_job_safely` and `JobOperations.update_job_status_safely`
-2. Progress reporting with the enhanced `ProgressReporter` that uses `JobOperations.execute_job_operation`
-3. Error handling using centralized job operations
-4. Integration between tasks, services, and file management
+**Framework Integration:**
+- Import `AgentPromptFramework`, `AgentRole` from `src.services.agent_prompt_framework`
+- Initialize the framework in `__init__()` method
+- Replace `_prepare_extraction_prompt()` with `framework.build_agent_prompt(AgentRole.DOCUMENT_EXTRACTOR, ...)`
 
-Include examples of the new standardized task patterns and explain how the migration maintains compatibility with existing functionality while improving transaction safety and consistency.
+**Structured Input/Output:**
+- Update `extract_invoice_data()` to use `framework.validate_agent_input()` for input validation
+- Replace manual prompt construction with agent-based prompts that include role definition and behavioral guidelines
+- Update `_call_ai_extraction()` to use the framework's standardized AI calling pattern
+- Replace `_validate_extraction_result()` with `framework.validate_agent_output()` for consistent validation
 
-### tests\test_job_operations_migration.py(NEW)
+**Agent-Specific Enhancements:**
+- Define invoice extraction input schema with required fields (file_path, extraction_mode, options)
+- Define invoice extraction output schema with structured invoice data format
+- Add agent confidence scoring for extracted fields
+- Include data quality indicators in the response
+
+**Improved Error Handling:**
+- Use framework's standardized error reporting format
+- Add agent-specific error codes for different failure types
+- Include validation failure details with specific field-level errors
+- Maintain backward compatibility with existing error handling patterns
+
+**Enhanced Capabilities:**
+- Add `get_agent_capabilities()` method that returns supported extraction features
+- Include agent metadata in extraction results
+- Add support for agent-driven validation rules and business logic
+
+The service will serve as a reference implementation for document extraction agents using the new framework.
+
+### e:\projects\pdf_smaller_backend\src\services\bank_statement_extraction_service.py(MODIFY)
 
 References: 
 
-- src\utils\job_operations.py
-- src\tasks\tasks.py(MODIFY)
-- src\tasks\utils.py(MODIFY)
-- src\services\ocr_service.py(MODIFY)
-- src\services\conversion_service.py(MODIFY)
-- src\services\compression_service.py(MODIFY)
-- src\services\ai_service.py(MODIFY)
+- e:\projects\pdf_smaller_backend\src\services\agent_prompt_framework.py(NEW)
+- e:\projects\pdf_smaller_backend\prompts\agent_instructions.md(NEW)
 
-Create comprehensive integration tests to verify the migration to `JobOperations` works correctly. Include tests for:
+Update the bank statement extraction service to use the `AgentPromptFramework` for consistent agent-based AI interactions:
 
-1. **Job Creation**: Test that `JobOperations.create_job_safely` works for all service types (OCR, conversion, compression, AI)
-2. **Status Updates**: Verify that `JobOperations.update_job_status_safely` properly handles state transitions
-3. **Progress Reporting**: Test the updated `ProgressReporter` with `JobOperations.execute_job_operation`
-4. **Task Integration**: End-to-end tests for each task type ensuring proper job lifecycle management
-5. **Error Handling**: Test error scenarios and ensure proper job status updates
-6. **Backward Compatibility**: Verify that existing API contracts and result schemas are maintained
+**Framework Integration:**
+- Import and initialize `AgentPromptFramework` with `AgentRole.DOCUMENT_EXTRACTOR` specialization
+- Replace `_prepare_extraction_prompt()` with framework-based agent prompt construction
+- Update the service to use standardized agent instructions from `prompts/agent_instructions.md`
 
-Include setup and teardown methods for test database state, mock file data, and Celery task testing. Use pytest fixtures for common test data and ensure tests can run independently.
+**Structured Processing:**
+- Implement input validation using `framework.validate_agent_input()` with bank statement specific schema
+- Define structured output schema for bank statement data (account_info, balances, transactions)
+- Replace manual AI calling with framework's standardized `call_agent()` method
+- Update response validation to use `framework.validate_agent_output()`
+
+**Agent Behavior Enhancements:**
+- Add agent-specific instructions for bank statement processing (balance validation, transaction categorization)
+- Include confidence scoring for extracted financial data
+- Add data consistency validation through agent instructions
+- Implement agent-driven transaction categorization with confidence levels
+
+**Quality Assurance:**
+- Use agent framework's validation rules for financial data accuracy
+- Add agent-specific error handling for common bank statement extraction issues
+- Include data quality metrics in extraction results
+- Implement agent-driven balance reconciliation validation
+
+**Backward Compatibility:**
+- Maintain existing method signatures and return formats
+- Preserve current functionality while adding agent framework benefits
+- Ensure existing API contracts continue to work with enhanced agent capabilities
+
+The updated service will demonstrate how financial document extraction can benefit from structured agent interactions.
+
+### e:\projects\pdf_smaller_backend\src\services\ocr_service.py(MODIFY)
+
+References: 
+
+- e:\projects\pdf_smaller_backend\src\services\agent_prompt_framework.py(NEW)
+- e:\projects\pdf_smaller_backend\prompts\agent_instructions.md(NEW)
+
+Update the OCR service to integrate with the `AgentPromptFramework` for AI-enhanced text recognition and validation:
+
+**Agent Integration:**
+- Import `AgentPromptFramework` and `AgentRole.DATA_VALIDATOR` for OCR result validation
+- Add agent-based post-processing for OCR results to improve accuracy
+- Implement agent-driven text validation and correction capabilities
+
+**Structured OCR Enhancement:**
+- Use agent framework to validate and enhance OCR results through AI
+- Add agent-based confidence scoring for OCR accuracy
+- Implement agent-driven text correction for common OCR errors
+- Add structured output validation for OCR results
+
+**Quality Improvement:**
+- Use agents to identify and flag potential OCR errors
+- Add agent-based text formatting and structure detection
+- Implement agent-driven language detection and validation
+- Include confidence metrics for OCR quality assessment
+
+**Agent Capabilities:**
+- Add `get_agent_capabilities()` method for OCR enhancement features
+- Include agent metadata in OCR results
+- Add support for agent-driven OCR result validation
+- Implement agent-based text quality scoring
+
+**Integration Points:**
+- Maintain existing OCR functionality while adding agent enhancements
+- Use agents as a post-processing layer for improved accuracy
+- Add agent validation for critical text extraction scenarios
+- Include agent feedback in OCR result metadata
+
+The service will demonstrate how traditional OCR can be enhanced with agent-based AI validation and correction.
+
+### e:\projects\pdf_smaller_backend\tests\test_agent_framework.py(NEW)
+
+References: 
+
+- e:\projects\pdf_smaller_backend\src\services\agent_prompt_framework.py(NEW)
+- e:\projects\pdf_smaller_backend\src\services\ai_service.py(MODIFY)
+- e:\projects\pdf_smaller_backend\src\services\invoice_extraction_service.py(MODIFY)
+- e:\projects\pdf_smaller_backend\src\services\bank_statement_extraction_service.py(MODIFY)
+
+Create comprehensive tests for the agent prompt framework to ensure structured input/output behavior:
+
+**Framework Testing:**
+- Test `AgentPromptBuilder` for consistent prompt generation across different agent roles
+- Test input validation with various data types and edge cases
+- Test output validation with valid and invalid AI responses
+- Test agent role definitions and behavioral consistency
+
+**Agent Behavior Tests:**
+- Test document extraction agent with sample invoice and bank statement data
+- Test summarization agent with various text types and lengths
+- Test translation agent with different languages and formatting requirements
+- Test data validation agent with correct and incorrect data sets
+
+**Input/Output Validation Tests:**
+- Test schema validation with valid inputs and expected failures
+- Test output format compliance across different agent types
+- Test error handling and fallback behaviors
+- Test confidence scoring and metadata inclusion
+
+**Integration Tests:**
+- Test framework integration with existing AI services
+- Test backward compatibility with current API contracts
+- Test performance impact of agent framework overhead
+- Test concurrent agent operations and thread safety
+
+**Mock AI Response Tests:**
+- Create mock AI responses for testing validation logic
+- Test edge cases like partial responses, malformed JSON, missing fields
+- Test agent error handling and recovery scenarios
+- Test validation failure reporting and error details
+
+**Service Integration Tests:**
+- Test updated AI service with agent framework
+- Test invoice extraction service with agent prompts
+- Test bank statement extraction with agent validation
+- Test OCR service with agent enhancement features
+
+The tests will ensure the agent framework provides reliable, structured AI interactions across all services.
+
+### e:\projects\pdf_smaller_backend\docs\agent_framework_guide.md(NEW)
+
+References: 
+
+- e:\projects\pdf_smaller_backend\src\services\agent_prompt_framework.py(NEW)
+- e:\projects\pdf_smaller_backend\prompts\agent_instructions.md(NEW)
+
+Create comprehensive documentation for the agent prompt framework that explains how to ensure AI services use agents with structured input and output:
+
+**Framework Overview:**
+- Introduction to the agent-based AI architecture
+- Benefits of structured agent interactions (consistency, reliability, validation)
+- Overview of agent roles and their specific capabilities
+- Integration patterns with existing AI services
+
+**Agent Role Definitions:**
+- Document Extraction Agent: Specialized for structured data extraction from PDFs
+- Summarization Agent: Expert content analysis and summary generation
+- Translation Agent: Professional translation with context preservation
+- Data Validation Agent: Quality assurance and business rule validation
+
+**Structured Input/Output Patterns:**
+- Input schema definition and validation requirements
+- Output schema enforcement and validation rules
+- Error handling and fallback behavior specifications
+- Confidence scoring and metadata inclusion standards
+
+**Implementation Guide:**
+- How to integrate the framework into new AI services
+- Step-by-step guide for updating existing services
+- Best practices for agent prompt construction
+- Common patterns and anti-patterns to avoid
+
+**Usage Examples:**
+- Code examples for each agent type with input/output samples
+- Integration examples showing before/after framework adoption
+- Error handling examples and recovery scenarios
+- Performance optimization tips and considerations
+
+**Validation and Quality Assurance:**
+- Input validation patterns and error reporting
+- Output validation rules and compliance checking
+- Quality metrics and confidence scoring
+- Testing strategies for agent-based services
+
+**Development Guidelines:**
+- Standards for creating new agent types
+- Prompt engineering best practices for agents
+- Validation rule development and testing
+- Performance monitoring and optimization
+
+The guide will serve as the definitive reference for implementing structured agent-based AI interactions across the platform.
