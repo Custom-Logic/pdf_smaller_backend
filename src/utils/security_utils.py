@@ -5,7 +5,7 @@ import time
 import logging
 from flask import request, g
 from typing import Dict, Any, List, Optional, Set
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from src.utils.validation import validate_file_content, sanitize_input
 
 logger = logging.getLogger(__name__)
@@ -231,7 +231,7 @@ def get_client_ip() -> str:
 
 def track_suspicious_activity(activity_type: str, details: Dict[str, Any]) -> None:
     """Track suspicious activities for security monitoring"""
-    timestamp = datetime.utcnow()
+    timestamp = datetime.now(timezone.utc)
     client_ip = details.get('ip', get_client_ip())
     
     # Log the activity
@@ -261,7 +261,7 @@ def track_suspicious_activity(activity_type: str, details: Dict[str, Any]) -> No
 def is_rate_limited(client_ip: str, max_requests: int = 100, window_minutes: int = 60) -> bool:
     """Simple rate limiting check"""
     # This is a basic implementation - in production, use Redis or similar
-    current_time = datetime.utcnow()
+    current_time = datetime.now(timezone.utc)
     window_start = current_time - timedelta(minutes=window_minutes)
     
     if client_ip in THREAT_TRACKING['suspicious_ips']:
@@ -338,7 +338,7 @@ def validate_csrf_token(token: str, expected_token: str) -> bool:
 def log_security_event(event_type: str, details: Dict[str, Any], severity: str = 'INFO') -> None:
     """Log security events with structured format"""
     security_log = {
-        'timestamp': datetime.utcnow().isoformat(),
+        'timestamp': datetime.now(timezone.utc).isoformat(),
         'event_type': event_type,
         'severity': severity,
         'client_ip': get_client_ip(),

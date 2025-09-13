@@ -2,191 +2,215 @@ I have created the following plan after thorough exploration and analysis of the
 
 ### Observations
 
-The `job_manager.py` utility is a critical component that handles database operations for job tracking with proper race condition prevention and exception handling. Currently, it lacks comprehensive documentation explaining its database-related design decisions, transaction management, and proper usage patterns. The module is widely used across the application (tasks, services, routes) but its sophisticated locking mechanisms and error handling strategies are not well documented for developers.
+I've completed a comprehensive exploration of the codebase and understand the current architecture:
+
+**Current State:**
+- Job management infrastructure exists with `JobOperations` (enhanced) and `JobStatusManager` (legacy)
+- Four services (OCR, Conversion, Compression, AI) use `FileManagementService` but have inconsistent job management
+- Celery tasks in `tasks.py` orchestrate services but use mixed job management approaches
+- Routes create jobs and enqueue tasks, but some use `JobStatusManager` directly
+- The `Job` model has proper state management methods and validation
+
+**Key Findings:**
+- Services already work functionally and integrate with `FileManagementService`
+- `JobOperations` provides transaction-safe, enhanced job management
+- Tasks use `ProgressReporter` and `TemporaryFileManager` for execution context
+- Routes follow consistent patterns but need standardization on job creation
+- Some services have redundant job creation methods that bypass the centralized system
 
 ### Approach
 
-I'll enhance the `job_manager.py` module with comprehensive inline documentation and create a dedicated documentation file explaining database-related issues. The approach focuses on:
+The migration will standardize all services to use `JobOperations` for job lifecycle management while maintaining full compatibility with existing tasks and file management. The approach focuses on:
 
-1. **Enhanced Module Documentation**: Add comprehensive module-level docstring explaining the purpose, design goals, and database safety mechanisms
-2. **Method Documentation**: Add detailed docstrings for all public methods with proper Args/Returns/Raises sections and usage examples
-3. **Inline Comments**: Add strategic comments explaining critical database operations like row locking and transaction management
-4. **External Documentation**: Create a dedicated documentation file explaining race conditions, exception handling patterns, and best practices
-5. **Architecture Integration**: Update existing documentation to reference the new job manager documentation
-
-This approach maintains all existing functionality while making the sophisticated database handling patterns clear to developers.
+1. **Centralized Job Creation**: Replace all service-specific job creation with `JobOperations.create_job_safely`
+2. **Standardized Status Updates**: Migrate all job status changes to use `JobOperations.update_job_status_safely`
+3. **Enhanced Progress Reporting**: Update `ProgressReporter` to use `JobOperations.execute_job_operation` for thread-safe updates
+4. **Service Cleanup**: Remove redundant job management code from services while preserving their core functionality
+5. **Task Integration**: Ensure all Celery tasks use the standardized job operations
+6. **Backward Compatibility**: Maintain existing API contracts and result schemas
 
 ### Reasoning
 
-I explored the project structure and identified the `job_manager.py` file in `src/utils/`. I examined the current implementation to understand its database operations, transaction management, and locking mechanisms. I reviewed related files including the Job model, database helpers, exception classes, and found extensive usage patterns across tasks, services, and routes. I also found existing tests that validate the current behavior, ensuring my documentation enhancements won't break existing functionality.
+I systematically explored the codebase to understand the migration requirements. I examined the job management infrastructure (`JobOperations`, `JobStatusManager`, `FileManagementService`), analyzed all four services to understand their current structure, reviewed the tasks module to see how Celery orchestrates operations, and checked the routes to understand the API layer. I also examined the Job model to verify compatibility and understand the current job creation patterns across the system.
 
 ## Mermaid Diagram
 
 sequenceDiagram
-    participant Dev as Developer
-    participant JM as JobStatusManager
+    participant Route as API Route
+    participant Task as Celery Task
+    participant JobOps as JobOperations
+    participant Service as Service Layer
+    participant FileService as FileManagementService
     participant DB as Database
-    participant Job as Job Model
+
+    Route->>Task: enqueue task with job_id and file_data
+    Task->>JobOps: create_job_safely(job_id, task_type, input_data)
+    JobOps->>DB: create job with transaction safety
+    DB-->>JobOps: job created
+    JobOps-->>Task: job instance
+
+    Task->>JobOps: update_job_status_safely(job_id, PROCESSING)
+    JobOps->>DB: update status with row lock
     
-    Note over Dev,Job: Race Condition Prevention Flow
+    Task->>Service: process_file_data(file_data, options)
+    Service->>FileService: save_file(file_data)
+    FileService-->>Service: file_path
+    Service->>Service: perform processing
+    Service->>FileService: save_file(result_data)
+    FileService-->>Service: output_path
+    Service-->>Task: processing result
+
+    Task->>JobOps: execute_job_operation(job_id, update_progress)
+    JobOps->>DB: update progress with row lock
     
-    Dev->>JM: get_or_create_job(job_id, task_type, input_data)
-    JM->>DB: BEGIN TRANSACTION
-    JM->>DB: SELECT ... FOR UPDATE WHERE job_id = ?
-    DB-->>JM: Row locked (or empty result)
-    
-    alt Job exists
-        JM-->>Dev: Return existing job
-    else Job doesn't exist
-        JM->>Job: Create new Job instance
-        JM->>DB: INSERT new job
-        JM-->>Dev: Return new job
+    alt Success
+        Task->>JobOps: update_job_status_safely(job_id, COMPLETED, result)
+        JobOps->>DB: mark completed with result
+    else Failure
+        Task->>JobOps: update_job_status_safely(job_id, FAILED, error)
+        JobOps->>DB: mark failed with error
     end
-    
-    JM->>DB: COMMIT TRANSACTION
-    
-    Note over Dev,Job: Status Update with Validation
-    
-    Dev->>JM: update_job_status(job_id, new_status)
-    JM->>DB: BEGIN TRANSACTION
-    JM->>DB: SELECT ... FOR UPDATE WHERE job_id = ?
-    DB-->>JM: Locked job row
-    
-    JM->>JM: Validate status transition
-    alt Valid transition
-        JM->>Job: Update status using model methods
-        JM->>DB: COMMIT TRANSACTION
-        JM-->>Dev: Return True
-    else Invalid transition
-        JM->>DB: ROLLBACK TRANSACTION
-        JM-->>Dev: Return False
-    end
-    
-    Note over Dev,Job: Exception Handling Flow
-    
-    Dev->>JM: Any operation
-    JM->>DB: Database operation
-    
-    alt Operation succeeds
-        DB-->>JM: Success
-        JM-->>Dev: Return result
-    else Database error occurs
-        DB-->>JM: Exception
-        JM->>DB: ROLLBACK TRANSACTION
-        JM->>JM: Log error details
-        JM-->>Dev: Re-raise exception or return False
-    end
+
+    Route->>DB: poll job status
+    DB-->>Route: job status and result
 
 ## Proposed File Changes
 
-### src\utils\job_manager.py(MODIFY)
+### src\tasks\utils.py(MODIFY)
 
 References: 
 
-- src\models\job.py
-- src\models\base.py
-- src\utils\database_helpers.py
-- src\utils\exceptions.py
+- src\utils\job_operations.py
 
-Enhance the module with comprehensive documentation including:
+Update the `ProgressReporter` class to use `JobOperations.execute_job_operation` instead of direct job object mutation. Replace the current `update` method implementation to call `JobOperations.execute_job_operation(self.job.job_id, lambda job: self._update_job_progress(job, progress_data))` where `_update_job_progress` is a new private method that safely updates the job's result with progress information. This ensures thread-safe progress updates with proper database locking.
 
-1. **Module-level docstring**: Add detailed explanation of the JobStatusManager's purpose, database safety mechanisms, transaction handling, and race condition prevention strategies. Explain the design philosophy of using row-level locking with `SELECT FOR UPDATE` and explicit transaction boundaries.
+Add import for `JobOperations` from `src.utils.job_operations` and remove the direct database operation code that currently mutates `self.job.result` without proper locking.
 
-2. **Method docstrings**: Add comprehensive Google-style docstrings for all public methods (`get_or_create_job`, `update_job_status`, `execute_with_job_lock`, `get_job_status`, `is_job_terminal`, `cleanup_old_jobs`) including:
-   - Purpose and behavior description
-   - Args section with type hints and descriptions
-   - Returns section with type and description
-   - Raises section documenting possible exceptions
-   - Example usage snippets
-
-3. **Inline comments**: Add strategic comments explaining:
-   - Why `with_for_update()` is used for race condition prevention
-   - Transaction boundary management with `db.session.begin()`
-   - Exception handling and rollback strategies
-   - Status transition validation logic
-   - Cleanup operation safety considerations
-
-4. **Private method documentation**: Add docstring for `_is_valid_transition` explaining the state machine logic and valid transition rules.
-
-All changes maintain existing functionality and interfaces while making the sophisticated database handling patterns clear to developers.
-
-### docs\job_manager_documentation.md(NEW)
+### src\services\ocr_service.py(MODIFY)
 
 References: 
 
-- src\utils\job_manager.py(MODIFY)
-- src\models\job.py
-- src\utils\database_helpers.py
-- src\utils\exceptions.py
-- src\tasks\tasks.py
+- src\utils\job_operations.py
 
-Create comprehensive documentation explaining the JobStatusManager utility and its database-related design decisions:
+Remove the `create_ocr_job` method (lines 400-417) as job creation will be handled centrally by `JobOperations.create_job_safely`. The method currently returns a stub job dict without database interaction, which is redundant with the new centralized approach.
 
-1. **Overview Section**: Explain the purpose of JobStatusManager as a thread-safe job management utility with proper database locking and transaction handling.
+Update the class docstring and any references to indicate that job management is now handled externally through the job operations system. Ensure the `process_ocr_data` and `get_ocr_preview` methods continue to work as pure processing functions that return structured results.
 
-2. **Database Safety Mechanisms**: Document how race conditions are prevented using:
-   - Row-level locking with `SELECT FOR UPDATE`
-   - Explicit transaction boundaries
-   - Atomic status updates
-   - Proper exception handling and rollback strategies
-
-3. **Exception Handling Patterns**: Explain the standardized error handling approach:
-   - Transaction rollback on failures
-   - Structured logging for debugging
-   - Exception propagation vs. boolean return patterns
-   - Integration with custom exception classes from `src/utils/exceptions.py`
-
-4. **Status Transition Management**: Document the job status state machine:
-   - Valid transition rules
-   - Validation mechanisms
-   - Terminal state handling
-   - Retry scenarios
-
-5. **Usage Patterns and Best Practices**: Provide examples of:
-   - Proper usage in Celery tasks
-   - Integration with services layer
-   - Error handling in route handlers
-   - Cleanup operations
-
-6. **Architecture Integration**: Explain how JobStatusManager fits into the overall application architecture and its relationship with other database utilities like `database_helpers.py`.
-
-7. **Developer Guidelines**: Include dos and don'ts for using the utility, common pitfalls to avoid, and debugging tips.
-
-8. **Troubleshooting Section**: Document common issues and their solutions related to database locks, transaction timeouts, and concurrency problems.
-
-### docs\architecture_guide.md(MODIFY)
+### src\services\conversion_service.py(MODIFY)
 
 References: 
 
-- docs\job_manager_documentation.md(NEW)
-- src\utils\job_manager.py(MODIFY)
+- src\utils\job_operations.py
 
-Update the architecture guide to include a reference to the new JobStatusManager documentation:
+Remove the `create_conversion_job` method (lines 489-505) as it returns a stub job dict without database interaction, which is now redundant with centralized job creation through `JobOperations.create_job_safely`.
 
-1. **Database Layer Section**: Add a subsection about job management utilities, specifically referencing the JobStatusManager and its role in maintaining database consistency.
+Update the class docstring to reflect that job management is handled externally. Ensure the `convert_pdf_data` and `get_conversion_preview` methods remain as pure processing functions that work with file data and return structured results.
 
-2. **Concurrency and Safety Section**: Add information about how the application handles concurrent job operations and database race conditions, linking to the detailed job_manager_documentation.md.
-
-3. **Utility Modules Section**: Include JobStatusManager in the list of critical utility modules with a brief description and link to its detailed documentation.
-
-Ensure the updates maintain the existing structure and flow of the architecture guide while providing clear navigation to the new job manager documentation.
-
-### docs\development_guide.md(MODIFY)
+### src\services\compression_service.py(MODIFY)
 
 References: 
 
-- docs\job_manager_documentation.md(NEW)
-- src\utils\job_manager.py(MODIFY)
-- tests\test_database_transaction_fixes.py
+- src\utils\job_operations.py
+- src\utils\job_manager.py
 
-Enhance the development guide with information about database operations and job management:
+Replace all `JobStatusManager` imports and usage with `JobOperations`. Update the `create_compression_job` method (lines 150-172) to use `JobOperations.create_job_safely` instead of `JobStatusManager.get_or_create_job`.
 
-1. **Database Operations Section**: Add guidelines for working with job-related database operations, referencing the JobStatusManager as the preferred approach for job status management.
+In the `process_compression_job` method (lines 173-234), replace `JobStatusManager.update_job_status` calls with `JobOperations.update_job_status_safely`. This includes the status updates to PROCESSING (line 187), COMPLETED (line 224), and FAILED (line 230).
 
-2. **Concurrency Considerations**: Add a section explaining how developers should handle concurrent operations, particularly when working with job status updates and database transactions.
+Add import for `JobOperations` from `src.utils.job_operations` and remove the `JobStatusManager` import. Update any error handling to use the enhanced transaction safety provided by `JobOperations`.
 
-3. **Error Handling Guidelines**: Include best practices for exception handling in database operations, referencing the patterns established in JobStatusManager.
+### src\services\ai_service.py(MODIFY)
 
-4. **Testing Database Operations**: Add guidance on testing database-related functionality, particularly for race conditions and transaction handling.
+References: 
 
-Include links to the new job_manager_documentation.md for detailed technical information.
+- src\utils\job_operations.py
+
+Update the `create_ai_job` method (lines 609-656) to use `JobOperations.create_job_safely` for actual database job creation instead of just returning a stub dictionary. Replace the current implementation that only returns job metadata with a call to `JobOperations.create_job_safely(job_id, task_type, input_data)` where `input_data` includes the text, options, and metadata.
+
+Ensure the method now creates an actual database job record and returns both success status and the created job information. Update the return structure to be consistent with other services while maintaining backward compatibility.
+
+### src\tasks\tasks.py(MODIFY)
+
+References: 
+
+- src\utils\job_operations.py
+- src\utils\job_manager.py
+- src\tasks\utils.py(MODIFY)
+
+Replace all instances of `JobStatusManager` with `JobOperations` throughout the file. This includes:
+
+1. Update imports to use `from src.utils.job_operations import JobOperations` instead of `JobStatusManager`
+2. Replace `JobStatusManager.get_or_create_job` calls with `JobOperations.create_job_safely`
+3. Replace `JobStatusManager.update_job_status` calls with `JobOperations.update_job_status_safely`
+4. Update error handling in the `handle_task_error` function to use `JobOperations.update_job_status_safely`
+
+Ensure all task functions (compression, conversion, OCR, AI) use the standardized job operations for consistent transaction safety and error handling. Verify that progress reporting through `ProgressReporter` works correctly with the updated job operations.
+
+### src\routes\compression_routes.py(MODIFY)
+
+References: 
+
+- src\utils\job_operations.py
+- src\utils\job_manager.py
+
+Replace the `JobStatusManager` import and usage with `JobOperations`. Update the error handling in the `compress_pdf` endpoint (lines 70-75) to use `JobOperations.update_job_status_safely` instead of `JobStatusManager.update_job_status`.
+
+Ensure that job creation is handled by the Celery tasks rather than in the route handlers, maintaining the current pattern where routes enqueue tasks and tasks handle job lifecycle management. Update the import statement to use `from src.utils.job_operations import JobOperations`.
+
+### docs\job_manager_documentation.md(MODIFY)
+
+References: 
+
+- src\utils\job_operations.py
+- src\utils\job_manager.py
+- src\tasks\utils.py(MODIFY)
+
+Update the documentation to reflect the migration to `JobOperations` as the primary job management interface. Add a new section explaining the relationship between `JobOperations` (enhanced, transaction-safe) and `JobStatusManager` (legacy, lower-level).
+
+Document the new standardized patterns for:
+1. Job creation using `JobOperations.create_job_safely`
+2. Status updates using `JobOperations.update_job_status_safely`
+3. Progress reporting through the updated `ProgressReporter`
+4. Integration with services and tasks
+
+Include migration notes for developers and examples of the new patterns. Mark `JobStatusManager` methods as legacy but still supported for backward compatibility.
+
+### docs\tasks_module.md(MODIFY)
+
+References: 
+
+- src\tasks\tasks.py(MODIFY)
+- src\tasks\utils.py(MODIFY)
+- src\utils\job_operations.py
+
+Update the tasks module documentation to reflect the standardized use of `JobOperations` for all job lifecycle management. Document the updated patterns for:
+
+1. Task structure using `JobOperations.create_job_safely` and `JobOperations.update_job_status_safely`
+2. Progress reporting with the enhanced `ProgressReporter` that uses `JobOperations.execute_job_operation`
+3. Error handling using centralized job operations
+4. Integration between tasks, services, and file management
+
+Include examples of the new standardized task patterns and explain how the migration maintains compatibility with existing functionality while improving transaction safety and consistency.
+
+### tests\test_job_operations_migration.py(NEW)
+
+References: 
+
+- src\utils\job_operations.py
+- src\tasks\tasks.py(MODIFY)
+- src\tasks\utils.py(MODIFY)
+- src\services\ocr_service.py(MODIFY)
+- src\services\conversion_service.py(MODIFY)
+- src\services\compression_service.py(MODIFY)
+- src\services\ai_service.py(MODIFY)
+
+Create comprehensive integration tests to verify the migration to `JobOperations` works correctly. Include tests for:
+
+1. **Job Creation**: Test that `JobOperations.create_job_safely` works for all service types (OCR, conversion, compression, AI)
+2. **Status Updates**: Verify that `JobOperations.update_job_status_safely` properly handles state transitions
+3. **Progress Reporting**: Test the updated `ProgressReporter` with `JobOperations.execute_job_operation`
+4. **Task Integration**: End-to-end tests for each task type ensuring proper job lifecycle management
+5. **Error Handling**: Test error scenarios and ensure proper job status updates
+6. **Backward Compatibility**: Verify that existing API contracts and result schemas are maintained
+
+Include setup and teardown methods for test database state, mock file data, and Celery task testing. Use pytest fixtures for common test data and ensure tests can run independently.

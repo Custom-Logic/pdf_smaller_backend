@@ -2,9 +2,11 @@
 
 ## Overview
 
-The `JobStatusManager` is a critical utility class that provides thread-safe, atomic operations for managing job lifecycle and status transitions in the PDF compression system. It implements robust database safety mechanisms to prevent race conditions and ensure data consistency in concurrent environments.
+The `JobOperations` class is the primary utility for managing job lifecycle and status transitions in the PDF compression system. It provides thread-safe, atomic operations with robust database safety mechanisms to prevent race conditions and ensure data consistency in concurrent environments.
 
-**Location:** `src/utils/job_manager.py`
+**Location:** `src/utils/job_operations.py`
+
+**Migration Note:** The legacy `JobStatusManager` class in `src/utils/job_manager.py` is deprecated and should not be used for new development. All new code should use `JobOperations`.
 
 ### Key Features
 
@@ -13,6 +15,7 @@ The `JobStatusManager` is a critical utility class that provides thread-safe, at
 - **Status Validation**: Enforces job state machine rules to prevent invalid transitions
 - **Error Handling**: Comprehensive exception handling with automatic rollback
 - **Job Lifecycle Management**: Complete CRUD operations for job status tracking
+- **Migration Support**: Backward-compatible API with improved safety
 
 ## Database Safety Mechanisms
 
@@ -128,14 +131,16 @@ def _is_valid_transition(current_status: str, new_status: str) -> bool:
 ### Basic Job Creation
 
 ```python
-from src.utils.job_manager import JobStatusManager
-from src.models.job import JobType
+from src.utils.job_operations import JobOperations
 
-# Create or retrieve existing job
-job = JobStatusManager.get_or_create_job(
+# Create or retrieve existing job safely
+job = JobOperations.create_job_safely(
     job_id="compress_doc_123",
-    job_type=JobType.COMPRESS,
-    file_path="/uploads/document.pdf"
+    job_type="compress",
+    input_data={
+        "file_path": "/uploads/document.pdf",
+        "original_filename": "document.pdf"
+    }
 )
 ```
 
@@ -143,13 +148,13 @@ job = JobStatusManager.get_or_create_job(
 
 ```python
 # Mark job as processing
-success = JobStatusManager.update_job_status(
+success = JobOperations.update_job_status(
     job_id="compress_doc_123",
     status=JobStatus.PROCESSING
 )
 
 # Complete job with results
-success = JobStatusManager.update_job_status(
+success = JobOperations.update_job_status(
     job_id="compress_doc_123",
     status=JobStatus.COMPLETED,
     result={
@@ -161,28 +166,24 @@ success = JobStatusManager.update_job_status(
 )
 
 # Handle job failure
-success = JobStatusManager.update_job_status(
+success = JobOperations.update_job_status(
     job_id="compress_doc_123",
     status=JobStatus.FAILED,
     error_message="File not found: /uploads/document.pdf"
 )
 ```
 
-### Custom Operations with Locking
+### Legacy API (Deprecated)
 
 ```python
-def update_job_progress(job, progress_percent, current_step):
-    """Custom operation to update job progress."""
-    job.progress = progress_percent
-    job.current_step = current_step
-    return f"Updated to {progress_percent}% - {current_step}"
+# WARNING: JobStatusManager is deprecated. Use JobOperations instead.
+from src.utils.job_manager import JobStatusManager  # DEPRECATED
 
-# Execute with automatic locking
-result = JobStatusManager.execute_with_job_lock(
+# Old API - DO NOT USE IN NEW CODE
+job = JobStatusManager.get_or_create_job(
     job_id="compress_doc_123",
-    operation=update_job_progress,
-    progress_percent=75,
-    current_step="Applying compression algorithms"
+    task_type="compress",  # Note: parameter name changed in new API
+    input_data={"file_path": "/uploads/document.pdf"}
 )
 ```
 
@@ -190,13 +191,59 @@ result = JobStatusManager.execute_with_job_lock(
 
 ```python
 # Check current status
-status = JobStatusManager.get_job_status("compress_doc_123")
+status = JobOperations.get_job_status("compress_doc_123")
 if status == JobStatus.COMPLETED.value:
     print("Job finished successfully")
 
 # Check if job is finished
-if JobStatusManager.is_job_terminal("compress_doc_123"):
+if JobOperations.is_job_terminal("compress_doc_123"):
     print("Job has finished, safe to cleanup resources")
+```
+
+## Migration Guide
+
+### From JobStatusManager to JobOperations
+
+#### 1. Import Changes
+```python
+# OLD (Deprecated)
+from src.utils.job_manager import JobStatusManager
+
+# NEW (Recommended)
+from src.utils.job_operations import JobOperations
+```
+
+#### 2. Method Name Changes
+| Old Method | New Method | Changes |
+|------------|------------|---------|
+| `get_or_create_job()` | `create_job_safely()` | Parameter name: `task_type` → `job_type` |
+| `update_job_status()` | `update_job_status()` | No changes |
+| `get_job_status()` | `get_job_status()` | No changes |
+| `is_job_terminal()` | `is_job_terminal()` | No changes |
+
+#### 3. Parameter Changes
+```python
+# OLD (Deprecated)
+job = JobStatusManager.get_or_create_job(
+    job_id="123",
+    task_type="compress",  # Note: parameter name
+    input_data={...}
+)
+
+# NEW (Recommended)
+job = JobOperations.create_job_safely(
+    job_id="123",
+    job_type="compress",  # Parameter name changed
+    input_data={...}
+)
+```
+
+### Migration Checklist
+- [ ] Replace all `JobStatusManager` imports with `JobOperations`
+- [ ] Update method calls from `get_or_create_job()` to `create_job_safely()`
+- [ ] Change parameter name from `task_type` to `job_type`
+- [ ] Test all job creation and status update operations
+- [ ] Update documentation and code comments
 ```
 
 ### Maintenance Operations

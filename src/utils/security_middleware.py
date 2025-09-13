@@ -2,7 +2,7 @@
 import logging
 import time
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, List
 from flask import request, g, current_app, jsonify
 from functools import wraps
@@ -243,7 +243,7 @@ class SecurityMiddleware:
             'user_agent': g.user_agent,
             'content_length': request.content_length,
             'referrer': request.headers.get('Referer', ''),
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         }
         
         logger.info(f"Request started: {json.dumps(log_data)}")
@@ -257,7 +257,7 @@ class SecurityMiddleware:
             'status_code': response.status_code,
             'response_size': len(response.get_data()),
             'duration_ms': round(request_duration * 1000, 2),
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         }
         
         # Log level based on status code
@@ -277,7 +277,7 @@ class SecurityMiddleware:
             'client_ip': getattr(g, 'client_ip', 'unknown'),
             'path': request.path,
             'method': request.method,
-            'timestamp': datetime.utcnow().isoformat()
+            'timestamp': datetime.now(timezone.utc).isoformat()
         }
         
         logger.error(f"Request exception: {json.dumps(log_data)}")
@@ -304,7 +304,7 @@ class SecurityMiddleware:
         client_ip = getattr(g, 'client_ip', 'unknown')
         
         # Count 404s in the last hour
-        current_time = datetime.utcnow()
+        current_time = datetime.now(timezone.utc)
         hour_ago = current_time - timedelta(hours=1)
         
         if client_ip in THREAT_TRACKING['suspicious_ips']:

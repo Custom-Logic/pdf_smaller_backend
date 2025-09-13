@@ -274,10 +274,11 @@ class FileManagementService:
         except Exception as e:
             logger.error(f"Error creating result archive for job {job_id}: {str(e)}")
             # Clean up partial archive if it exists
+            # noinspection PyUnboundLocalVariable
             if 'archive_path' in locals() and os.path.exists(archive_path):
                 try:
                     os.remove(archive_path)
-                except:
+                except OSError as e:
                     pass
             raise
     
@@ -460,7 +461,7 @@ class FileManagementService:
                 stats['upload_folder_file_count'] = file_count
             
             # Get jobs by age categories
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             age_categories = {
                 'less_than_1_hour': timedelta(hours=1),
                 'less_than_1_day': timedelta(days=1),
@@ -613,7 +614,7 @@ class FileManagementService:
                 'upload_folder_exists': os.path.exists(self.upload_folder),
                 'retention_periods': self.DEFAULT_RETENTION_PERIODS,
                 'temp_file_max_age_hours': self.TEMP_FILE_MAX_AGE_HOURS,
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             }
             
             # Add folder statistics if folder exists
@@ -629,5 +630,5 @@ class FileManagementService:
             return {
                 'service_name': 'FileManagementService',
                 'error': str(e),
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             }

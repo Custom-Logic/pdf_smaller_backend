@@ -10,7 +10,7 @@ from typing import Dict, Any, Optional
 from src.models import Job, JobStatus
 from src.models.base import db
 from src.services.file_management_service import FileManagementService
-from src.utils.job_manager import JobStatusManager
+from src.utils.job_operations import JobOperations
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ class CompressionService:
             'maximum': '/screen'
         }
         if not self._service_available:
-            raise EnvironmentError(message="Ghost Script not available")
+            raise EnvironmentError("Ghost Script not available")
 
         gs_setting = compression_settings.get(compression_level, '/default')
 
@@ -150,12 +150,12 @@ class CompressionService:
     def create_compression_job(file_data: bytes, settings: Dict[str, Any],
                                original_filename: str = None, job_id: str = None) -> Job:
         """
-        Create a compression job record for async processing
+        Create a compression job record for async processing using JobOperations
         """
         try:
-            job = JobStatusManager.get_or_create_job(
+            job = JobOperations.create_job_safely(
                 job_id=job_id,
-                task_type='compress',
+                job_type='compress',
                 input_data={
                     'settings': settings,
                     'file_size': len(file_data),
@@ -163,7 +163,7 @@ class CompressionService:
                 }
             )
             
-            logger.info(f"Created compression job {job_id} (client_job_id: {job_id})")
+            logger.info(f"Created compression job {job.job_id} (client_job_id: {job_id})")
             return job
             
         except Exception as e:
@@ -183,8 +183,8 @@ class CompressionService:
             if not job.task_type_is_compression:
                 raise ValueError(f"Job {job_id} is not a compression job")
 
-            # Update job status
-            JobStatusManager.update_job_status(job_id, JobStatus.PROCESSING)
+            # Update job status using JobOperations
+            JobOperations.update_job_status(job_id, JobStatus.PROCESSING)
 
             # Get job data
             input_data = job.input_data
@@ -221,13 +221,13 @@ class CompressionService:
                     'output_path': output_path
                 }
                 # Update job with results                
-                JobStatusManager.update_job_status(job_id, JobStatus.COMPLETED, result=result)
+                JobOperations.update_job_status(job_id, JobStatus.COMPLETED, result=result)
 
                 return job.result
 
         except Exception as e:
             if 'job' in locals():
-                JobStatusManager.update_job_status(job_id, JobStatus.FAILED, error_message=str(e))
+                JobOperations.update_job_status(job_id, JobStatus.FAILED, error_message=str(e))
 
             logger.error(f"Error processing compression job {job_id}: {str(e)}")
             raise

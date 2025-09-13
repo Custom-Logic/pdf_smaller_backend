@@ -369,6 +369,7 @@ class ConversionService:
         total_size = 0
         
         for page in content["pages"]:
+            # noinspection PyArgumentList
             pix = fitz.Page(page).get_pixmap(dpi=dpi)
             filename = f"converted_page_{page['page_num']}.png"
             # Save image data through file service
@@ -483,22 +484,9 @@ class ConversionService:
         return name.strip("-") or "file"
 
     # --------------------------------------------------------------------------
-    # job helper (kept for compat)
+    # DEPRECATED: Use JobOperations.create_job_safely instead
     # --------------------------------------------------------------------------
-    def create_conversion_job(
-        self,
-        file_data: bytes,
-        target_format: str,
-        job_id: Optional[str] = None,
-        options: Optional[Dict[str, Any]] = None,
-        original_filename: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Return a stub job dict – no DB touch here."""
-        jid = job_id or str(uuid.uuid4())
-        return {
-            "success": True,
-            "job_id": jid,
-            "status": "pending",
-            "message": "Conversion job created",
-        }
+    # Note: The create_conversion_job method has been removed in favor of JobOperations
+    # for standardized job creation across all services.
+    # Use JobOperations.create_job_safely(job_type='conversion', ...) instead.
 

@@ -9,7 +9,7 @@ from flask import Blueprint, request, jsonify
 from src.models import db, Job, JobStatus
 from src.utils.security_utils import validate_file
 from src.utils.response_helpers import success_response, error_response
-from src.utils.job_manager import JobStatusManager
+from src.utils.job_operations import JobOperations
 from src.tasks.tasks import compress_task, bulk_compress_task
 
 logger = logging.getLogger(__name__)
@@ -67,9 +67,9 @@ def compress_pdf():
             return success_response(data=data, message='Compression job created', status_code=202)
         except Exception as task_error:
             logger.error(f"Failed to enqueue compression task {job_id}: {str(task_error)}")
-            # Update job status to failed using JobStatusManager
+            # Update job status to failed using JobOperations
             try:
-                JobStatusManager.update_job_status(job_id, JobStatus.FAILED, error_message=f"Task enqueueing failed: {str(task_error)}")
+                JobOperations.update_job_status(job_id, JobStatus.FAILED, error_message=f"Task enqueueing failed: {str(task_error)}")
             except Exception as update_error:
                 logger.error(f"Failed to update job status for {job_id}: {str(update_error)}")
             return error_response(message='Failed to queue compression job', status_code=500)

@@ -219,7 +219,8 @@ If a field is not found, use null or empty string as appropriate.
         except Exception as e:
             raise ExtractionError(f"Failed to extract text from PDF: {str(e)}")
     
-    def _call_ai_extraction(self, pdf_text: str, prompt: str) -> Dict[str, Any]:
+    @staticmethod
+    def _call_ai_extraction(pdf_text: str, prompt: str) -> Dict[str, Any]:
         """Call AI service for data extraction.
         
         Args:

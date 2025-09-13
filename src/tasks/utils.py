@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from src.models.job import Job
 from src.models.base import db
 from src.utils.db_transaction import db_transaction, safe_db_operation
+from src.utils.job_operations import JobOperations
 
 
 class ProgressReporter:
@@ -29,7 +30,7 @@ class ProgressReporter:
     
     def update(self, step: int = None, message: str = None, percentage: float = None):
         """
-        Update task progress.
+        Update task progress using JobOperations for thread-safe updates.
         
         Args:
             step: Current step number
@@ -47,31 +48,33 @@ class ProgressReporter:
         else:
             progress_pct = min(100, (self.current_step / self.total_steps) * 100)
         
-        # Update job result with progress info
-        if not self.job.result:
-            self.job.result = {}
+        # Create progress data
+        progress_data = {
+            'percentage': round(progress_pct, 2),
+            'current_step': self.current_step,
+            'total_steps': self.total_steps,
+            'message': self.status_message,
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }
         
-        self.job.result.update({
-            'progress': {
-                'percentage': round(progress_pct, 2),
-                'current_step': self.current_step,
-                'total_steps': self.total_steps,
-                'message': self.status_message,
-                'updated_at': datetime.now(timezone.utc).isoformat()
-            }
-        })
-        
-        # Use safe database operation for progress updates
-        def update_progress():
-            # Database changes are already made above, just need to commit
-            pass
-        
-        safe_db_operation(
-            update_progress,
-            f"update_progress_{self.job.job_id}",
-            max_retries=1,
-            default_return=None
+        # Use JobOperations for thread-safe progress updates
+        JobOperations.execute_job_operation(
+            self.job.job_id,
+            lambda job: self._update_job_progress(job, progress_data)
         )
+    
+    def _update_job_progress(self, job: Job, progress_data: Dict[str, Any]) -> None:
+        """
+        Private method to safely update job progress within a transaction.
+        
+        Args:
+            job: Job instance within transaction
+            progress_data: Progress information to update
+        """
+        if not job.result:
+            job.result = {}
+        
+        job.result.update({'progress': progress_data})
     
     def complete(self, final_message: str = "Task completed successfully"):
         """Mark progress as complete."""
@@ -206,27 +209,27 @@ class TaskMetrics:
         self.metrics['retries_attempted'] += 1
     
     def finalize(self):
-        """Finalize metrics and update job."""
+        """Finalize metrics and update job using JobOperations."""
         end_time = datetime.now(timezone.utc)
         self.metrics.update({
             'end_time': end_time.isoformat(),
             'duration_seconds': (end_time - self.start_time).total_seconds()
         })
         
-        # Update job result with metrics
-        if not self.job.result:
-            self.job.result = {}
-        
-        self.job.result['metrics'] = self.metrics
-        
-        # Use safe database operation for metrics finalization
-        def finalize_metrics():
-            # Database changes are already made above, just need to commit
-            pass
-        
-        safe_db_operation(
-            finalize_metrics,
-            f"finalize_metrics_{self.job.job_id}",
-            max_retries=1,
-            default_return=None
+        # Use JobOperations for thread-safe metrics finalization
+        JobOperations.execute_job_operation(
+            self.job.job_id,
+            lambda job: self._update_job_metrics(job)
         )
+    
+    def _update_job_metrics(self, job: Job) -> None:
+        """
+        Private method to safely update job metrics within a transaction.
+        
+        Args:
+            job: Job instance within transaction
+        """
+        if not job.result:
+            job.result = {}
+        
+        job.result['metrics'] = self.metrics

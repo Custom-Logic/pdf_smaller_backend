@@ -9,7 +9,7 @@ import json
 import requests
 import uuid
 from typing import Dict, Any, Optional, List, Literal
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 
 logger = logging.getLogger(__name__)
@@ -266,7 +266,7 @@ class AIService:
                 'style': summary_request['style'],
                 'model': summary_request['model'],
                 'options': summary_request,
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             }
             
         except Exception as e:
@@ -274,7 +274,7 @@ class AIService:
             return {
                 'success': False,
                 'error': str(e),
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             }
     
     def translate_text(self, text: str, target_language: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
@@ -317,7 +317,7 @@ class AIService:
                 'model': translation_request['model'],
                 'quality': translation_request['quality'],
                 'options': translation_request,
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             }
             
         except Exception as e:
@@ -325,7 +325,7 @@ class AIService:
             return {
                 'success': False,
                 'error': str(e),
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             }
     
     def _prepare_summary_request(self, text: str, options: Dict[str, Any]) -> Dict[str, Any]:
@@ -375,8 +375,9 @@ class AIService:
             'provider': AIProvider.OPENROUTER.value
         }
     
-    def _build_structured_summary_prompt(self, style: SummaryStyle, max_length: str, 
-                                       include_key_points: bool, language: str) -> str:
+    @staticmethod
+    def _build_structured_summary_prompt(style: SummaryStyle, max_length: str,
+                                         include_key_points: bool, language: str) -> str:
         """Build structured prompt for summarization"""
         prompt_template = """
         Please analyze the following text and provide a structured summary.
@@ -609,7 +610,9 @@ class AIService:
                           text: str, options: Dict[str, Any] = None,
                           client_job_id: str = None) -> Dict[str, Any]:
         """
-        Create an AI job for processing
+        [DEPRECATED] Create an AI job for processing
+        
+        This method is deprecated. Use JobOperations.create_job_safely instead.
         
         Args:
             task_type: Type of AI task (summarize/translate)
@@ -618,40 +621,17 @@ class AIService:
             client_job_id: Client-provided job ID
             
         Returns:
-            Job information
+            Job information (stubbed for backward compatibility)
         """
-        try:
-            job_id = str(uuid.uuid4())
-            
-            job_info = {
-                'job_id': job_id,
-                'task_type': task_type,
-                'text_length': len(text),
-                'options': options or {},
-                'client_job_id': client_job_id,
-                'status': 'pending',
-                'created_at': datetime.utcnow().isoformat(),
-                'model': options.get('model', self.config['openrouter']['default_model']),
-                'provider': AIProvider.OPENROUTER.value
-            }
-            
-            # Store job metadata (in production, save to database)
-            # For now, we'll return the job info
-            
-            return {
-                'success': True,
-                'job_id': job_id,
-                'status': 'pending',
-                'message': f'{task_type.capitalize()} job created successfully',
-                'job_info': job_info
-            }
-            
-        except Exception as e:
-            logger.error(f"Error creating AI job: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
+        # Deprecated: Use JobOperations.create_job_safely instead
+        # This method is kept for backward compatibility but should not be used
+        logger.warning("create_ai_job is deprecated. Use JobOperations.create_job_safely instead.")
+        
+        return {
+            'success': False,
+            'error': 'Method deprecated. Use JobOperations.create_job_safely instead.',
+            'deprecated': True
+        }
     
     def process_ai_job(self, job_id: str, task_type: str, text: str, options: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -731,7 +711,7 @@ class AIService:
                 return {
                     'success': False,
                     'error': 'OpenRouter client not initialized',
-                    'timestamp': datetime.utcnow().isoformat()
+                    'timestamp': datetime.now(timezone.utc).isoformat()
                 }
             
             client = self.api_clients[AIProvider.OPENROUTER]
@@ -760,20 +740,20 @@ class AIService:
                     'success': True,
                     'status': 'connected',
                     'response_time': response.elapsed.total_seconds(),
-                    'timestamp': datetime.utcnow().isoformat()
+                    'timestamp': datetime.now(timezone.utc).isoformat()
                 }
             else:
                 return {
                     'success': False,
                     'error': f"API error: {response.status_code}",
-                    'timestamp': datetime.utcnow().isoformat()
+                    'timestamp': datetime.now(timezone.utc).isoformat()
                 }
                 
         except Exception as e:
             return {
                 'success': False,
                 'error': str(e),
-                'timestamp': datetime.utcnow().isoformat()
+                'timestamp': datetime.now(timezone.utc).isoformat()
             }
 
 

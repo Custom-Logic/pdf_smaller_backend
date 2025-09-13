@@ -245,6 +245,7 @@ class OCRService:
         doc = fitz.open(pdf_path)
         full_text = []
         for page in doc:
+            # noinspection PyUnresolvedReferences
             pix = page.get_pixmap(dpi=300)
             img_bytes = pix.tobytes("png")
             full_text.append(self._perform_image_ocr_bytes(img_bytes, lang, quality))
@@ -257,6 +258,7 @@ class OCRService:
             doc = fitz.open(pdf_path)  # re-open to copy pages
             out_doc = fitz.open()
             for page in doc:
+                # noinspection PyUnresolvedReferences
                 new_page = out_doc.new_page(width=page.rect.width, height=page.rect.height)
                 new_page.show_pdf_page(page.rect, doc, page.number)
                 if ocr_text.strip():
@@ -393,25 +395,11 @@ class OCRService:
         return rec
 
     # --------------------------------------------------------------------------
-    # job helper (kept for compat)
+    # DEPRECATED: Use JobOperations.create_job_safely instead
     # --------------------------------------------------------------------------
-    def create_ocr_job(
-        self,
-        file_data: bytes,
-        job_id: Optional[str] = None,
-        options: Optional[Dict[str, Any]] = None,
-        original_filename: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Return stub job dict – no DB touch here."""
-        jid = job_id or str(uuid.uuid4())
-        temp_file = self._save_file_data(file_data, f"{jid}.pdf")
-        return {
-            "success": True,
-            "job_id": jid,
-            "status": "pending",
-            "message": "OCR job created",
-            "temp_file_path": str(temp_file),
-        }
+    # Note: The create_ocr_job method has been removed in favor of JobOperations
+    # for standardized job creation across all services.
+    # Use JobOperations.create_job_safely(job_type='ocr', ...) instead.
 
     def cleanup_temp_files(self) -> None:
         """Cleanup temporary files using file management service."""

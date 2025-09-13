@@ -1,15 +1,12 @@
 """Invoice Extraction Service - AI-powered invoice data extraction"""
 
-import os
 import logging
-import json
-import uuid
-from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
+from typing import Dict, Any, List
 
+from src.config import Config
 from src.services.service_registry import ServiceRegistry
 from src.utils.exceptions import ExtractionError, ExtractionValidationError
-from src.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +92,7 @@ class InvoiceExtractionService:
                     'include_line_items': include_line_items,
                     'validate_totals': validate_totals,
                     'file_size': file_size,
-                    'timestamp': datetime.utcnow().isoformat(),
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
                     'processing_time': None  # Will be calculated by caller
                 }
             }
@@ -109,13 +106,14 @@ class InvoiceExtractionService:
                 raise
             raise ExtractionError(f"Extraction failed: {str(e)}")
     
-    def _prepare_extraction_prompt(self, extraction_mode: str, include_line_items: bool) -> str:
+    @staticmethod
+    def _prepare_extraction_prompt(extraction_mode: str, include_line_items: bool) -> str:
         """Prepare AI prompt for invoice extraction.
         
         Args:
             extraction_mode: 'standard' or 'detailed'
             include_line_items: Whether to extract line items
-            
+
         Returns:
             Formatted prompt string
         """
@@ -184,7 +182,8 @@ If a field is not found, use null or empty string as appropriate.
         
         return base_prompt
     
-    def _extract_pdf_text(self, file_path: str) -> str:
+    @staticmethod
+    def _extract_pdf_text(file_path: str) -> str:
         """Extract text from PDF file.
         
         Args:
@@ -204,7 +203,8 @@ If a field is not found, use null or empty string as appropriate.
         except Exception as e:
             raise ExtractionError(f"Failed to extract text from PDF: {str(e)}")
     
-    def _call_ai_extraction(self, pdf_text: str, prompt: str) -> Dict[str, Any]:
+    @staticmethod
+    def _call_ai_extraction(pdf_text: str, prompt: str) -> Dict[str, Any]:
         """Call AI service for data extraction.
         
         Args:
@@ -330,7 +330,8 @@ If a field is not found, use null or empty string as appropriate.
         except (ValueError, TypeError) as e:
             raise ExtractionValidationError(f"Invalid numeric values in totals: {str(e)}")
     
-    def _clean_extraction_data(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    @staticmethod
+    def _clean_extraction_data(data: Dict[str, Any]) -> Dict[str, Any]:
         """Clean and format extraction data.
         
         Args:

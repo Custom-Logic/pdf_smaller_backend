@@ -169,23 +169,34 @@ stateDiagram-v2
 
 ### Job Operations Utility
 
-The `JobOperations` class provides safe database operations with transaction management:
+The `JobOperations` class provides safe database operations with transaction management and is the recommended way to handle job lifecycle operations:
 
 ```python
 from src.utils.job_operations import JobOperations
 
 # Create new job with transaction safety
-job = JobOperations.create_job(
-    task_type='compress',
+job = JobOperations.create_job_safely(
+    job_id="unique_job_id",
+    job_type='compress',
     input_data={'file_path': '/path/to/file.pdf'}
 )
 
 # Update job status safely
-JobOperations.update_status(job_id, 'processing')
+JobOperations.update_job_status(job_id, JobStatus.PROCESSING)
 
 # Mark job as completed with results
-JobOperations.mark_completed(job_id, result_data)
+JobOperations.update_job_status(job_id, JobStatus.COMPLETED, result=result_data)
 ```
+
+### Legacy JobStatusManager (Deprecated)
+
+**Note:** The legacy `JobStatusManager` class is deprecated. All new development should use `JobOperations`.
+
+| Legacy (Deprecated) | New (Recommended) |
+|---------------------|-------------------|
+| `JobStatusManager.get_or_create_job()` | `JobOperations.create_job_safely()` |
+| `JobStatusManager.update_job_status()` | `JobOperations.update_job_status()` |
+| Parameter: `task_type` | Parameter: `job_type` |
 
 ### Database Transaction Management
 

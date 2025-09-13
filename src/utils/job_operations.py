@@ -8,7 +8,7 @@ transaction management system.
 
 import logging
 from typing import Dict, Any, Optional, List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from src.models.job import Job, JobStatus
 from src.models.base import db
 from src.utils.db_transaction import (
@@ -66,8 +66,8 @@ class JobOperations:
                     'task_type': task_type,
                     'input_data': input_data or {},
                     'status': initial_status.value,
-                    'created_at': datetime.utcnow(),
-                    'updated_at': datetime.utcnow()
+                    'created_at': datetime.now(timezone.utc),
+                    'updated_at': datetime.now(timezone.utc)
                 },
                 f"create_job_{job_id}"
             )
@@ -124,7 +124,7 @@ class JobOperations:
                 else:
                     # Direct status update for other statuses
                     job.status = status.value
-                    job.updated_at = datetime.utcnow()
+                    job.updated_at = datetime.now(timezone.utc)
                 
                 # Update progress if provided
                 if progress is not None:
@@ -266,7 +266,7 @@ class JobOperations:
                 if 'progress' in update_info:
                     job.progress = max(0, min(100, update_info['progress']))
                 
-                job.updated_at = datetime.utcnow()
+                job.updated_at = datetime.now(timezone.utc)
                 results[job_id] = True
                 
                 logger.debug(f"Updated job {job_id} in batch operation")
@@ -289,7 +289,7 @@ class JobOperations:
         Returns:
             Number of jobs deleted
         """
-        cutoff_date = datetime.utcnow() - timedelta(days=days_old)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_old)
         total_deleted = 0
         
         while True:
