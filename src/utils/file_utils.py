@@ -240,3 +240,20 @@ def validate_file_type(filename: str, allowed_extensions: set) -> bool:
     
     extension = get_file_extension(filename)
     return extension in allowed_extensions
+
+
+def _get_file_size(file_path: str) -> int:
+    """
+    Get the size of a file in bytes.
+    
+    Args:
+        file_path: Path to the file
+        
+    Returns:
+        int: File size in bytes, or 0 if file doesn't exist or error occurs
+    """
+    try:
+        return os.path.getsize(file_path)
+    except (OSError, FileNotFoundError):
+        logger.warning(f"Could not get size for file: {file_path}")
+        return 0

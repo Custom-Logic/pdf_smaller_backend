@@ -49,7 +49,10 @@ def create_app(config_name=None, config_override=None):
     # Load configuration
     try:
         if config_override:
-            app.config.from_object(config_override)
+            if isinstance(config_override, dict):
+                app.config.update(config_override)
+            else:
+                app.config.from_object(config_override)
         else:
             config_class = get_config(config_name)
             app.config.from_object(config_class)

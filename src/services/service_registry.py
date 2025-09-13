@@ -6,14 +6,6 @@ reducing code duplication.
 """
 from typing import Dict, Any, Optional
 from src.config.config import Config
-from src.services.file_management_service import FileManagementService
-from src.services.compression_service import CompressionService
-from src.services.ai_service import AIService
-from src.services.conversion_service import ConversionService
-from src.services.ocr_service import OCRService
-from src.services.export_service import ExportService
-from src.services.invoice_extraction_service import InvoiceExtractionService
-from src.services.bank_statement_extraction_service import BankStatementExtractionService
 
 
 class ServiceRegistry:
@@ -21,7 +13,7 @@ class ServiceRegistry:
     _instances: Dict[str, Any] = {}
     
     @classmethod
-    def get_file_management_service(cls, upload_folder: Optional[str] = None) -> FileManagementService:
+    def get_file_management_service(cls, upload_folder: Optional[str] = None):
         """Get FileManagementService instance
         
         Args:
@@ -30,85 +22,93 @@ class ServiceRegistry:
         Returns:
             FileManagementService instance
         """
-        key = f"file_management_{upload_folder or 'default'}"
-        if key not in cls._instances:
-            cls._instances[key] = FileManagementService(upload_folder)
-        return cls._instances[key]
+        if 'file_management' not in cls._instances:
+            from src.services.file_management_service import FileManagementService
+            cls._instances['file_management'] = FileManagementService(upload_folder=upload_folder)
+        return cls._instances['file_management']
     
     @classmethod
-    def get_compression_service(cls) -> CompressionService:
+    def get_compression_service(cls):
         """Get CompressionService instance
         
         Returns:
             CompressionService instance
         """
         if 'compression' not in cls._instances:
+            from src.services.compression_service import CompressionService
             cls._instances['compression'] = CompressionService()
         return cls._instances['compression']
     
     @classmethod
-    def get_ai_service(cls) -> AIService:
+    def get_ai_service(cls):
         """Get AIService instance
         
         Returns:
             AIService instance
         """
         if 'ai' not in cls._instances:
+            from src.services.ai_service import AIService
             cls._instances['ai'] = AIService()
         return cls._instances['ai']
     
     @classmethod
-    def get_conversion_service(cls) -> ConversionService:
+    def get_conversion_service(cls):
         """Get ConversionService instance
         
         Returns:
             ConversionService instance
         """
         if 'conversion' not in cls._instances:
+            from src.services.conversion_service import ConversionService
             cls._instances['conversion'] = ConversionService()
         return cls._instances['conversion']
     
     @classmethod
-    def get_ocr_service(cls) -> OCRService:
+    def get_ocr_service(cls):
         """Get OCRService instance
         
         Returns:
             OCRService instance
         """
         if 'ocr' not in cls._instances:
+            from src.services.ocr_service import OCRService
             cls._instances['ocr'] = OCRService()
         return cls._instances['ocr']
     
     @classmethod
-    def get_export_service(cls) -> ExportService:
+    def get_export_service(cls):
         """Get ExportService instance
         
         Returns:
             ExportService instance
         """
         if 'export' not in cls._instances:
-            cls._instances['export'] = ExportService()
+            from src.services.export_service import ExportService
+            file_service = cls.get_file_management_service()
+            cls._instances['export'] = ExportService(file_service=file_service)
         return cls._instances['export']
     
     @classmethod
-    def get_invoice_extraction_service(cls) -> InvoiceExtractionService:
+    def get_invoice_extraction_service(cls):
         """Get InvoiceExtractionService instance
         
         Returns:
             InvoiceExtractionService instance
         """
         if 'invoice_extraction' not in cls._instances:
+            from src.services.invoice_extraction_service import InvoiceExtractionService
             cls._instances['invoice_extraction'] = InvoiceExtractionService()
         return cls._instances['invoice_extraction']
     
     @classmethod
-    def get_bank_statement_extraction_service(cls) -> BankStatementExtractionService:
+    def get_bank_statement_extraction_service(cls):
         """Get BankStatementExtractionService instance
         
         Returns:
             BankStatementExtractionService instance
         """
         if 'bank_statement_extraction' not in cls._instances:
+            from src.services.bank_statement_extraction_service import BankStatementExtractionService
             cls._instances['bank_statement_extraction'] = BankStatementExtractionService()
         return cls._instances['bank_statement_extraction']
     

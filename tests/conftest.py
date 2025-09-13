@@ -10,8 +10,8 @@ from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 
 # Import application components
-from src.app import create_app
-from src.extensions import db as _db
+from src.main.main import create_app
+from src.models.base import db as _db
 from src.celery_app import make_celery
 from src.models.job import Job, JobStatus, TaskType
 
@@ -33,7 +33,7 @@ def app():
     }
     
     # Create Flask app with test config
-    app = create_app(test_config)
+    app = create_app(config_override=test_config)
     
     # Establish application context
     with app.app_context():
@@ -74,16 +74,15 @@ def db_session(db):
     connection = db.engine.connect()
     transaction = connection.begin()
     
-    options = dict(bind=connection, binds={})
-    session = db.create_scoped_session(options=options)
-    
-    db.session = session
+    # Use the modern Flask-SQLAlchemy session approach
+    session = db.session
+    session.bind = connection
     
     yield session
     
+    session.close()
     transaction.rollback()
     connection.close()
-    session.remove()
 
 
 @pytest.fixture
@@ -221,11 +220,24 @@ def mock_external_services(mock_services):
     """Automatically mock external services for all tests."""
     patches = []
     
+    # Map service names to ServiceRegistry methods
+    service_registry_methods = {
+        'ai_service': 'get_ai_service',
+        'compression_service': 'get_compression_service', 
+        'conversion_service': 'get_conversion_service',
+        'extraction_service': 'get_invoice_extraction_service',
+        'file_management_service': 'get_file_management_service',
+        'export_service': 'get_export_service',
+        'ocr_service': 'get_ocr_service'
+    }
+    
     for service_name, mock_service in mock_services.items():
-        patch_path = f'src.tasks.tasks.{service_name}'
-        patcher = patch(patch_path, mock_service)
-        patches.append(patcher)
-        patcher.start()
+        if service_name in service_registry_methods:
+            method_name = service_registry_methods[service_name]
+            patch_path = f'src.services.service_registry.ServiceRegistry.{method_name}'
+            patcher = patch(patch_path, return_value=mock_service)
+            patches.append(patcher)
+            patcher.start()
     
     yield
     

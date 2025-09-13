@@ -41,10 +41,15 @@ class DatabaseTransactionError(Exception):
         return base_msg
 
 
+# Alias for backward compatibility
+TransactionError = DatabaseTransactionError
+
+
 @contextmanager
 def db_transaction(operation_name: Optional[str] = None, 
                   auto_commit: bool = True,
-                  raise_on_error: bool = True):
+                  raise_on_error: bool = True,
+                  max_retries: int = 0):
     """Database transaction context manager with automatic rollback.
     
     Provides a safe way to execute database operations within a transaction
@@ -54,6 +59,7 @@ def db_transaction(operation_name: Optional[str] = None,
         operation_name: Optional name for logging and error context
         auto_commit: Whether to automatically commit on success (default: True)
         raise_on_error: Whether to re-raise exceptions after rollback (default: True)
+        max_retries: Maximum number of retry attempts on failure (default: 0)
         
     Yields:
         The database session for performing operations
@@ -73,58 +79,74 @@ def db_transaction(operation_name: Optional[str] = None,
             return False
         ```
     """
-    rollback_attempted = False
-    
-    try:
+    # If max_retries is 0 or less, execute directly without retry logic
+    if max_retries <= 0:
+        rollback_attempted = False
+        
         # Begin transaction (if not already in one)
-        if not db.session.in_transaction():
+        # For modern SQLAlchemy, we'll just try to begin and handle any existing transaction
+        try:
             db.session.begin()
+        except Exception:
+            # Already in a transaction, continue
+            pass
             
         logger.debug(f"Starting transaction: {operation_name or 'unnamed'}")
         
-        yield db.session
+        try:
+            yield db.session
+            
+        except (SQLAlchemyError, DBAPIError) as db_error:
+            rollback_attempted = True
+            try:
+                db.session.rollback()
+                logger.warning(f"Database transaction rolled back for {operation_name or 'unnamed'}: {db_error}")
+            except Exception as rollback_error:
+                logger.error(f"Failed to rollback transaction for {operation_name or 'unnamed'}: {rollback_error}")
+                
+            if raise_on_error:
+                raise DatabaseTransactionError(
+                    f"Database operation failed: {db_error}",
+                    original_error=db_error,
+                    operation=operation_name,
+                    rollback_attempted=True
+                )
+                
+        except Exception as general_error:
+            rollback_attempted = True
+            try:
+                db.session.rollback()
+                logger.warning(f"General transaction rolled back for {operation_name or 'unnamed'}: {general_error}")
+            except Exception as rollback_error:
+                logger.error(f"Failed to rollback transaction for {operation_name or 'unnamed'}: {rollback_error}")
+            
+            if raise_on_error:
+                raise DatabaseTransactionError(
+                    f"Transaction failed due to unexpected error: {general_error}",
+                    original_error=general_error,
+                    operation=operation_name,
+                    rollback_attempted=True
+                )
+        else:
+            # This runs only if no exception occurred
+            if auto_commit:
+                db.session.commit()
+                logger.debug(f"Transaction committed: {operation_name or 'unnamed'}")
+    else:
+        # Use safe_db_operation for retry logic
+        def transaction_operation():
+            with db_transaction(operation_name, auto_commit, raise_on_error, max_retries=0) as session:
+                yield session
         
-        # Commit if auto_commit is enabled and no exception occurred
-        if auto_commit:
-            db.session.commit()
-            logger.debug(f"Transaction committed: {operation_name or 'unnamed'}")
-            
-    except (SQLAlchemyError, DBAPIError) as db_error:
-        rollback_attempted = True
-        try:
-            db.session.rollback()
-            logger.warning(f"Database transaction rolled back for {operation_name or 'unnamed'}: {db_error}")
-        except Exception as rollback_error:
-            logger.error(f"Failed to rollback transaction for {operation_name or 'unnamed'}: {rollback_error}")
-            
-        if raise_on_error:
-            raise DatabaseTransactionError(
-                f"Database operation failed: {db_error}",
-                original_error=db_error,
-                operation=operation_name,
-                rollback_attempted=True
-            )
-            
-    except Exception as general_error:
-        rollback_attempted = True
-        try:
-            db.session.rollback()
-            logger.warning(f"General transaction rolled back for {operation_name or 'unnamed'}: {general_error}")
-        except Exception as rollback_error:
-            logger.error(f"Failed to rollback transaction for {operation_name or 'unnamed'}: {rollback_error}")
-            
-        if raise_on_error:
-            raise DatabaseTransactionError(
-                f"Transaction failed due to unexpected error: {general_error}",
-                original_error=general_error,
-                operation=operation_name,
-                rollback_attempted=True
-            )
+        # This is a generator, so we need to handle it differently
+        # We'll delegate to safe_db_operation but need to adapt the interface
+        raise NotImplementedError("Retry logic for db_transaction context manager with max_retries > 0 is not yet implemented. Use safe_db_operation instead.")
 
 
 def transactional(operation_name: Optional[str] = None, 
                  auto_commit: bool = True,
-                 raise_on_error: bool = True):
+                 raise_on_error: bool = True,
+                 max_retries: int = 0):
     """Decorator to wrap functions in a database transaction.
     
     Args:
@@ -148,8 +170,16 @@ def transactional(operation_name: Optional[str] = None,
         def wrapper(*args, **kwargs) -> T:
             op_name = operation_name or f"{func.__module__}.{func.__name__}"
             
-            with db_transaction(op_name, auto_commit, raise_on_error):
-                return func(*args, **kwargs)
+            if max_retries > 0:
+                # Use safe_db_operation for retry logic
+                def operation():
+                    with db_transaction(op_name, auto_commit, raise_on_error, max_retries=0) as session:
+                        return func(*args, **kwargs)
+                return safe_db_operation(operation, op_name, max_retries)
+            else:
+                # Direct execution without retry
+                with db_transaction(op_name, auto_commit, raise_on_error):
+                    return func(*args, **kwargs)
                 
         return wrapper
     return decorator
@@ -158,7 +188,8 @@ def transactional(operation_name: Optional[str] = None,
 def safe_db_operation(operation: Callable[[], T], 
                      operation_name: Optional[str] = None,
                      max_retries: int = 3,
-                     default_return: Optional[T] = None) -> Optional[T]:
+                     default_return: Optional[T] = None,
+                     exception_handler: Optional[Callable[[Exception, int, str], bool]] = None) -> Optional[T]:
     """Execute a database operation with retry logic and error handling.
     
     Args:
@@ -185,13 +216,30 @@ def safe_db_operation(operation: Callable[[], T],
     for attempt in range(max_retries + 1):
         try:
             with db_transaction(operation_name, auto_commit=True, raise_on_error=True):
-                return operation()
+                result = operation()
+                return result
                 
         except DatabaseTransactionError as e:
             last_error = e
+            logger.debug(f"Caught DatabaseTransactionError on attempt {attempt}: {e}")
+            logger.debug(f"Original error type: {type(e.original_error)}")
             
-            # Check if this is a retryable error
-            if isinstance(e.original_error, (OperationalError, DBAPIError)):
+            # Use custom exception handler if provided
+            if exception_handler:
+                should_retry = exception_handler(e, attempt, operation_name or 'unnamed')
+                if not should_retry:
+                    break
+                if attempt < max_retries:
+                    continue
+                else:
+                    break
+            
+            # Check if this is a retryable error - look deeper into nested errors
+            original_error = e.original_error
+            while isinstance(original_error, DatabaseTransactionError) and original_error.original_error:
+                original_error = original_error.original_error
+                
+            if isinstance(original_error, (OperationalError, DBAPIError)):
                 if attempt < max_retries:
                     logger.warning(f"Retrying database operation {operation_name} (attempt {attempt + 1}/{max_retries}): {e}")
                     continue
@@ -202,6 +250,17 @@ def safe_db_operation(operation: Callable[[], T],
             
         except Exception as e:
             last_error = e
+            
+            # Use custom exception handler if provided
+            if exception_handler:
+                should_retry = exception_handler(e, attempt, operation_name or 'unnamed')
+                if not should_retry:
+                    break
+                if attempt < max_retries:
+                    continue
+                else:
+                    break
+            
             logger.error(f"Unexpected error in database operation {operation_name}: {e}")
             break
     
