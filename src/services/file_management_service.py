@@ -283,34 +283,75 @@ class FileManagementService:
             raise
     
     # ========================= CLEANUP OPERATIONS =========================
-    
     def cleanup_old_files(self, max_age_hours: int = None) -> Dict[str, Any]:
         """Remove files older than specified age from upload folder
-        
+
         Args:
             max_age_hours: Maximum age in hours (default: from config)
-            
+
         Returns:
             Cleanup summary dictionary
         """
         max_age = max_age_hours or Config.MAX_FILE_AGE
-        
+
         cleanup_summary = {
             'files_deleted': 0,
             'space_freed_mb': 0,
             'errors': []
         }
-        
+
         try:
-            cleanup_old_files(self.upload_folder, max_age)
-            logger.info(f"Cleanup completed for files older than {max_age} hours")
+            if not os.path.exists(self.upload_folder):
+                logger.warning(f"Upload folder does not exist: {self.upload_folder}")
+                return cleanup_summary
+
+            # Calculate cutoff time (current time minus max age in seconds)
+            cutoff_time = time.time() - (max_age * 3600)
+
+            for filename in os.listdir(self.upload_folder):
+                file_path = os.path.join(self.upload_folder, filename)
+
+                # Skip directories
+                if os.path.isdir(file_path):
+                    continue
+
+                try:
+                    # Check file modification time
+                    file_mtime = os.path.getmtime(file_path)
+
+                    if file_mtime < cutoff_time:
+                        # Get file size before deletion
+                        file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+
+                        # Delete the file
+                        os.remove(file_path)
+
+                        # Update cleanup summary
+                        cleanup_summary['files_deleted'] += 1
+                        cleanup_summary['space_freed_mb'] += file_size_mb
+
+                        logger.debug(f"Deleted old file: {file_path} ({file_size_mb:.2f}MB)")
+
+                except OSError as e:
+                    error_msg = f"Could not delete file {file_path}: {str(e)}"
+                    logger.warning(error_msg)
+                    cleanup_summary['errors'].append(error_msg)
+                    continue
+
+            if cleanup_summary['files_deleted'] > 0:
+                logger.info(f"Cleanup completed: {cleanup_summary['files_deleted']} files deleted, "
+                            f"{cleanup_summary['space_freed_mb']:.2f}MB freed for files older than {max_age} hours")
+            else:
+                logger.info(f"No files found older than {max_age} hours to clean up")
+
         except Exception as e:
             error_msg = f"Error during file cleanup: {str(e)}"
             logger.error(error_msg)
             cleanup_summary['errors'].append(error_msg)
-        
+
         return cleanup_summary
-    
+
+
     def cleanup_expired_jobs(self) -> Dict[str, Any]:
         """Clean up expired jobs and their associated files
         
@@ -632,3 +673,4 @@ class FileManagementService:
                 'error': str(e),
                 'timestamp': datetime.now(timezone.utc).isoformat()
             }
+
