@@ -561,7 +561,7 @@ class FileManagementService:
                     cutoff_time = datetime.now(timezone.utc) - timedelta(hours=retention_hours)
 
                     # Query jobs with this status that are older than cutoff
-                    jobs = transaction.Query(Job).filter_by(status=status).filter(
+                    jobs = transaction.query(Job).filter_by(status=status).filter(
                         Job.created_at < cutoff_time).all()
 
                     expired_jobs.extend(jobs)
