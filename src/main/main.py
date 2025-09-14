@@ -267,7 +267,6 @@ def register_debug_endpoints(app: Flask):
     @app.route('/debug/config')
     def debug_config():
         """Debug endpoint to view configuration summary"""
-        # Always in Debug
         if not app.config.get('DEBUG', True):
             return jsonify({'error': 'Debug mode not enabled'}), 404
         
@@ -280,7 +279,7 @@ def register_debug_endpoints(app: Flask):
     @app.route('/debug/routes')
     def debug_routes():
         """Debug endpoint to view all registered routes"""
-        if not app.config.get('DEBUG', False):
+        if not app.config.get('DEBUG', True):
             return jsonify({'error': 'Debug mode not enabled'}), 404
         
         routes = []
@@ -296,6 +295,9 @@ def register_debug_endpoints(app: Flask):
     @app.route('/debug/database')
     def debug_database():
         """Debug endpoint to check database status"""
+        if not app.config.get('DEBUG', True):
+            return jsonify({'error': 'Debug mode not enabled'}), 404
+
         try:
             db_uri = app.config['SQLALCHEMY_DATABASE_URI']
             db_info = {

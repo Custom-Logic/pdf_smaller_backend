@@ -197,7 +197,7 @@ class TestingConfig(BaseConfig):
 
 class ProductionConfig(BaseConfig):
     """Production configuration"""
-    DEBUG = False
+    DEBUG = True
     TESTING = False
     
     # Production logging
