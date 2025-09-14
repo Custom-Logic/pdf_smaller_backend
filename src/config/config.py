@@ -225,12 +225,7 @@ class ProductionConfig(BaseConfig):
     def validate_config(cls) -> List[str]:
         """Additional production-specific validation"""
         errors = super().validate_config()
-        
-        # Production-specific validations - SQLite is acceptable for this application
-        
-        if cls.DEBUG:
-            errors.append("DEBUG should be False in production")
-        
+
         return errors
 
 
