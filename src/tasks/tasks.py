@@ -180,7 +180,7 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
     try:
         job = JobOperations.create_job_safely(
             job_id=job_id,
-            job_type='compress',
+            task_type='compress',
             input_data={
                 'compression_settings': compression_settings,
                 'file_size': len(file_data),
@@ -217,7 +217,7 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
         logger.info(f"Starting bulk compression task for job {job_id}")
         job = JobOperations.create_job_safely(
             job_id=job_id,
-            job_type='bulk_compress',
+            task_type='bulk_compress',
             input_data={
                 'settings': settings,
                 'file_count': len(file_data_list),
@@ -322,7 +322,7 @@ def convert_pdf_task(
         with current_app.app_context():  # push context
             job = JobOperations.create_job_safely(
                 job_id=job_id,
-                job_type="convert",
+                task_type="convert",
                 input_data={
                     "target_format": target_format,
                     "options": options,
@@ -377,7 +377,7 @@ def conversion_preview_task(
         with current_app.app_context():
             job = JobOperations.create_job_safely(
                 job_id=job_id,
-                job_type="conversion_preview",
+                task_type="conversion_preview",
                 input_data={
                     "target_format": target_format,
                     "options": options,
@@ -429,7 +429,7 @@ def ocr_process_task(
         with current_app.app_context():
             job = JobOperations.create_job_safely(
                 job_id=job_id,
-                job_type="ocr",
+                task_type="ocr",
                 input_data={
                     "options": options,
                     "file_size": len(file_data),
@@ -473,7 +473,7 @@ def ocr_preview_task(self,job_id: str,file_data: bytes,options: Dict[str, Any]) 
         with current_app.app_context():
             job = JobOperations.create_job_safely(
                 job_id=job_id,
-                job_type="ocr_preview",
+                task_type="ocr_preview",
                 input_data={
                     "options": options,
                     "file_size": len(file_data),
@@ -515,7 +515,7 @@ def ai_summarize_task(self, job_id: str, text: str, options: Dict[str, Any]) -> 
         logger.info(f"Starting AI summarisation task for job {job_id}")
         job = JobOperations.create_job_safely(
             job_id=job_id,
-            job_type='ai_summarize',
+            task_type='ai_summarize',
             input_data={'text_length': len(text), 'options': options}
         )
 
@@ -539,7 +539,7 @@ def ai_translate_task(self, job_id: str, text: str, target_language: str,
         logger.info(f"Starting AI translation task for job {job_id} (target: {target_language})")
         job = JobOperations.create_job_safely(
             job_id=job_id,
-            job_type='ai_translate',
+            task_type='ai_translate',
             input_data={
                 'target_language': target_language,
                 'text_length': len(text),
@@ -567,7 +567,7 @@ def extract_text_task(self, job_id: str, file_data: bytes,
         logger.info(f"Starting text-extraction task for job {job_id}")
         job = JobOperations.create_job_safely(
             job_id=job_id,
-            job_type='extract_text',
+            task_type='extract_text',
             input_data={'file_size': len(file_data), 'original_filename': original_filename}
         )
 
