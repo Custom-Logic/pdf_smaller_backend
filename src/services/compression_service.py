@@ -2,15 +2,13 @@ import logging
 import os
 import subprocess
 import tempfile
-
 import uuid
-from pathlib import Path
 from typing import Dict, Any, Optional
 
+from src.models.job import TaskType
+from src.jobs import JobOperationsWrapper
 from src.models import Job, JobStatus
-from src.models.base import db
 from src.services.file_management_service import FileManagementService
-from src.utils.job_operations import JobOperations
 
 logger = logging.getLogger(__name__)
 
@@ -150,12 +148,12 @@ class CompressionService:
     def create_compression_job(file_data: bytes, settings: Dict[str, Any],
                                original_filename: str = None, job_id: str = None) -> Job:
         """
-        Create a compression job record for async processing using JobOperations
+        Create a compression job record for async processing using JobOperationsWrapper
         """
         try:
-            job = JobOperations.create_job_safely(
+            job = JobOperationsWrapper.create_job_safely(
                 job_id=job_id,
-                job_type='compress',
+                task_type=TaskType.COMPRESS.value,
                 input_data={
                     'settings': settings,
                     'file_size': len(file_data),
@@ -183,8 +181,8 @@ class CompressionService:
             if not job.task_type_is_compression:
                 raise ValueError(f"Job {job_id} is not a compression job")
 
-            # Update job status using JobOperations
-            JobOperations.update_job_status(job_id, JobStatus.PROCESSING)
+            # Update job status using JobOperationsWrapper
+            JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
             # Get job data
             input_data = job.input_data
@@ -221,13 +219,13 @@ class CompressionService:
                     'output_path': output_path
                 }
                 # Update job with results                
-                JobOperations.update_job_status(job_id, JobStatus.COMPLETED, result=result)
+                JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
 
                 return job.result
 
         except Exception as e:
             if 'job' in locals():
-                JobOperations.update_job_status(job_id, JobStatus.FAILED, error_message=str(e))
+                JobOperationsWrapper.update_job_status_safely(job_id, JobStatus.FAILED, error_message=str(e))
 
             logger.error(f"Error processing compression job {job_id}: {str(e)}")
             raise

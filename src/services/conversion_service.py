@@ -6,7 +6,6 @@ import logging
 import os
 import re
 import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -484,9 +483,9 @@ class ConversionService:
         return name.strip("-") or "file"
 
     # --------------------------------------------------------------------------
-    # DEPRECATED: Use JobOperations.create_job_safely instead
+    # DEPRECATED: Use JobOperationsWrapper.create_job_safely instead
     # --------------------------------------------------------------------------
-    # Note: The create_conversion_job method has been removed in favor of JobOperations
+    # Note: The create_conversion_job method has been removed in favor of JobOperationsWrapper
     # for standardized job creation across all services.
-    # Use JobOperations.create_job_safely(job_type='conversion', ...) instead.
+    # Use JobOperationsWrapper.create_job_safely(job_type='conversion', ...) instead.
 

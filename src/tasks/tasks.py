@@ -3,7 +3,6 @@ src/tasks/tasks.py
 Celery tasks for background job processing – context-safe refactor
 """
 import logging
-import os
 import shutil
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
@@ -21,7 +20,7 @@ from src.models.base import db
 from src.services.service_registry import ServiceRegistry
 from src.exceptions.extraction_exceptions import ExtractionError, ExtractionValidationError
 from src.utils.db_transaction import transactional
-from src.utils.job_operations import JobOperations
+from src.jobs import JobOperationsWrapper
 
 # Exception imports for specific error handling
 from sqlalchemy.exc import DBAPIError, OperationalError, IntegrityError
@@ -178,7 +177,7 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
     """Async compression task with centralized error handling."""
     job = None
     try:
-        job = JobOperations.create_job_safely(
+        job = JobOperationsWrapper.create_job_safely(
             job_id=job_id,
             task_type='compress',
             input_data={
@@ -189,7 +188,7 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
         )
         logger.debug(f"Starting compression task for job {job_id}")
 
-        JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
+        JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
         logger.debug(f"Job {job_id} marked as processing")
 
         result = ServiceRegistry.get_compression_service().process_file_data(
@@ -198,7 +197,7 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
             original_filename=original_filename)
         logger.debug(f"File processed for job {job_id}, result: {result}")
 
-        JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
+        JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
         logger.info(f"Compression job {job_id} completed successfully")
         return result
 
@@ -215,7 +214,7 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
     job = None
     try:
         logger.info(f"Starting bulk compression task for job {job_id}")
-        job = JobOperations.create_job_safely(
+        job = JobOperationsWrapper.create_job_safely(
             job_id=job_id,
             task_type='bulk_compress',
             input_data={
@@ -225,7 +224,7 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
             }
         )
 
-        JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
+        JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
         total_files = len(file_data_list)
         processed_files, errors = [], []
@@ -271,13 +270,13 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
                 logger.info(f"Created result archive for job {job_id}: {output_path}")
 
                 if errors and not processed_files:
-                    JobOperations.update_job_status_safely(job_id=job_id,
+                    JobOperationsWrapper.update_job_status_safely(job_id=job_id,
                                                            status=JobStatus.FAILED, error_message=f"All files failed: {len(errors)} errors")
                 elif errors:
                     result_data['warning'] = f"Completed with {len(errors)} errors"
-                    JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result_data)
+                    JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result_data)
                 else:
-                    JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result_data)
+                    JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result_data)
 
                 current_task.update_state(
                     state='SUCCESS',
@@ -320,7 +319,7 @@ def convert_pdf_task(
     # noinspection PyBroadException
     try:
         with current_app.app_context():  # push context
-            job = JobOperations.create_job_safely(
+            job = JobOperationsWrapper.create_job_safely(
                 job_id=job_id,
                 task_type="convert",
                 input_data={
@@ -331,7 +330,7 @@ def convert_pdf_task(
                 }
             )
 
-            JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
+            JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
             current_task.update_state(
                 state="PROGRESS",
@@ -347,9 +346,9 @@ def convert_pdf_task(
 
             # result always contains success/error
             if result["success"]:
-                JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
+                JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
             else:
-                JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.FAILED, error_message=result["error"])
+                JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.FAILED, error_message=result["error"])
 
             current_task.update_state(
                 state="SUCCESS",
@@ -375,7 +374,7 @@ def conversion_preview_task(
 
     try:
         with current_app.app_context():
-            job = JobOperations.create_job_safely(
+            job = JobOperationsWrapper.create_job_safely(
                 job_id=job_id,
                 task_type="conversion_preview",
                 input_data={
@@ -385,10 +384,10 @@ def conversion_preview_task(
                 }
             )
 
-            JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
+            JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
             preview = ServiceRegistry.get_conversion_service().get_conversion_preview(file_data, target_format, options)
-            JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=preview)
+            JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=preview)
             return preview
 
     except Exception as exc:
@@ -427,7 +426,7 @@ def ocr_process_task(
     # noinspection PyBroadException
     try:
         with current_app.app_context():
-            job = JobOperations.create_job_safely(
+            job = JobOperationsWrapper.create_job_safely(
                 job_id=job_id,
                 task_type="ocr",
                 input_data={
@@ -437,7 +436,7 @@ def ocr_process_task(
                 }
             )
 
-            JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
+            JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
             current_task.update_state(
                 state="PROGRESS", meta={"progress": 10, "status": "Starting OCR"}
@@ -450,9 +449,9 @@ def ocr_process_task(
             )
 
             if result["success"]:
-                JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
+                JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
             else:
-                JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.FAILED, error_message=result["error"])
+                JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.FAILED, error_message=result["error"])
 
             current_task.update_state(
                 state="SUCCESS", meta={"progress": 100, "status": "OCR completed"}
@@ -471,7 +470,7 @@ def ocr_preview_task(self,job_id: str,file_data: bytes,options: Dict[str, Any]) 
 
     try:
         with current_app.app_context():
-            job = JobOperations.create_job_safely(
+            job = JobOperationsWrapper.create_job_safely(
                 job_id=job_id,
                 task_type="ocr_preview",
                 input_data={
@@ -480,10 +479,10 @@ def ocr_preview_task(self,job_id: str,file_data: bytes,options: Dict[str, Any]) 
                 }
             )
 
-            JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
+            JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
             preview = ServiceRegistry.get_ocr_service().get_ocr_preview(file_data, options)
-            JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=preview)
+            JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=preview)
             return preview
 
     except Exception as exc:
@@ -513,16 +512,16 @@ def ai_summarize_task(self, job_id: str, text: str, options: Dict[str, Any]) -> 
     
     try:
         logger.info(f"Starting AI summarisation task for job {job_id}")
-        job = JobOperations.create_job_safely(
+        job = JobOperationsWrapper.create_job_safely(
             job_id=job_id,
             task_type='ai_summarize',
             input_data={'text_length': len(text), 'options': options}
         )
 
-        JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
+        JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
         result = ServiceRegistry.get_ai_service().summarize_text(text=text, options=options)
-        JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
+        JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
         logger.info(f"AI summarisation task completed for job {job_id}")
         return result
 
@@ -537,7 +536,7 @@ def ai_translate_task(self, job_id: str, text: str, target_language: str,
     
     try:
         logger.info(f"Starting AI translation task for job {job_id} (target: {target_language})")
-        job = JobOperations.create_job_safely(
+        job = JobOperationsWrapper.create_job_safely(
             job_id=job_id,
             task_type='ai_translate',
             input_data={
@@ -547,10 +546,10 @@ def ai_translate_task(self, job_id: str, text: str, target_language: str,
             }
         )
 
-        JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
+        JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
         result = ServiceRegistry.get_ai_service().translate_text(text, target_language, options)
-        JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
+        JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
         logger.info(f"AI translation task completed for job {job_id}")
         return result
 
@@ -565,18 +564,18 @@ def extract_text_task(self, job_id: str, file_data: bytes,
     
     try:
         logger.info(f"Starting text-extraction task for job {job_id}")
-        job = JobOperations.create_job_safely(
+        job = JobOperationsWrapper.create_job_safely(
             job_id=job_id,
             task_type='extract_text',
             input_data={'file_size': len(file_data), 'original_filename': original_filename}
         )
 
-        JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
+        JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
         current_task.update_state(state='PROGRESS', meta={'progress': 10, 'status': 'Starting text extraction'})
         text_content = ServiceRegistry.get_ai_service().extract_text_from_pdf_data(file_data)
         result = {'text': text_content, 'length': len(text_content), 'original_filename': original_filename}
-        JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
+        JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
         current_task.update_state(state='SUCCESS', meta={'progress': 100, 'status': 'Text extraction completed'})
         logger.info(f"Text-extraction task completed for job {job_id}")
         return result
