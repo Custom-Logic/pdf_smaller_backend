@@ -24,6 +24,7 @@ from src.models import Job
 from src.models.base import db
 from src.utils.db_transaction import safe_db_operation
 from src.utils.response_helpers import error_response
+from src.utils.db_transaction import db_transaction
 
 logger = logging.getLogger(__name__)
 
@@ -554,23 +555,21 @@ class FileManagementService:
         """
         try:
             expired_jobs = []
-            
-            # Get jobs older than retention period based on status
-            for status, retention_hours in self.DEFAULT_RETENTION_PERIODS.items():
-                cutoff_time = datetime.now(timezone.utc) - timedelta(hours=retention_hours)
-                
-                # Query jobs with this status that are older than cutoff
-                jobs = Job.query \
-                    .filter(Job.status == status) \
-                    .filter(Job.created_at < cutoff_time) \
-                    .all()
-                
-                expired_jobs.extend(jobs)
-            
-            # Remove duplicates (in case a job matches multiple criteria)
-            unique_jobs = list({job.job_id: job for job in expired_jobs}.values())
-            
-            return unique_jobs
+            with db_transaction() as transaction:
+                # Get jobs older than retention period based on status
+                for status, retention_hours in self.DEFAULT_RETENTION_PERIODS.items():
+                    cutoff_time = datetime.now(timezone.utc) - timedelta(hours=retention_hours)
+
+                    # Query jobs with this status that are older than cutoff
+                    jobs = transaction.Query(Job).filter_by(status=status).filter(
+                        Job.created_at < cutoff_time).all()
+
+                    expired_jobs.extend(jobs)
+
+                # Remove duplicates (in case a job matches multiple criteria)
+                unique_jobs = list({job.job_id: job for job in expired_jobs}.values())
+
+                return unique_jobs
             
         except Exception as e:
             logger.error(f"Error getting expired jobs: {str(e)}")
