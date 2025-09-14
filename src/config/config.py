@@ -241,7 +241,7 @@ config_by_name = {
 Config = config_by_name[os.environ.get('FLASK_ENV', 'production')]
 
 
-def get_config(config_name: Optional[str] = None) -> BaseConfig:
+def get_config(config_name: Optional[str] = None) -> type[DevelopmentConfig | TestingConfig | ProductionConfig]:
     """Get configuration class by name"""
     if config_name is None:
         config_name = os.environ.get('FLASK_ENV', 'production')

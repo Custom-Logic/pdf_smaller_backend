@@ -80,7 +80,7 @@ def create_app(config_name=None, config_override=None):
     with app.app_context():
         # Initialize extensions
 
-        initialize_extensions(app)
+
         # Register error handlers
         register_error_handlers(app)
 
@@ -94,6 +94,7 @@ def create_app(config_name=None, config_override=None):
         # Creates background scheduler tasks and attach them to app
         scheduler.init_app(app=app)
         app.logger.info("Application factory completed successfully")
+        initialize_extensions(app)
         return app
 
 
