@@ -18,9 +18,9 @@ import logging
 from typing import Dict, Any, Optional, List, Union
 from enum import Enum
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
-from src.exceptions.extraction_exceptions import ValidationError
+from utils.exceptions import ValidationError
 
 
 class AgentRole(Enum):
@@ -41,13 +41,13 @@ class InputSchema:
     
     def validate(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """Validates input data against the schema."""
-        errors = []
+        errors = {}
         validated_data = {}
         
         # Check required fields
         for field in self.required_fields:
             if field not in input_data:
-                errors.append(f"Missing required field: {field}")
+                errors.update(field=f"Missing required field: {field}")
             else:
                 validated_data[field] = input_data[field]
         
@@ -61,25 +61,25 @@ class InputSchema:
             expected_type = self.field_types.get(field)
             if expected_type:
                 if expected_type == "string" and not isinstance(value, str):
-                    errors.append(f"Field {field} must be a string")
+                    errors.update(field=f"Field {field} must be a string")
                 elif expected_type == "integer" and not isinstance(value, int):
-                    errors.append(f"Field {field} must be an integer")
+                    errors.update(field=f"Field {field} must be an integer")
                 elif expected_type == "list" and not isinstance(value, list):
-                    errors.append(f"Field {field} must be a list")
+                    errors.update(field=f"Field {field} must be a list")
                 elif expected_type == "dict" and not isinstance(value, dict):
-                    errors.append(f"Field {field} must be a dict")
+                    errors.update(field=f"Field {field} must be a dict")
         
         # Check constraints
         for field, value in validated_data.items():
             if field in self.constraints:
                 constraint = self.constraints[field]
                 if "min_length" in constraint and len(str(value)) < constraint["min_length"]:
-                    errors.append(f"Field {field} must be at least {constraint['min_length']} characters")
+                    errors.update(field=f"Field {field} must be at least {constraint['min_length']} characters")
                 if "max_length" in constraint and len(str(value)) > constraint["max_length"]:
-                    errors.append(f"Field {field} must be at most {constraint['max_length']} characters")
+                    errors.update(field=f"Field {field} must be at most {constraint['max_length']} characters")
         
         if errors:
-            raise ValidationError("Input validation failed", details=errors)
+            raise ValidationError(message="Input validation failed", details=errors)
         
         return validated_data
 
@@ -94,13 +94,13 @@ class OutputSchema:
     
     def validate(self, output_data: Dict[str, Any]) -> Dict[str, Any]:
         """Validates output data against the schema."""
-        errors = []
+        errors = {}
         validated_data = {}
         
         # Check required fields
         for field in self.required_fields:
             if field not in output_data:
-                errors.append(f"Missing required field: {field}")
+                errors.update(field=f"Missing required field: {field}")
             else:
                 validated_data[field] = output_data[field]
         
@@ -114,17 +114,17 @@ class OutputSchema:
             expected_type = self.field_types.get(field)
             if expected_type:
                 if expected_type == "string" and not isinstance(value, str):
-                    errors.append(f"Field {field} must be a string")
+                    errors.update(field=f"Field {field} must be a string")
                 elif expected_type == "integer" and not isinstance(value, int):
-                    errors.append(f"Field {field} must be an integer")
+                    errors.update(field=f"Field {field} must be an integer")
                 elif expected_type == "list" and not isinstance(value, list):
-                    errors.append(f"Field {field} must be a list")
+                    errors.update(field=f"Field {field} must be a list")
                 elif expected_type == "dict" and not isinstance(value, dict):
-                    errors.append(f"Field {field} must be a dict")
+                    errors.update(field=f"Field {field} must be a dict")
                 elif expected_type == "float" and not isinstance(value, (int, float)):
-                    errors.append(f"Field {field} must be a float")
+                    errors.update(field=f"Field {field} must be a float")
                 elif expected_type == "boolean" and not isinstance(value, bool):
-                    errors.append(f"Field {field} must be a boolean")
+                    errors.update(field=f"Field {field} must be a boolean")
         
         # Validate nested schemas
         if self.nested_schemas:
@@ -139,7 +139,7 @@ class OutputSchema:
                         elif isinstance(validated_data[field], dict):
                             validated_data[field] = schema.validate(validated_data[field])
                     except ValidationError as e:
-                        errors.extend(e.details)
+                        errors.update(e=e.details)
         
         if errors:
             raise ValidationError("Output validation failed", details=errors)
@@ -479,7 +479,7 @@ VALIDATION RULES:
         # Add common context
         context = {
             'input_data': json.dumps(validated_input, indent=2),
-            'timestamp': datetime.utcnow().isoformat(),
+            'timestamp': datetime.now(timezone.utc).isoformat(),
             'role': role.value
         }
         
