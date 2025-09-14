@@ -47,7 +47,7 @@ class JobOperations:
         """
         def wrapped_operation():
             with JobOperations.session_scope() as session:
-                job = session.query(Job).filter(Job.job_id == job_id).first()
+                job = session.query(Job).filter(job_id = job_id).first()
                 if not isinstance(job, Job):
                     raise ValueError(f"Job {job_id} not found")
                 return operation(job, session)
@@ -61,12 +61,11 @@ class JobOperations:
 
     @staticmethod
     def get_job(job_id: str) -> Optional[Job]:
-        """Get job by ID (no row locking in SQLite)."""
+        """Get job by ID (simplified)."""
+
         def get_operation():
             with JobOperations.session_scope(auto_commit=False) as session:
-                return session.execute(
-                    select(Job).where(Job.job_id == job_id)
-                ).scalar_one_or_none()
+                return session.query(Job).filter(job_id = job_id).first()
 
         return safe_db_operation(
             get_operation,
@@ -80,7 +79,7 @@ class JobOperations:
         """Create a new job; prevent duplicates by checking first."""
         def create_operation():
             with JobOperations.session_scope() as session:
-                existing_job = session.query(Job).filter(Job.job_id == job_id).first()
+                existing_job = session.query(Job).filter(job_id = job_id).first()
                 if isinstance(existing_job, Job):
                     return existing_job
 
@@ -105,11 +104,9 @@ class JobOperations:
         """Update job fields directly (no row-level lock)."""
         def update_operation():
             with JobOperations.session_scope() as session:
-                job = session.execute(
-                    select(Job).where(Job.job_id == job_id)
-                ).scalar_one_or_none()
+                job = session.query(Job).filter(job_id = job_id).first()
 
-                if not job:
+                if not isinstance(job, Job):
                     return False
 
                 for key, value in updates.items():
@@ -141,10 +138,10 @@ class JobOperations:
 
                     try:
                         job = session.execute(
-                            select(Job).where(Job.job_id == job_id)
+                            select(Job).where(job_id == job_id)
                         ).scalar_one_or_none()
 
-                        if not job:
+                        if not isinstance(job, Job):
                             results[job_id] = False
                             continue
 
@@ -173,11 +170,8 @@ class JobOperations:
         """Delete a job by ID."""
         def delete_operation():
             with JobOperations.session_scope() as session:
-                job = session.execute(
-                    select(Job).where(Job.job_id == job_id)
-                ).scalar_one_or_none()
-
-                if not job:
+                job = session.query(Job).filter(job_id = job_id).first()
+                if not isinstance(job, Job):
                     return False
 
                 session.delete(job)
