@@ -267,7 +267,8 @@ def register_debug_endpoints(app: Flask):
     @app.route('/debug/config')
     def debug_config():
         """Debug endpoint to view configuration summary"""
-        if not app.config.get('DEBUG', False):
+        # Always in Debug
+        if not app.config.get('DEBUG', True):
             return jsonify({'error': 'Debug mode not enabled'}), 404
         
         config_class = type(app.config)
