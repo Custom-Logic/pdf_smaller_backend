@@ -14,7 +14,6 @@ from src.tasks.tasks import (
     extract_invoice_task,
     merge_pdfs_task,
     split_pdf_task,
-    cleanup_temp_files_task,
     health_check_task,
     extract_bank_statement_task
 )
@@ -34,7 +33,6 @@ __all__ = [
     'extract_invoice_task',
     'merge_pdfs_task',
     'split_pdf_task',
-    'cleanup_temp_files_task',
     'health_check_task',
     'extract_bank_statement_task'
 ]

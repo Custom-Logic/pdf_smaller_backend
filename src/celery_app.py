@@ -89,17 +89,6 @@ def make_celery(app=None):
         
         # Beat schedule for periodic tasks
         beat_schedule={
-            'cleanup-expired-jobs': {
-                'task': 'tasks.cleanup_expired_jobs',
-                'schedule': 3600.0,  # Run every hour
-                'options': {'queue': 'cleanup'}
-            },
-            'cleanup-temp-files': {
-                'task': 'tasks.cleanup_temp_files_task',
-                'schedule': 1800.0,  # Run every 30 minutes
-                'options': {'queue': 'maintenance'},
-                'kwargs': {'max_age_hours': 24}
-            },
             'health-check': {
                 'task': 'tasks.health_check_task',
                 'schedule': 900.0,  # Run every 15 minutes
