@@ -201,7 +201,7 @@ class ProductionConfig(BaseConfig):
     TESTING = False
     
     # Production logging
-    LOG_LEVEL = os.environ.get('LOG_LEVEL', 'WARNING')
+    LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
     
     # Strict security in production
     SECURITY_HEADERS = {
