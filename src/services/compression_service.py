@@ -84,11 +84,7 @@ class CompressionService:
             logger.error(f"Error processing file data: {str(e)}")
             raise
         finally:
-            # Clean up temporary files using FileManagementService
-            if temp_input_path and self.file_service.file_exists(temp_input_path):
-                self.file_service.delete_file(temp_input_path)
-            if temp_output_path and self.file_service.file_exists(temp_output_path):
-                self.file_service.delete_file(temp_output_path)
+            pass
 
     def _execute_compression(self, input_path: str, output_path: str,
                              compression_level: str, image_quality: int) -> None:
