@@ -1,5 +1,5 @@
 # src/models/__init__.py
 from src.models.base import db
-from src.models.job import Job, JobStatus  # This ensures the model is registered with SQLAlchemy
+from src.models.job import Job, JobStatus, TaskType  # This ensures the model is registered with SQLAlchemy
 
-__all__ = ['db', 'Job', 'JobStatus']
+__all__ = ['db', 'Job', 'JobStatus', 'TaskType']
