@@ -210,6 +210,11 @@ def safe_db_operation(operation: Callable[[], T],
             
         result = safe_db_operation(update_job, "update_job_status", max_retries=2)
         ```
+        :param default_return:
+        :param max_retries:
+        :param operation_name:
+        :param operation:
+        :param exception_handler:
     """
     last_error = None
     
