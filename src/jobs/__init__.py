@@ -34,7 +34,7 @@ class JobOperationsWrapper:
         """
         try:
             # Use JobOperations for session-managed job creation
-            job = JobOperations.create_job(job_id, task_type, input_data or {})
+            job = JobOperations.create_job(job_id=job_id, task_type=task_type, input_data=input_data)
 
             if job:
                 logger.info(f"Successfully created job {job_id} with type {task_type}")

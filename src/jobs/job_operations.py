@@ -1,31 +1,32 @@
 """JobOperations - Centralized database session management for job operations.
 
-This class handles all database session management, transactions, and locking.
-JobStatusManager and other components should use this class for all database operations.
+Refactored for SQLite (on-disk).
+SQLite has no row-level locking or `with_for_update`, so all locking logic
+has been adapted/removed. Concurrency is handled via transaction retries
+and SQLite’s database-level locks.
 """
 
 import logging
-from typing import Dict, Any, Optional, List, Tuple, Callable
+from typing import Dict, Any, Optional, List, Callable
 from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
-from sqlalchemy import select, update, delete
-from sqlalchemy.orm import Session, joinedload
-
-from src.models.job import Job, JobStatus
+from sqlalchemy import select, delete
+from sqlalchemy.orm import Session
+from src.models import Job, JobStatus
 from src.models.base import db
-from src.utils.db_transaction import db_transaction, safe_db_operation
+from src.utils.db_transaction import safe_db_operation
 
 logger = logging.getLogger(__name__)
 
 
 class JobOperations:
-    """Centralized database session management for job operations."""
+    """Centralized database session management for job operations (SQLite)."""
 
     @staticmethod
     @contextmanager
     def session_scope(auto_commit: bool = True):
         """Provide a transactional scope around a series of operations."""
-        session = db.session
+        session: Session = db.session
         try:
             yield session
             if auto_commit:
@@ -39,35 +40,33 @@ class JobOperations:
 
     @staticmethod
     def execute_with_lock(job_id: str, operation: Callable[[Job, Session], Any]) -> Any:
-        """Execute operation with job-level locking and automatic session management."""
-        def locked_operation():
+        """
+        Execute operation on a job.
+        NOTE: SQLite does not support row-level locking; we rely on transaction isolation
+        and retries if the database is locked.
+        """
+        def wrapped_operation():
             with JobOperations.session_scope() as session:
-                # Get job with row lock
-                job = session.execute(
-                    select(Job).where(Job.job_id == job_id).with_for_update()
-                ).scalar_one_or_none()
-
-                if not job:
+                job = session.query(Job).filter(Job.job_id == job_id).first()
+                if not isinstance(job, Job):
                     raise ValueError(f"Job {job_id} not found")
-
                 return operation(job, session)
 
         return safe_db_operation(
-            locked_operation,
+            wrapped_operation,
             f"execute_with_lock_{job_id}",
             max_retries=2,
             default_return=None
         )
 
     @staticmethod
-    def get_job(job_id: str, lock: bool = False) -> Optional[Job]:
-        """Get job by ID with optional locking."""
+    def get_job(job_id: str) -> Optional[Job]:
+        """Get job by ID (no row locking in SQLite)."""
         def get_operation():
             with JobOperations.session_scope(auto_commit=False) as session:
-                query = select(Job).where(Job.job_id == job_id)
-                if lock:
-                    query = query.with_for_update()
-                return session.execute(query).scalar_one_or_none()
+                return session.execute(
+                    select(Job).where(Job.job_id == job_id)
+                ).scalar_one_or_none()
 
         return safe_db_operation(
             get_operation,
@@ -78,25 +77,17 @@ class JobOperations:
 
     @staticmethod
     def create_job(job_id: str, task_type: str, input_data: Dict[str, Any]) -> Optional[Job]:
-        """Create a new job with proper locking to prevent duplicates."""
+        """Create a new job; prevent duplicates by checking first."""
         def create_operation():
             with JobOperations.session_scope() as session:
-                # Check if job already exists with lock
-                existing_job = session.execute(
-                    select(Job).where(Job.job_id == job_id).with_for_update()
-                ).scalar_one_or_none()
-
-                if existing_job:
+                existing_job = session.query(Job).filter(Job.job_id == job_id).first()
+                if isinstance(existing_job, Job):
                     return existing_job
 
-                # Create new job
                 job = Job(
                     job_id=job_id,
                     task_type=task_type,
-                    input_data=input_data or {},
-                    status=JobStatus.PENDING.value,
-                    created_at=datetime.now(timezone.utc),
-                    updated_at=datetime.now(timezone.utc)
+                    input_data=input_data
                 )
                 session.add(job)
                 session.flush()
@@ -111,11 +102,11 @@ class JobOperations:
 
     @staticmethod
     def update_job(job_id: str, updates: Dict[str, Any]) -> bool:
-        """Update job fields directly."""
+        """Update job fields directly (no row-level lock)."""
         def update_operation():
             with JobOperations.session_scope() as session:
                 job = session.execute(
-                    select(Job).where(Job.job_id == job_id).with_for_update()
+                    select(Job).where(Job.job_id == job_id)
                 ).scalar_one_or_none()
 
                 if not job:
@@ -138,7 +129,7 @@ class JobOperations:
     @staticmethod
     def bulk_update_jobs(job_updates: List[Dict[str, Any]]) -> Dict[str, bool]:
         """Update multiple jobs in a single transaction."""
-        results = {}
+        results: Dict[str, bool] = {}
 
         def bulk_operation():
             with JobOperations.session_scope() as session:
@@ -150,14 +141,13 @@ class JobOperations:
 
                     try:
                         job = session.execute(
-                            select(Job).where(Job.job_id == job_id).with_for_update()
+                            select(Job).where(Job.job_id == job_id)
                         ).scalar_one_or_none()
 
                         if not job:
                             results[job_id] = False
                             continue
 
-                        # Apply updates
                         for key, value in update_info.items():
                             if key != 'job_id' and hasattr(job, key):
                                 setattr(job, key, value)
@@ -184,7 +174,7 @@ class JobOperations:
         def delete_operation():
             with JobOperations.session_scope() as session:
                 job = session.execute(
-                    select(Job).where(Job.job_id == job_id).with_for_update()
+                    select(Job).where(Job.job_id == job_id)
                 ).scalar_one_or_none()
 
                 if not job:
@@ -202,20 +192,17 @@ class JobOperations:
 
     @staticmethod
     def cleanup_old_jobs(days_old: int = 30) -> int:
-        """Clean up old completed/failed jobs."""
+        """Delete jobs older than `days_old` with completed/failed status."""
         def cleanup_operation():
             with JobOperations.session_scope() as session:
                 cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_old)
-
-                # Delete old completed/failed jobs
                 result = session.execute(
                     delete(Job).where(
                         Job.created_at < cutoff_date,
                         Job.status.in_([JobStatus.COMPLETED.value, JobStatus.FAILED.value])
                     )
                 )
-
-                deleted_count = result.rowcount
+                deleted_count = result.rowcount or 0
                 logger.info(f"Cleaned up {deleted_count} jobs older than {days_old} days")
                 return deleted_count
 
