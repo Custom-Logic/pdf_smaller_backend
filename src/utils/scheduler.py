@@ -22,13 +22,14 @@ class TaskScheduler:
 
     def init_app(self, app: Flask, file_service: FileManagementService | None = None):
         """Initialize the scheduler with the Flask app context"""
-        self.app = app
+
         self.file_service = ServiceRegistry.get_file_management_service()
         # Add cleanup tasks
         self.add_task('cleanup_expired_jobs', self.file_service.cleanup_expired_jobs, interval_hours=6)  # Every 6 hours
         self.add_task('cleanup_temp_files', self.file_service.cleanup_temp_files, interval_hours=1)  # Every hour
         self.add_task('cleanup_old_files', self.file_service.cleanup_old_files, interval_hours=12)  # Every 12 hours
         logger.info("Task scheduler initialized with Flask app context")
+        app.scheduler = self
 
 
     def add_task(self, name: str, func: Callable, interval_hours: int):
