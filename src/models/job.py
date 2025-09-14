@@ -123,14 +123,14 @@ class Job(BaseModel):
         """Convert job to dictionary for JSON serialization"""
         return {
             'job_id': self.job_id,  # Fixed this line (was client_job_id)
+            'task_id': self.task_id,
             'task_type': self.task_type,
             'status': self.status,
             'input_data': self.input_data,
             'result': self.result,
             'created_at': self.created_at.isoformat() if self.created_at else None,
             'updated_at': self.updated_at.isoformat() if self.updated_at else None,
-            'error': self.error,
-            'task_id': self.task_id,
+            'error': self.error,            
             'is_completed': self.is_completed(),
             'is_successful': self.is_successful()
         }
