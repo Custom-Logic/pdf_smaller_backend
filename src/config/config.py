@@ -73,11 +73,7 @@ class BaseConfig:
                                '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     LOG_MAX_BYTES = int(os.environ.get('LOG_MAX_BYTES', 10 * 1024 * 1024))  # 10MB
     LOG_BACKUP_COUNT = int(os.environ.get('LOG_BACKUP_COUNT', 5))
-    
 
-    
-
-    
     # Celery task queue settings
     CELERY_BROKER_URL =  REDIS_URL
     CELERY_RESULT_BACKEND = REDIS_URL
@@ -88,7 +84,6 @@ class BaseConfig:
     CELERY_ENABLE_UTC = True
     
 
-    
     # Monitoring and health checks
     HEALTH_CHECK_ENABLED = os.environ.get('HEALTH_CHECK_ENABLED', 'true').lower() == 'true'
     METRICS_ENABLED = os.environ.get('METRICS_ENABLED', 'false').lower() == 'true'

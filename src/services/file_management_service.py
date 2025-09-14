@@ -8,22 +8,22 @@ into a unified service that handles all file-related operations including:
 - File downloads for job results
 """
 
-import os, time
-import uuid
 import logging
+import os
+import time
+import uuid
 import zipfile
 from datetime import datetime, timedelta, timezone
-from typing import Tuple, List, Dict, Any, Optional
 from pathlib import Path
+from typing import Tuple, List, Dict, Any
+
 from flask import send_file
 
 from src.config import Config
-from src.models import Job, JobStatus
+from src.models import Job
 from src.models.base import db
-from src.utils.file_utils import cleanup_old_files, _get_file_size
+from src.utils.db_transaction import safe_db_operation
 from src.utils.response_helpers import error_response
-from src.utils.job_manager import JobStatusManager
-from src.utils.db_transaction import db_transaction, safe_db_operation, transactional
 
 logger = logging.getLogger(__name__)
 
@@ -351,7 +351,6 @@ class FileManagementService:
 
         return cleanup_summary
 
-
     def cleanup_expired_jobs(self) -> Dict[str, Any]:
         """Clean up expired jobs and their associated files
         
@@ -547,7 +546,6 @@ class FileManagementService:
             }
     
     # ========================= PRIVATE HELPER METHODS =========================
-    
     def _get_expired_jobs(self) -> List[Job]:
         """Get all jobs that have expired based on retention policies
         
@@ -674,3 +672,181 @@ class FileManagementService:
                 'timestamp': datetime.now(timezone.utc).isoformat()
             }
 
+    def health_check(self) -> Dict[str, Any]:
+        """Perform a comprehensive health check of the file management service
+
+        Returns:
+            Dictionary containing health status and detailed information
+        """
+        health_status = {
+            'status': 'healthy',
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'service': 'FileManagementService',
+            'checks': {},
+            'errors': []
+        }
+
+        try:
+            # Check 1: Upload folder accessibility
+            folder_check = {
+                'name': 'upload_folder_access',
+                'status': 'healthy',
+                'details': {}
+            }
+
+            try:
+                # Check if upload folder exists and is accessible
+                folder_exists = os.path.exists(self.upload_folder)
+                folder_check['details']['exists'] = folder_exists
+
+                if folder_exists:
+                    # Check if folder is writable
+                    test_file = os.path.join(self.upload_folder, f'.healthcheck_{int(time.time())}.tmp')
+                    try:
+                        with open(test_file, 'w') as f:
+                            f.write('health_check_test')
+                        os.remove(test_file)
+                        folder_check['details']['writable'] = True
+                    except IOError as e:
+                        folder_check['details']['writable'] = False
+                        folder_check['status'] = 'unhealthy'
+                        folder_check['details']['error'] = str(e)
+                        health_status['errors'].append(f"Upload folder not writable: {str(e)}")
+                else:
+                    folder_check['status'] = 'unhealthy'
+                    folder_check['details']['error'] = 'Upload folder does not exist'
+                    health_status['errors'].append("Upload folder does not exist")
+
+            except Exception as e:
+                folder_check['status'] = 'unhealthy'
+                folder_check['details']['error'] = str(e)
+                health_status['errors'].append(f"Upload folder check failed: {str(e)}")
+
+            health_status['checks']['upload_folder'] = folder_check
+
+            # Check 2: Database connectivity (via job query)
+            db_check = {
+                'name': 'database_connectivity',
+                'status': 'healthy',
+                'details': {}
+            }
+
+            try:
+                # Try to execute a simple database query
+                job_count = Job.query.limit(1).count()
+                db_check['details']['connected'] = True
+                db_check['details']['test_query_success'] = True
+            except Exception as e:
+                db_check['status'] = 'unhealthy'
+                db_check['details']['connected'] = False
+                db_check['details']['error'] = str(e)
+                health_status['errors'].append(f"Database connectivity check failed: {str(e)}")
+
+            health_status['checks']['database'] = db_check
+
+            # Check 3: File operations capability
+            file_ops_check = {
+                'name': 'file_operations',
+                'status': 'healthy',
+                'details': {}
+            }
+
+            try:
+                # Test file creation and deletion
+                test_data = b'test_file_data_for_health_check'
+                test_filename = f'health_check_test_{int(time.time())}.tmp'
+                test_path = os.path.join(self.upload_folder, test_filename)
+
+                # Write test file
+                with open(test_path, 'wb') as f:
+                    f.write(test_data)
+
+                # Verify file exists and size
+                if os.path.exists(test_path):
+                    file_size = os.path.getsize(test_path)
+                    file_ops_check['details']['write_success'] = True
+                    file_ops_check['details']['file_size'] = file_size
+
+                    # Read file
+                    with open(test_path, 'rb') as f:
+                        read_data = f.read()
+
+                    if read_data == test_data:
+                        file_ops_check['details']['read_success'] = True
+                    else:
+                        file_ops_check['status'] = 'unhealthy'
+                        file_ops_check['details']['read_success'] = False
+                        health_status['errors'].append("File read verification failed")
+
+                    # Delete file
+                    os.remove(test_path)
+                    if not os.path.exists(test_path):
+                        file_ops_check['details']['delete_success'] = True
+                    else:
+                        file_ops_check['status'] = 'unhealthy'
+                        file_ops_check['details']['delete_success'] = False
+                        health_status['errors'].append("File deletion failed")
+                else:
+                    file_ops_check['status'] = 'unhealthy'
+                    file_ops_check['details']['write_success'] = False
+                    health_status['errors'].append("Test file creation failed")
+
+            except Exception as e:
+                file_ops_check['status'] = 'unhealthy'
+                file_ops_check['details']['error'] = str(e)
+                health_status['errors'].append(f"File operations check failed: {str(e)}")
+
+            health_status['checks']['file_operations'] = file_ops_check
+
+            # Check 4: Cleanup functionality
+            cleanup_check = {
+                'name': 'cleanup_capability',
+                'status': 'healthy',
+                'details': {}
+            }
+
+            try:
+                # Test cleanup statistics function
+                stats = self.get_cleanup_statistics()
+                cleanup_check['details']['stats_available'] = True
+                cleanup_check['details']['total_jobs'] = stats.get('total_jobs', 0)
+
+                # Test expired jobs query
+                expired_jobs = self._get_expired_jobs()
+                cleanup_check['details']['expired_jobs_query'] = True
+                cleanup_check['details']['expired_jobs_count'] = len(expired_jobs)
+
+            except Exception as e:
+                cleanup_check['status'] = 'unhealthy'
+                cleanup_check['details']['error'] = str(e)
+                health_status['errors'].append(f"Cleanup capability check failed: {str(e)}")
+
+            health_status['checks']['cleanup'] = cleanup_check
+
+            # Determine overall status
+            for check_name, check_result in health_status['checks'].items():
+                if check_result['status'] == 'unhealthy':
+                    health_status['status'] = 'unhealthy'
+                    break
+
+            # Add summary information
+            health_status['summary'] = {
+                'total_checks': len(health_status['checks']),
+                'healthy_checks': sum(1 for check in health_status['checks'].values()
+                                      if check['status'] == 'healthy'),
+                'unhealthy_checks': sum(1 for check in health_status['checks'].values()
+                                        if check['status'] == 'unhealthy'),
+                'error_count': len(health_status['errors'])
+            }
+
+            logger.info(f"Health check completed: {health_status['status']}. "
+                        f"{health_status['summary']['healthy_checks']}/"
+                        f"{health_status['summary']['total_checks']} checks passed")
+
+        except Exception as e:
+            health_status['status'] = 'unhealthy'
+            health_status['error'] = f"Health check failed completely: {str(e)}"
+            health_status['checks'] = {}
+            logger.error(f"Health check failed: {str(e)}")
+
+        return health_status

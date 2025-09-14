@@ -4,7 +4,6 @@ import os
 from flask import Flask, jsonify, request
 from sqlalchemy import text
 
-
 from src.config.config import get_config, validate_current_config, ConfigValidationError
 from src.database import init_database
 from src.models.base import db

@@ -4,14 +4,15 @@ Celery tasks for background job processing – context-safe refactor
 """
 import logging
 import os
+import shutil
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional
 
 from celery import current_task
+
 from src.celery_app import get_celery_app
 
 # Get the Celery app instance
-from flask import current_app
 celery_app = get_celery_app()
 from src.config.config import Config
 from src.models import Job, JobStatus
@@ -19,14 +20,12 @@ from src.models.base import db
 
 from src.services.service_registry import ServiceRegistry
 from src.exceptions.extraction_exceptions import ExtractionError, ExtractionValidationError
-from src.exceptions.export_exceptions import ExportError, FormatError
-from src.utils.job_operations import JobOperations
-from src.utils.db_transaction import db_transaction, transactional, safe_db_operation
+from src.utils.db_transaction import transactional
 from src.utils.job_operations import JobOperations
 
 # Exception imports for specific error handling
-from sqlalchemy.exc import DBAPIError, OperationalError, IntegrityError, StatementError
-from celery.exceptions import Retry, WorkerLostError, Ignore, Reject
+from sqlalchemy.exc import DBAPIError, OperationalError, IntegrityError
+from celery.exceptions import Ignore
 import requests
 from src.utils.exceptions import ValidationError, ConfigurationError
 
@@ -169,10 +168,6 @@ def handle_task_error(task_instance, exc, job_id, job=None):
     logger.error(f"Task failed permanently for job {job_id} ({error_tier} error): {exc}")
     raise exc
 
-# ------------------------------------------------------
-#  helper – unchanged
-# ------------------------------------------------------
-
 
 # ------------------------------------------------------
 #  COMPRESSION TASKS  (logic 100 % preserved)
@@ -194,7 +189,7 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
         )
         logger.debug(f"Starting compression task for job {job_id}")
 
-        JobOperations.update_job_status(job_id, JobStatus.PROCESSING)
+        JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
         logger.debug(f"Job {job_id} marked as processing")
 
         result = ServiceRegistry.get_compression_service().process_file_data(
@@ -203,12 +198,12 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
             original_filename=original_filename)
         logger.debug(f"File processed for job {job_id}, result: {result}")
 
-        JobOperations.update_job_status(job_id, JobStatus.COMPLETED, result=result)
+        JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
         logger.info(f"Compression job {job_id} completed successfully")
         return result
 
     except Exception as exc:
-        handle_task_error(self, exc, job_id, job)
+        return handle_task_error(task_instance=self, exc=exc, job_id=job_id, job=job)
 
 # ------------------------------------------------------
 #  BULK COMPRESSION  (logic 100 % preserved)
@@ -230,7 +225,7 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
             }
         )
 
-        JobOperations.update_job_status(job_id, JobStatus.PROCESSING)
+        JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
         total_files = len(file_data_list)
         processed_files, errors = [], []
@@ -247,7 +242,9 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
                         'status': f'Processing file {i+1} of {total_files}: {filename}'
                     }
                 )
-                result = compression_service.process_file_data(file_data, settings, filename)
+                result = ServiceRegistry.get_compression_service().process_file_data(file_data=file_data,
+                                                                                     settings=settings,
+                                                                                     original_filename=filename)
                 processed_files.append(result)
                 logger.info(f"Processed file {i+1}/{total_files} for job {job_id}: {filename}")
 
@@ -260,7 +257,9 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
         if processed_files:
             try:
                 # Create archive of processed files and store on disk
-                output_path = compression_service.file_service.create_result_archive(processed_files, job_id)
+                output_path = ServiceRegistry.get_compression_service().file_service.create_result_archive(
+                    processed_files=processed_files, job_id=job_id)
+
                 result_data = {
                     'processed_files': len(processed_files),
                     'output_path': output_path,
@@ -272,12 +271,13 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
                 logger.info(f"Created result archive for job {job_id}: {output_path}")
 
                 if errors and not processed_files:
-                    JobOperations.update_job_status(job_id, JobStatus.FAILED, error_message=f"All files failed: {len(errors)} errors")
+                    JobOperations.update_job_status_safely(job_id=job_id,
+                                                           status=JobStatus.FAILED, error_message=f"All files failed: {len(errors)} errors")
                 elif errors:
                     result_data['warning'] = f"Completed with {len(errors)} errors"
-                    JobOperations.update_job_status(job_id, JobStatus.COMPLETED, result=result_data)
+                    JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result_data)
                 else:
-                    JobOperations.update_job_status(job_id, JobStatus.COMPLETED, result=result_data)
+                    JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result_data)
 
                 current_task.update_state(
                     state='SUCCESS',
@@ -299,7 +299,7 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
                 raise  # Re-raise to be handled by centralized error handler
 
     except Exception as exc:
-        handle_task_error(self, exc, job_id, job)
+        return handle_task_error(task_instance=self, exc=exc, job_id=job_id, job=job)
 
 # --------------------------------------------------------------------------
 #  CONVERSION TASKS – crash-hardened
@@ -317,6 +317,7 @@ def convert_pdf_task(
     from flask import current_app
     job = None
 
+    # noinspection PyBroadException
     try:
         with current_app.app_context():  # push context
             job = JobOperations.create_job_safely(
@@ -330,7 +331,7 @@ def convert_pdf_task(
                 }
             )
 
-            JobOperations.update_job_status(job_id, JobStatus.PROCESSING)
+            JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
             current_task.update_state(
                 state="PROGRESS",
@@ -346,9 +347,9 @@ def convert_pdf_task(
 
             # result always contains success/error
             if result["success"]:
-                JobOperations.update_job_status(job_id, JobStatus.COMPLETED, result=result)
+                JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
             else:
-                JobOperations.update_job_status(job_id, JobStatus.FAILED, error_message=result["error"])
+                JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.FAILED, error_message=result["error"])
 
             current_task.update_state(
                 state="SUCCESS",
@@ -357,7 +358,7 @@ def convert_pdf_task(
             return result
 
     except Exception as exc:
-        handle_task_error(self, exc, job_id, job)
+        return handle_task_error(task_instance=self, exc=exc, job_id=job_id, job=job)
 
 
 @celery_app.task(bind=True, name="tasks.conversion_preview_task", max_retries=3)
@@ -367,7 +368,7 @@ def conversion_preview_task(
     file_data: bytes,
     target_format: str,
     options: Dict[str, Any],
-) -> Dict[str, Any]:
+) -> dict[str, bool | str | int | list[Any] | Any] | None | Any:
     """Generate preview with centralized error handling."""
     from flask import current_app
     job = None
@@ -384,10 +385,10 @@ def conversion_preview_task(
                 }
             )
 
-            JobOperations.update_job_status(job_id, JobStatus.PROCESSING)
+            JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
             preview = ServiceRegistry.get_conversion_service().get_conversion_preview(file_data, target_format, options)
-            JobOperations.update_job_status(job_id, JobStatus.COMPLETED, result=preview)
+            JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=preview)
             return preview
 
     except Exception as exc:
@@ -423,6 +424,7 @@ def ocr_process_task(
     from flask import current_app
     job = None
 
+    # noinspection PyBroadException
     try:
         with current_app.app_context():
             job = JobOperations.create_job_safely(
@@ -435,7 +437,7 @@ def ocr_process_task(
                 }
             )
 
-            JobOperations.update_job_status(job_id, JobStatus.PROCESSING)
+            JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
             current_task.update_state(
                 state="PROGRESS", meta={"progress": 10, "status": "Starting OCR"}
@@ -448,9 +450,9 @@ def ocr_process_task(
             )
 
             if result["success"]:
-                JobOperations.update_job_status(job_id, JobStatus.COMPLETED, result=result)
+                JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
             else:
-                JobOperations.update_job_status(job_id, JobStatus.FAILED, error_message=result["error"])
+                JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.FAILED, error_message=result["error"])
 
             current_task.update_state(
                 state="SUCCESS", meta={"progress": 100, "status": "OCR completed"}
@@ -458,7 +460,7 @@ def ocr_process_task(
             return result
 
     except Exception as exc:
-        return handle_task_error(self, exc, job_id, job, "OCR task")
+        return handle_task_error(task_instance=self, exc=exc, job_id=job_id, job=job)
 
 
 @celery_app.task(bind=True, name="tasks.ocr_preview_task", max_retries=2)
@@ -478,15 +480,15 @@ def ocr_preview_task(self,job_id: str,file_data: bytes,options: Dict[str, Any]) 
                 }
             )
 
-            JobOperations.update_job_status(job_id, JobStatus.PROCESSING)
+            JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
             preview = ServiceRegistry.get_ocr_service().get_ocr_preview(file_data, options)
-            JobOperations.update_job_status(job_id, JobStatus.COMPLETED, result=preview)
+            JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=preview)
             return preview
 
     except Exception as exc:
         # Use centralized error handling with fallback return
-        handle_task_error(self, exc, job_id, job, "OCR preview task")
+        handle_task_error(task_instance=self, exc=exc, job_id=job_id, job=job)
         
         # final fallback – uniform shape
         return {
@@ -517,15 +519,15 @@ def ai_summarize_task(self, job_id: str, text: str, options: Dict[str, Any]) -> 
             input_data={'text_length': len(text), 'options': options}
         )
 
-        JobOperations.update_job_status(job_id, JobStatus.PROCESSING)
+        JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
-        result = ServiceRegistry.get_ai_service().summarize_text(text, options)
-        JobOperations.update_job_status(job_id, JobStatus.COMPLETED, result=result)
+        result = ServiceRegistry.get_ai_service().summarize_text(text=text, options=options)
+        JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
         logger.info(f"AI summarisation task completed for job {job_id}")
         return result
 
-    except Exception as e:
-        return handle_task_error(self, e, job_id, job, "AI summarization task")
+    except Exception as exc:
+        return handle_task_error(task_instance=self, exc=exc, job_id=job_id, job=job)
 
 @celery_app.task(bind=True, name='tasks.ai_translate_task', max_retries=3)
 def ai_translate_task(self, job_id: str, text: str, target_language: str,
@@ -545,15 +547,15 @@ def ai_translate_task(self, job_id: str, text: str, target_language: str,
             }
         )
 
-        JobOperations.update_job_status(job_id, JobStatus.PROCESSING)
+        JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
         result = ServiceRegistry.get_ai_service().translate_text(text, target_language, options)
-        JobOperations.update_job_status(job_id, JobStatus.COMPLETED, result=result)
+        JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
         logger.info(f"AI translation task completed for job {job_id}")
         return result
 
-    except Exception as e:
-        return handle_task_error(self, e, job_id, job, "AI translation task")
+    except Exception as exc:
+        return handle_task_error(task_instance=self, exc=exc, job_id=job_id, job=job)
 
 @celery_app.task(bind=True, name='tasks.extract_text_task', max_retries=3)
 def extract_text_task(self, job_id: str, file_data: bytes,
@@ -569,18 +571,18 @@ def extract_text_task(self, job_id: str, file_data: bytes,
             input_data={'file_size': len(file_data), 'original_filename': original_filename}
         )
 
-        JobOperations.update_job_status(job_id, JobStatus.PROCESSING)
+        JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
         current_task.update_state(state='PROGRESS', meta={'progress': 10, 'status': 'Starting text extraction'})
         text_content = ServiceRegistry.get_ai_service().extract_text_from_pdf_data(file_data)
         result = {'text': text_content, 'length': len(text_content), 'original_filename': original_filename}
-        JobOperations.update_job_status(job_id, JobStatus.COMPLETED, result=result)
+        JobOperations.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
         current_task.update_state(state='SUCCESS', meta={'progress': 100, 'status': 'Text extraction completed'})
         logger.info(f"Text-extraction task completed for job {job_id}")
         return result
 
-    except Exception as e:
-        return handle_task_error(self, e, job_id, job, "Text extraction task")
+    except Exception as exc:
+        return handle_task_error(task_instance=self, exc=exc, job_id=job_id, job=job)
 
 # ------------------------------------------------------
 #  MAINTENANCE TASKS  (logic 100 % preserved)
@@ -600,7 +602,7 @@ def cleanup_expired_jobs(self) -> Dict[str, Any]:
         cleaned_count = error_count = total_size_freed = 0
         for job in expired_jobs:
             try:
-                job_size_mb = FileManagementService._cleanup_job_files(job)
+                job_size_mb = ServiceRegistry.get_file_management_service().cleanup_job_files(job)
                 total_size_freed += job_size_mb
                 cleaned_count += 1
                 db.session.delete(job)
@@ -740,8 +742,8 @@ def extract_invoice_task(self, job_id: str, file_path: str, extraction_options: 
         logger.info(f"Invoice extraction job {job_id} completed successfully")
         return extraction_result
 
-    except Exception as e:
-        return handle_task_error(self, e, job_id, job, "Invoice extraction task")
+    except Exception as exc:
+        return handle_task_error(task_instance=self, exc=exc, job_id=job_id, job=job)
 
 
 # ------------------------------------------------------
@@ -755,80 +757,7 @@ def merge_pdfs_task(self, job_id: str, file_paths: List[str], options: Dict[str,
     
     Uses centralized error handling for consistent error management.
     """
-    from flask import current_app
-    
-    options = options or {}
-    job = None
-    
-    try:
-        with current_app.app_context():
-            job = Job.query.filter_by(job_id=job_id).first()
-            if not job:
-                job = Job(
-                    job_id=job_id,
-                    task_type='merge_pdfs',
-                    input_data={
-                        'file_count': len(file_paths),
-                        'options': options
-                    }
-                )
-                db.session.add(job)
-            
-            job.mark_as_processing()
-            # Transaction will be committed automatically by decorator
-            
-            # Use task context for progress reporting and temp file management
-            with task_context(job, total_steps=len(file_paths) + 2) as (progress, temp_manager):
-                metrics = TaskMetrics(job)
-                
-                progress.update(step=1, message="Initializing PDF merge")
-                
-                # Validate input files
-                valid_files = []
-                for i, file_path in enumerate(file_paths):
-                    if os.path.exists(file_path):
-                        valid_files.append(file_path)
-                        file_size = os.path.getsize(file_path)
-                        metrics.record_file_processed(file_size)
-                    else:
-                        logger.warning(f"File not found: {file_path}")
-                    
-                    progress.update(step=i + 2, message=f"Validating file {i + 1}/{len(file_paths)}")
-                
-                if not valid_files:
-                    raise ValidationError("No valid PDF files found for merging")
-                
-                # Perform merge operation
-                progress.update(step=len(file_paths) + 1, message="Merging PDF files")
-                
-                # Create output file in temp directory
-                output_path = temp_manager.create_temp_file(suffix=".pdf")
-                
-                # Use file management service for merge operation
-                merge_result = file_management_service.merge_pdfs(
-                    input_files=valid_files,
-                    output_path=output_path,
-                    options=options
-                )
-                
-                progress.complete("PDF merge completed successfully")
-                metrics.finalize()
-                
-                result = {
-                    'success': True,
-                    'output_path': output_path,
-                    'merged_files': len(valid_files),
-                    'output_size': os.path.getsize(output_path),
-                    **merge_result
-                }
-                
-                job.mark_as_completed(result)
-                # Transaction will be committed automatically by decorator
-                
-                return result
-    
-    except Exception as exc:
-        return handle_task_error(self, exc, job_id, job, "PDF merge task")
+    pass
 
 
 @celery_app.task(bind=True, name='tasks.split_pdf_task', max_retries=3)
@@ -838,130 +767,11 @@ def split_pdf_task(self, job_id: str, file_path: str, options: Dict[str, Any] = 
     
     Uses centralized error handling for consistent error management.
     """
-    from flask import current_app
-    
-    options = options or {}
-    job = None
-    
-    try:
-        with current_app.app_context():
-            job = Job.query.filter_by(job_id=job_id).first()
-            if not job:
-                job = Job(
-                    job_id=job_id,
-                    task_type='split_pdf',
-                    input_data={
-                        'file_path': file_path,
-                        'options': options
-                    }
-                )
-                db.session.add(job)
-            
-            job.mark_as_processing()
-            # Transaction will be committed automatically by decorator
-            
-            with task_context(job, total_steps=4) as (progress, temp_manager):
-                metrics = TaskMetrics(job)
-                
-                progress.update(step=1, message="Analyzing PDF structure")
-                
-                if not os.path.exists(file_path):
-                    raise ResourceNotFoundError("PDF file", file_path)
-                
-                file_size = os.path.getsize(file_path)
-                metrics.record_file_processed(file_size)
-                
-                progress.update(step=2, message="Preparing split operation")
-                
-                # Create output directory in temp space
-                output_dir = temp_manager.create_temp_dir()
-                
-                progress.update(step=3, message="Splitting PDF file")
-                
-                # Use file management service for split operation
-                split_result = file_management_service.split_pdf(
-                    input_file=file_path,
-                    output_dir=output_dir,
-                    options=options
-                )
-                
-                progress.complete("PDF split completed successfully")
-                metrics.finalize()
-                
-                result = {
-                    'success': True,
-                    'output_directory': output_dir,
-                    'split_files': split_result.get('split_files', []),
-                    'total_pages': split_result.get('total_pages', 0),
-                    **split_result
-                }
-                
-                job.mark_as_completed(result)
-                # Transaction will be committed automatically by decorator
-                
-                return result
-    
-    except Exception as exc:
-        return handle_task_error(self, exc, job_id, job, "PDF split task")
-
+    pass
 
 # ------------------------------------------------------
 #  MAINTENANCE TASKS
 # ------------------------------------------------------
-
-@celery_app.task(bind=True, name='tasks.cleanup_temp_files_task')
-def cleanup_temp_files_task(self, max_age_hours: int = 24) -> Dict[str, Any]:
-    """Clean up temporary files older than specified age."""
-    try:
-        logger.info(f"Starting cleanup of temporary files older than {max_age_hours} hours")
-        
-        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=max_age_hours)
-        temp_dirs = [tempfile.gettempdir(), '/tmp', './uploads/temp']
-        
-        cleaned_files = 0
-        cleaned_size = 0
-        errors = 0
-        
-        for temp_dir in temp_dirs:
-            if not os.path.exists(temp_dir):
-                continue
-                
-            try:
-                for root, dirs, files in os.walk(temp_dir):
-                    for file in files:
-                        if file.startswith('pdf_task_') or file.startswith('temp_'):
-                            file_path = os.path.join(root, file)
-                            try:
-                                file_stat = os.stat(file_path)
-                                file_time = datetime.fromtimestamp(file_stat.st_mtime, tz=timezone.utc)
-                                
-                                if file_time < cutoff_time:
-                                    file_size = file_stat.st_size
-                                    os.unlink(file_path)
-                                    cleaned_files += 1
-                                    cleaned_size += file_size
-                                    logger.debug(f"Cleaned temp file: {file_path}")
-                            except Exception as e:
-                                errors += 1
-                                logger.warning(f"Error cleaning file {file_path}: {e}")
-            except Exception as e:
-                logger.error(f"Error accessing temp directory {temp_dir}: {e}")
-                errors += 1
-        
-        result = {
-            'cleaned_files': cleaned_files,
-            'cleaned_size_bytes': cleaned_size,
-            'errors': errors,
-            'max_age_hours': max_age_hours
-        }
-        
-        logger.info(f"Temp file cleanup completed: {cleaned_files} files, {cleaned_size} bytes freed")
-        return result
-        
-    except Exception as exc:
-        logger.exception("Temp file cleanup task failed")
-        raise
-
 
 @celery_app.task(bind=True, name='tasks.health_check_task')
 def health_check_task(self) -> Dict[str, Any]:
@@ -986,12 +796,15 @@ def health_check_task(self) -> Dict[str, Any]:
         
         # Service availability checks
         services_to_check = [
-            ('compression', compression_service),
-            ('conversion', conversion_service),
-            ('ocr', ocr_service),
-            ('ai', ai_service)
+            ('compression', ServiceRegistry.get_compression_service()),
+            ('file_management', ServiceRegistry.get_file_management_service()),
+            ('conversion', ServiceRegistry.get_conversion_service()),
+            ('ocr', ServiceRegistry.get_ocr_service()),
+            ('ai', ServiceRegistry.get_ai_service()),
+            ('export', ServiceRegistry.get_export_service()),
+            ('invoice_extraction', ServiceRegistry.get_invoice_extraction_service()),
+            ('bank_statement_extraction', ServiceRegistry.get_bank_statement_extraction_service()),
         ]
-        
         for service_name, service_instance in services_to_check:
             try:
                 # Basic service health check (if method exists)
@@ -1076,7 +889,7 @@ def extract_bank_statement_task(self, job_id: str, file_path: str, extraction_op
                 'status': 'Extracting bank statement data...'
             }
         )
-        
+
         start_time = datetime.now(timezone.utc)
         extraction_result = ServiceRegistry.get_bank_statement_extraction_service().extract_statement_data(file_path, extraction_options)
         processing_time = (datetime.now(timezone.utc) - start_time).total_seconds()
@@ -1125,5 +938,5 @@ def extract_bank_statement_task(self, job_id: str, file_path: str, extraction_op
         logger.info(f"Bank statement extraction job {job_id} completed successfully")
         return extraction_result
 
-    except Exception as e:
-        return handle_task_error(self, e, job_id, job, "Bank statement extraction task")
+    except Exception as exc:
+        return handle_task_error(task_instance=self, exc=exc, job_id=job_id, job=job)

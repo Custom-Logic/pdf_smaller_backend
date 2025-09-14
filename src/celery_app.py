@@ -67,8 +67,6 @@ def make_celery(app=None):
             'tasks.split_pdf_task': {'queue': 'file_ops'},
             
             # Maintenance tasks
-            'tasks.cleanup_expired_jobs': {'queue': 'maintenance'},
-            'tasks.cleanup_temp_files_task': {'queue': 'maintenance'},
             'tasks.health_check_task': {'queue': 'maintenance'},
             'tasks.get_task_status': {'queue': 'default'}
         },
