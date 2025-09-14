@@ -131,13 +131,13 @@ def initialize_extensions(app: Flask):
 
 def register_blueprints(app: Flask):
     """Register application blueprints"""
-    
+
     blueprints = [
         (compression_bp, '/api'),
         (pdf_suite_bp, '/api'),
         (jobs_bp, '/api')
     ]
-    
+
     for blueprint, url_prefix in blueprints:
         try:
             app.register_blueprint(blueprint, url_prefix=url_prefix)
@@ -145,6 +145,35 @@ def register_blueprints(app: Flask):
         except Exception as e:
             app.logger.error(f"Failed to register blueprint {blueprint.name}: {e}")
             raise
+
+    # Add tea cup route
+    @app.route('/')
+    def home():
+        """Home route with tea cup response"""
+        tea_cup_art = """
+        ⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀
+        ⠀⠀⠀⠀⠀⠀⢀⣴⠾⠛⠉⠉⠉⠉⠉⠛⠷⣦⡀⠀⠀⠀⠀⠀
+        ⠀⠀⠀⠀⠀⣰⠟⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⢷⡄⠀⠀⠀
+        ⠀⠀⠀⠀⣼⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢻⡄⠀⠀
+        ⠀⠀⠀⢸⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⠀⠀
+        ⠀⠀⠀⢸⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⠀⠀
+        ⠀⠀⠀⠸⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡟⠀⠀
+        ⠀⠀⠀⠀⠹⣧⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⡾⠁⠀⠀
+        ⠀⠀⠀⠀⠀⠈⠻⣦⣄⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⠟⠁⠀⠀⠀
+        ⠀⠀⠀⠀⠀⠀⠀⠀⠉⠛⠶⣤⣤⣤⡶⠶⠛⠉⠀⠀⠀⠀⠀⠀
+        ⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣤⠞⠉⠉⠳⣤⡀⠀⠀⠀⠀⠀⠀⠀
+        ⠀⠀⠀⠀⠀⠀⠀⠀⢠⡞⠁⠀⠀⠀⠀⠈⢻⣆⠀⠀⠀⠀⠀⠀
+        ⠀⠀⠀⠀⠀⠀⠀⠀⣾⠀⠀⠀⠀⠀⠀⠀⠀⢿⠀⠀⠀⠀⠀⠀
+        ⠀⠀⠀⠀⠀⠀⠀⠀⢻⣆⠀⠀⠀⠀⠀⠀⣰⠏⠀⠀⠀⠀⠀⠀
+        ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠻⠶⠶⠶⠶⠞⠋⠀⠀⠀⠀⠀⠀⠀
+
+        🫖 I'm a teapot! (HTTP 418)
+        Service is brewing and ready to handle your requests!
+        """
+
+        return tea_cup_art, 418, {'Content-Type': 'text/plain; charset=utf-8'}
+
+    app.logger.info("Registered home route with tea cup response")
 
 
 def initialize_background_tasks(app: Flask):
