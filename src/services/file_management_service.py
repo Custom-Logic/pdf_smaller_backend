@@ -293,7 +293,7 @@ class FileManagementService:
         Returns:
             Cleanup summary dictionary
         """
-        max_age = max_age_hours or Config.FILE_RETENTION_HOURS
+        max_age = max_age_hours or Config.MAX_FILE_AGE
         
         cleanup_summary = {
             'files_deleted': 0,
