@@ -154,7 +154,6 @@ class CompressionService:
     def process_compression_job(self, job_id: str, file_data: bytes) -> Dict[str, Any]:
         """
         Process a compression job with provided file data
-
         """
         try:
             # Get job information
