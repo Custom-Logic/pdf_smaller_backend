@@ -28,10 +28,10 @@ class CompressionService:
 
         try:
             # Create job record first
-            job = JobOperations.get_job(job_id=job_id, lock=True) if job_id else None
+            job = JobOperations.get_job(job_id=job_id) if job_id else None
 
             if not isinstance(job, Job):
-                raise Exception("Failed to create compression job")
+                raise Exception("Failed to retrieve compression job")
 
             job_id = job.job_id
 
@@ -47,21 +47,11 @@ class CompressionService:
             original_size = len(file_data)
             compression_level = settings.get('compression_level', 'medium')
             image_quality = settings.get('image_quality', 80)
-
-            # Create temporary output path
-            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp_output:
-                temp_output_path = tmp_output.name
-
+            output_filename = f"compressed_{file_id}.pdf"
+            output_path = self.file_service.create_output_path(output_filename)
             # Perform compression
-            self._execute_compression(input_path=input_file_path, output_path=temp_output_path,
+            self._execute_compression(input_path=input_file_path,output_path=output_path,
                                       compression_level=compression_level, image_quality=image_quality)
-
-            # Read compressed output and save through file service
-            with open(temp_output_path, 'rb') as f:
-                compressed_data = f.read()
-
-            output_filename = f"compressed_{job_id}_{original_filename or 'file.pdf'}"
-            compressed_file_id, output_path = self.file_service.save_file(compressed_data, output_filename)
 
             compressed_size = self.file_service.get_file_size(output_path)
             compression_ratio = ((original_size - compressed_size) / original_size) * 100
@@ -77,15 +67,8 @@ class CompressionService:
                 'output_path': output_path,
                 'mime_type': 'application/pdf',
                 'input_file_id': file_id,
-                'output_file_id': compressed_file_id
+                'output_file_id':file_id
             }
-
-            # Update job with results
-            JobOperationsWrapper.update_job_status_safely(
-                job_id=job_id,
-                status=JobStatus.COMPLETED,
-                result=result
-            )
 
             return result
 
@@ -175,6 +158,7 @@ class CompressionService:
     def process_compression_job(self, job_id: str, file_data: bytes) -> Dict[str, Any]:
         """
         Process a compression job with provided file data
+
         """
         try:
             # Get job information

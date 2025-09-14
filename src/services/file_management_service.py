@@ -105,7 +105,10 @@ class FileManagementService:
         """
         filename = f"{file_id}{extension}"
         return os.path.join(self.upload_folder, filename)
-    
+
+    def create_output_path(self, filename: str):
+        return os.path.join(self.upload_folder, filename)
+
     @staticmethod
     def file_exists(file_path: str) -> bool:
         """Check if a file exists
