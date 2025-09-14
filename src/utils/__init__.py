@@ -1,6 +1,6 @@
 from src.utils.file_utils import secure_filename, cleanup_old_files, validate_file_type
 from src.utils.logging_utils import setup_logging
-from src.utils.scheduler import start_background_scheduler, stop_background_scheduler
+
 
 # Alias for backward compatibility
 validate_file = validate_file_type
@@ -17,6 +17,5 @@ def get_validation_functions():
 
 __all__ = [
     'secure_filename', 'cleanup_old_files', 'validate_file', 'validate_file_type', 
-    'setup_logging', 'start_background_scheduler', 'stop_background_scheduler',
-    'get_validation_functions'
+    'setup_logging','get_validation_functions'
 ]
