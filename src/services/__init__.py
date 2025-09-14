@@ -6,6 +6,7 @@ from src.services.ocr_service import OCRService
 from src.services.invoice_extraction_service import InvoiceExtractionService
 from src.services.bank_statement_extraction_service import BankStatementExtractionService
 from src.services.export_service import ExportService
+from src.services.service_registry import ServiceRegistry
 
 
-__all__ = ['CompressionService', 'AIService', 'ConversionService', 'FileManagementService', 'OCRService', 'InvoiceExtractionService', 'BankStatementExtractionService', 'ExportService']
+__all__ = ['CompressionService', 'AIService', 'ConversionService', 'FileManagementService', 'OCRService', 'InvoiceExtractionService', 'BankStatementExtractionService', 'ExportService', ServiceRegistry]

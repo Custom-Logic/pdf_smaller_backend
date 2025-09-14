@@ -4,10 +4,9 @@ import threading
 import time
 from datetime import datetime, timedelta
 from typing import Callable, Dict, Any
-
 from flask import Flask
+from src.services import ServiceRegistry, FileManagementService
 
-from src.services.service_registry import ServiceRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -15,11 +14,23 @@ logger = logging.getLogger(__name__)
 class TaskScheduler:
     """Simple task scheduler for running periodic cleanup operations"""
     
-    def __init__(self):
+    def __init__(self, file_service: FileManagementService | None =None):
         self.tasks = {}
         self.running = False
         self.thread = None
-    
+        self.file_service: FileManagementService = file_service
+
+    def init_app(self, app: Flask, file_service: FileManagementService | None = None):
+        """Initialize the scheduler with the Flask app context"""
+        self.app = app
+        self.file_service = ServiceRegistry.get_file_management_service()
+        # Add cleanup tasks
+        self.add_task('cleanup_expired_jobs', self.file_service.cleanup_expired_jobs, interval_hours=6)  # Every 6 hours
+        self.add_task('cleanup_temp_files', self.file_service.cleanup_temp_files, interval_hours=1)  # Every hour
+        self.add_task('cleanup_old_files', self.file_service.cleanup_old_files, interval_hours=12)  # Every 12 hours
+        logger.info("Task scheduler initialized with Flask app context")
+
+
     def add_task(self, name: str, func: Callable, interval_hours: int):
         """Add a periodic task to the scheduler"""
         self.tasks[name] = {
@@ -99,50 +110,3 @@ class TaskScheduler:
         
         return status
 
-
-# Global scheduler instance
-scheduler = TaskScheduler()
-
-
-def setup_cleanup_scheduler(upload_folder: str, app: Flask):
-    """Set up the cleanup scheduler with default tasks using FileManagementService"""
-    with app.app_context():
-        file_management_service = ServiceRegistry.get_file_management_service(upload_folder=upload_folder)
-        
-        def cleanup_expired_jobs():
-            """Wrapper for expired jobs cleanup"""
-            return file_management_service.cleanup_expired_jobs()
-        
-        def cleanup_temp_files():
-            """Wrapper for temp files cleanup"""
-            return file_management_service.cleanup_temp_files()
-        
-        def cleanup_old_files():
-            """Wrapper for old files cleanup"""
-            return file_management_service.cleanup_old_files()
-        
-        # Add cleanup tasks
-        scheduler.add_task('cleanup_expired_jobs', cleanup_expired_jobs, interval_hours=6)  # Every 6 hours
-        scheduler.add_task('cleanup_temp_files', cleanup_temp_files, interval_hours=1)      # Every hour
-        scheduler.add_task('cleanup_old_files', cleanup_old_files, interval_hours=12)       # Every 12 hours
-
-        return scheduler
-
-
-def start_background_scheduler(upload_folder: str, app: Flask):
-    """Start the background scheduler with cleanup tasks"""
-    try:
-        setup_cleanup_scheduler(upload_folder, app)
-        scheduler.start()
-        logger.info("Background cleanup scheduler started successfully")
-    except Exception as e:
-        logger.error(f"Failed to start background scheduler: {str(e)}")
-
-
-def stop_background_scheduler():
-    """Stop the background scheduler"""
-    try:
-        scheduler.stop()
-        logger.info("Background cleanup scheduler stopped successfully")
-    except Exception as e:
-        logger.error(f"Error stopping background scheduler: {str(e)}")

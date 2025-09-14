@@ -5,7 +5,6 @@ across the application, ensuring consistent instantiation patterns and
 reducing code duplication.
 """
 from typing import Dict, Any, Optional
-from src.config.config import Config
 
 
 class ServiceRegistry:
@@ -111,16 +110,7 @@ class ServiceRegistry:
             from src.services.bank_statement_extraction_service import BankStatementExtractionService
             cls._instances['bank_statement_extraction'] = BankStatementExtractionService()
         return cls._instances['bank_statement_extraction']
-    
-    @classmethod
-    def clear_cache(cls):
-        """Clear service cache (useful for testing)
-        
-        This method clears all cached service instances, forcing
-        new instances to be created on next access.
-        """
-        cls._instances.clear()
-    
+
     @classmethod
     def get_service_count(cls) -> int:
         """Get count of cached service instances
@@ -138,3 +128,12 @@ class ServiceRegistry:
             List of cached service keys
         """
         return list(cls._instances.keys())
+
+    @classmethod
+    def clear_cache(cls):
+        """Clear service cache (useful for testing)
+
+        This method clears all cached service instances, forcing
+        new instances to be created on next access.
+        """
+        cls._instances.clear()

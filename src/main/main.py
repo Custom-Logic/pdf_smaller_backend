@@ -11,9 +11,11 @@ from src.routes import compression_bp, pdf_suite_bp, jobs_bp
 from src.utils import setup_logging
 
 from src.utils.error_handlers import register_error_handlers
-from src.utils.scheduler import start_background_scheduler
+from src.utils.scheduler import TaskScheduler
 from src.utils.db_transaction import safe_db_operation
 
+# Global scheduler instance
+scheduler = TaskScheduler()
 
 def create_app(config_name=None, config_override=None):
     """
@@ -77,17 +79,13 @@ def create_app(config_name=None, config_override=None):
 
     with app.app_context():
         # Initialize extensions
-
+        scheduler.init_app(app=app)
         initialize_extensions(app)
         # Register error handlers
         register_error_handlers(app)
 
         # Register blueprints
         register_blueprints(app)
-        
-        # Setup background tasks
-        initialize_background_tasks(app)
-        
         # Register health check endpoints
         register_health_checks(app)
         # Register configuration endpoint (development only)
@@ -127,7 +125,6 @@ def initialize_extensions(app: Flask):
     
     CORS(app, **cors_config)
     app.logger.info(f"CORS initialized with config: {cors_config}")
-
 
 def register_blueprints(app: Flask):
     """Register application blueprints"""
@@ -174,25 +171,6 @@ def register_blueprints(app: Flask):
         return tea_cup_art, 418, {'Content-Type': 'text/plain; charset=utf-8'}
 
     app.logger.info("Registered home route with tea cup response")
-
-
-def initialize_background_tasks(app: Flask):
-    """Initialize background tasks and schedulers"""
-    
-    if app.config.get('TESTING', False):
-        app.logger.info("Skipping background tasks in testing mode")
-        return
-    try:
-        upload_folder = app.config.get('UPLOAD_FOLDER', './uploads/dev')
-        # Ensure upload folder exists
-        os.makedirs(upload_folder, exist_ok=True)
-        # Start background scheduler for cleanup tasks
-        start_background_scheduler(upload_folder, app)
-        app.logger.info(f"Background scheduler started for folder: {upload_folder}")
-        
-    except Exception as e:
-        app.logger.warning(f"Background task initialization failed: {e}")
-
 
 def register_health_checks(app: Flask):
     """Register health check endpoints"""
@@ -346,3 +324,4 @@ def register_debug_endpoints(app: Flask):
 
         except Exception as e:
             return jsonify({'error': str(e)}), 500
+
