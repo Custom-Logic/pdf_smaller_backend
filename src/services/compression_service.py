@@ -20,6 +20,8 @@ class CompressionService:
         if not self._service_available:
             logger.warning(f"Ghostscript not found at {self.GHOSTSCRIPT_BINARY}")
 
+    # Fix for compression_service.py - remove job retrieval check
+
     def process_file_data(self, file_data: bytes, settings: Dict[str, Any],
                           original_filename: str = None, job_id: str = None) -> Dict[str, Any]:
         """Process file data through compression pipeline with proper job management"""
@@ -27,33 +29,34 @@ class CompressionService:
         temp_output_path = None
 
         try:
-            # Create job record first
-            job = JobOperations.get_job(job_id=job_id) if job_id else None
+            # Job should already exist and be managed by the caller
+            # No need to retrieve or validate job existence here
 
-            if not isinstance(job, Job):
-                raise Exception("Failed to retrieve compression job - process_file_data call.")
+            if job_id:
+                logger.debug(f"Processing compression for job {job_id}")
 
-            job_id = job.job_id
-
-            # Update job status to processing
-            JobOperationsWrapper.update_job_status_safely(
-                job_id=job_id,
-                status=JobStatus.PROCESSING
-            )
-            logger.error("Simulated Error - Updated Job Status to Processing.")
             # Save input file using file service
-            file_id, input_file_path = self.file_service.save_file(file_data, original_filename or 'input.pdf')
-            logger.error(f"Simulated Error - {input_file_path}")
+            file_id, input_file_path = self.file_service.save_file(
+                file_data, original_filename or 'input.pdf'
+            )
+            logger.debug(f"Saved input file: {input_file_path}")
+
             original_size = len(file_data)
             compression_level = settings.get('compression_level', 'medium')
             image_quality = settings.get('image_quality', 80)
             output_filename = f"compressed_{file_id}.pdf"
             output_path = self.file_service.create_output_path(output_filename)
-            logger.error(f"Simulated Error: OutPutPath {output_path}")
+            logger.debug(f"Output path: {output_path}")
+
             # Perform compression
-            self._execute_compression(input_path=input_file_path,output_path=output_path,
-                                      compression_level=compression_level, image_quality=image_quality)
-            logger.error("Compression Done")
+            self._execute_compression(
+                input_path=input_file_path,
+                output_path=output_path,
+                compression_level=compression_level,
+                image_quality=image_quality
+            )
+            logger.debug("Compression completed")
+
             compressed_size = self.file_service.get_file_size(output_path)
             compression_ratio = ((original_size - compressed_size) / original_size) * 100
 
@@ -68,21 +71,14 @@ class CompressionService:
                 'output_path': output_path,
                 'mime_type': 'application/pdf',
                 'input_file_id': file_id,
-                'output_file_id':file_id
+                'output_file_id': file_id
             }
-            logger.error(f"Simulated Error Compression Result {result}")
+            logger.debug(f"Compression result: {result}")
 
             return result
 
         except Exception as e:
-            # Update job status to failed if job_id exists
-            if job_id is not None:
-                JobOperationsWrapper.update_job_status_safely(
-                    job_id=job_id,
-                    status=JobStatus.FAILED,
-                    error_message=str(e)
-                )
-
+            # Let the caller handle job status updates
             logger.error(f"Error processing file data: {str(e)}")
             raise
         finally:

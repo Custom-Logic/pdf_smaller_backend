@@ -171,38 +171,61 @@ def handle_task_error(task_instance, exc, job_id, job=None):
 # ------------------------------------------------------
 #  COMPRESSION TASKS  (logic 100 % preserved)
 # ------------------------------------------------------
+# Fix for tasks.py - don't create job again, just update status
+
 @celery_app.task(bind=True, max_retries=3, name='tasks.compress_task')
 def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dict[str, Any],
                   original_filename: str | None = None) -> Dict[str, Any]:
     """Async compression task with centralized error handling."""
     job = None
     try:
-        job = JobOperationsWrapper.create_job_safely(
-            job_id=job_id,
-            task_type='compress',
-            input_data={
-                'compression_settings': compression_settings,
-                'file_size': len(file_data),
-                'original_filename': original_filename
-            }
-        )
+        # Get existing job (should already exist from route handler)
+        job = JobOperations.get_job(job_id)
+        if not job:
+            # Fallback: create job if it doesn't exist
+            job = JobOperationsWrapper.create_job_safely(
+                job_id=job_id,
+                task_type='compress',
+                input_data={
+                    'compression_settings': compression_settings,
+                    'file_size': len(file_data),
+                    'original_filename': original_filename
+                }
+            )
+
+        if not job:
+            raise Exception(f"Failed to get or create job {job_id}")
+
         logger.debug(f"Starting compression task for job {job_id}")
 
+        # Update status to processing
+        JobOperationsWrapper.update_job_status_safely(
+            job_id=job_id,
+            status=JobStatus.PROCESSING
+        )
         logger.debug(f"Job {job_id} marked as processing")
 
+        # Process the file - pass job_id to service
         result = ServiceRegistry.get_compression_service().process_file_data(
             file_data=file_data,
             settings=compression_settings,
-            original_filename=original_filename)
+            original_filename=original_filename,
+            job_id=job_id  # Pass job_id so service knows the job exists
+        )
+
         logger.debug(f"File processed for job {job_id}, result: {result}")
 
-        JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
+        # Update to completed
+        JobOperationsWrapper.update_job_status_safely(
+            job_id=job_id,
+            status=JobStatus.COMPLETED,
+            result=result
+        )
         logger.info(f"Compression job {job_id} completed successfully")
         return result
 
     except Exception as exc:
         return handle_task_error(task_instance=self, exc=exc, job_id=job_id, job=job)
-
 # ------------------------------------------------------
 #  BULK COMPRESSION  (logic 100 % preserved)
 # ------------------------------------------------------

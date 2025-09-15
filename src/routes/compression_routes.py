@@ -9,7 +9,7 @@ from flask import Blueprint, request, jsonify
 from src.models import db, Job, JobStatus
 from src.utils.security_utils import validate_file
 from src.utils.response_helpers import success_response, error_response
-from src.jobs import JobStatusManager
+from src.jobs.job_manager import JobStatusManager
 from src.tasks.tasks import compress_task, bulk_compress_task
 
 logger = logging.getLogger(__name__)
@@ -18,6 +18,8 @@ compression_bp = Blueprint('compression', __name__)
 # CORS(compression_bp, resources={r"/api": {"origins": ["https://www.pdfsmaller.site"]}})
 
 # Updated tasks.py - Ensure proper error handling
+
+# Fix for compression_routes.py - create job BEFORE enqueueing task
 
 @compression_bp.route('/compress', methods=['POST'])
 def compress_pdf():
@@ -28,7 +30,7 @@ def compress_pdf():
             return error_response(message='No file provided', error_code='NO_FILE', status_code=400)
 
         file = request.files['file']
-        
+
         # Validate file
         validation_error = validate_file(file, 'compression')
         if validation_error:
@@ -44,19 +46,35 @@ def compress_pdf():
 
         # Get client-provided tracking IDs
         job_id = request.form.get('job_id', str(uuid.uuid4()))
+
         # Read file data
         file_data = file.read()
-        # Create job and enqueue for processing
+
+        # Create compression settings
         compression_settings = {
             'compression_level': compression_level,
             'image_quality': image_quality
         }
 
-        # Enqueue compression task (async processing)
+        # CREATE JOB FIRST - this is the fix!
+        job = JobStatusManager.get_or_create_job(
+            job_id=job_id,
+            task_type='compress',
+            input_data={
+                'compression_settings': compression_settings,
+                'file_size': len(file_data),
+                'original_filename': file.filename
+            }
+        )
+
+        if not job:
+            return error_response(message='Failed to create job', status_code=500)
+
+        # Now enqueue compression task (async processing)
         try:
             compress_task.delay(job_id, file_data, compression_settings, file.filename)
-            logger.info(f"Compression job {job_id} enqueued (job_id: {job_id})")
-            
+            logger.info(f"Compression job {job_id} enqueued")
+
             data = {
                 'success': True,
                 'job_id': job_id,
@@ -64,18 +82,22 @@ def compress_pdf():
                 'message': 'Compression job queued successfully'
             }
             return success_response(data=data, message='Compression job created', status_code=202)
+
         except Exception as task_error:
             logger.error(f"Failed to enqueue compression task {job_id}: {str(task_error)}")
-            # Update job status to failed using JobOperationsWrapper
-            try:
-                JobStatusManager.update_job_status(job_id=job_id, status=JobStatus.FAILED, error_message=f"Task enqueueing failed: {str(task_error)}")
-            except Exception as update_error:
-                logger.error(f"Failed to update job status for {job_id}: {str(update_error)}")
+            JobStatusManager.update_job_status(
+                job_id=job_id,
+                status=JobStatus.FAILED,
+                error_message=f"Task enqueueing failed: {str(task_error)}"
+            )
             return error_response(message='Failed to queue compression job', status_code=500)
-        
+
     except Exception as e:
         logger.error(f"Error creating compression job: {str(e)}")
         return error_response(message='Failed to create compression job', status_code=500)
+
+
+# Fix for bulk compression route in compression_routes.py
 
 @compression_bp.route('/bulk', methods=['POST'])
 def bulk_compress():
@@ -86,7 +108,7 @@ def bulk_compress():
             return error_response(message='No files provided', error_code='NO_FILES', status_code=400)
 
         files = request.files.getlist('files')
-        
+
         if not files or len(files) == 0:
             return error_response(message='No files provided', error_code='NO_FILES', status_code=400)
 
@@ -97,51 +119,77 @@ def bulk_compress():
         except (ValueError, TypeError):
             image_quality = 80
         image_quality = max(10, min(image_quality, 100))
-        
+
         compression_settings = {
             'compression_level': compression_level,
             'image_quality': image_quality
         }
-        
+
         # Get client-provided tracking IDs
         job_id = request.form.get('job_id', str(uuid.uuid4()))
 
         # Read all files
         file_data_list = []
         original_filenames = []
-        
+
         for file in files:
             validation_error = validate_file(file, 'compression')
             if validation_error:
                 continue  # Skip invalid files
             file_data_list.append(file.read())
             original_filenames.append(file.filename)
-        
+
         if not file_data_list:
             return error_response(message='No valid files provided', error_code='NO_VALID_FILES', status_code=400)
 
-        # Enqueue bulk compression task
-        bulk_compress_task.delay(
+        # CREATE JOB FIRST - this is the fix!
+        job = JobStatusManager.get_or_create_job(
             job_id=job_id,
-            file_data_list=file_data_list,
-            filenames=original_filenames,
-            settings=compression_settings,
+            task_type='bulk_compress',
+            input_data={
+                'settings': compression_settings,
+                'file_count': len(file_data_list),
+                'total_size': sum(len(d) for d in file_data_list),
+                'filenames': original_filenames
+            }
         )
-        
-        logger.info(f"Bulk compression job {job_id} enqueued (job_id: {job_id})")
 
-        data = {
-            'success': True,
-            'job_id': job_id,
-            'status': JobStatus.PENDING.value,
-            'file_count': len(file_data_list),
-            'message': f'Bulk compression job created with {len(file_data_list)} files'
-        }
-        return success_response(message='Bulk compression job created', data=data, status_code=202)
-        
+        if not job:
+            return error_response(message='Failed to create bulk job', status_code=500)
+
+        # Enqueue bulk compression task
+        try:
+            bulk_compress_task.delay(
+                job_id=job_id,
+                file_data_list=file_data_list,
+                filenames=original_filenames,
+                settings=compression_settings,
+            )
+
+            logger.info(f"Bulk compression job {job_id} enqueued")
+
+            data = {
+                'success': True,
+                'job_id': job_id,
+                'status': JobStatus.PENDING.value,
+                'file_count': len(file_data_list),
+                'message': f'Bulk compression job created with {len(file_data_list)} files'
+            }
+            return success_response(message='Bulk compression job created', data=data, status_code=202)
+
+        except Exception as task_error:
+            logger.error(f"Failed to enqueue bulk compression task {job_id}: {str(task_error)}")
+            JobStatusManager.update_job_status(
+                job_id=job_id,
+                status=JobStatus.FAILED,
+                error_message=f"Task enqueueing failed: {str(task_error)}"
+            )
+            return error_response(message='Failed to queue bulk compression job', status_code=500)
+
     except Exception as e:
         logger.error(f"Error creating bulk compression job: {str(e)}")
-        return error_response(message='Failed to create bulk compression job', error_code='SYSTEM_ERROR', status_code=500)
+        return error_response(message='Failed to create bulk compression job', error_code='SYSTEM_ERROR',
+                              status_code=500)
 
 @compression_bp.route('/health', methods=['GET'])
 def compression_health_check():
