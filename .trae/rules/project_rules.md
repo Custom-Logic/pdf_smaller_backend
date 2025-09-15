@@ -13,14 +13,14 @@ Of course. Here are the standardized project rules, framed explicitly for an Age
 
 ### **1. Context & Knowledge Base (Rule: Context-Only)**
 
-*   **Single Source of Truth:** The `context` is the definitive source of project knowledge. All your actions and decisions must be based on the information contained within it.
-*   **No Assumptions:** Do not infer or assume functionality, structure, or requirements outside of what is provided in the `context`. If it's not in the `context`, it is out of scope.
-*   **Dynamic Reference:** Acknowledge that the `context` is a living document. You are expected to work with its most recent state as the project progresses towards shipment.
+*   **Single Source of Truth:** The `pdf_smaller_context` is the definitive source of project knowledge. All your actions and decisions must be based on the information contained within it.
+*   **No Assumptions:** Do not infer or assume functionality, structure, or requirements outside of what is provided in the `pdf_smaller_context`. If it's not in the `pdf_smaller_context`, it is out of scope.
+*   **Dynamic Reference:** Acknowledge that the `pdf_smaller_context` is a living document. You are expected to work with its most recent state as the project progresses towards shipment.
 
 ### **2. Tooling & Infrastructure (Rule: Leverage MCP)**
 
 *   **Enhanced Context Management:** Actively utilize the **`context7` MCP server** for all context-related operations. This is a mandatory tool for efficient information retrieval and management during this critical phase.
-*   **Efficiency is Key:** Use MCP capabilities to quickly query, update, and manage the project `context`, minimizing time spent on manual navigation and maximizing time spent on execution.
+*   **Efficiency is Key:** Use MCP capabilities to quickly query, update, and manage the project `pdf_smaller_context`, minimizing time spent on manual navigation and maximizing time spent on execution.
 
 ### **3. Development Moratorium (Rule: No New Features)**
 

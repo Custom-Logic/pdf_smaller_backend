@@ -341,16 +341,23 @@ def convert_pdf_task(
     # noinspection PyBroadException
     try:
         with current_app.app_context():  # push context
-            job = JobOperationsWrapper.create_job_safely(
-                job_id=job_id,
-                task_type="convert",
-                input_data={
-                    "target_format": target_format,
-                    "options": options,
-                    "file_size": len(file_data),
-                    "original_filename": original_filename,
-                }
-            )
+            # Get existing job (should already exist from route handler)
+            job = JobOperations.get_job(job_id)
+            if not job:
+                # Fallback: create job if it doesn't exist
+                job = JobOperationsWrapper.create_job_safely(
+                    job_id=job_id,
+                    task_type="convert",
+                    input_data={
+                        "target_format": target_format,
+                        "options": options,
+                        "file_size": len(file_data),
+                        "original_filename": original_filename,
+                    }
+                )
+            
+            if not job:
+                raise Exception(f"Failed to get or create job {job_id}")
 
             JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
@@ -396,15 +403,22 @@ def conversion_preview_task(
 
     try:
         with current_app.app_context():
-            job = JobOperationsWrapper.create_job_safely(
-                job_id=job_id,
-                task_type="conversion_preview",
-                input_data={
-                    "target_format": target_format,
-                    "options": options,
-                    "file_size": len(file_data),
-                }
-            )
+            # Get existing job (should already exist from route handler)
+            job = JobOperations.get_job(job_id)
+            if not job:
+                # Fallback: create job if it doesn't exist
+                job = JobOperationsWrapper.create_job_safely(
+                    job_id=job_id,
+                    task_type="conversion_preview",
+                    input_data={
+                        "target_format": target_format,
+                        "options": options,
+                        "file_size": len(file_data),
+                    }
+                )
+            
+            if not job:
+                raise Exception(f"Failed to get or create job {job_id}")
 
             JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
@@ -448,15 +462,22 @@ def ocr_process_task(
     # noinspection PyBroadException
     try:
         with current_app.app_context():
-            job = JobOperationsWrapper.create_job_safely(
-                job_id=job_id,
-                task_type="ocr",
-                input_data={
-                    "options": options,
-                    "file_size": len(file_data),
-                    "original_filename": original_filename,
-                }
-            )
+            # Get existing job (should already exist from route handler)
+            job = JobOperations.get_job(job_id)
+            if not job:
+                # Fallback: create job if it doesn't exist
+                job = JobOperationsWrapper.create_job_safely(
+                    job_id=job_id,
+                    task_type="ocr",
+                    input_data={
+                        "options": options,
+                        "file_size": len(file_data),
+                        "original_filename": original_filename,
+                    }
+                )
+            
+            if not job:
+                raise Exception(f"Failed to get or create job {job_id}")
 
             JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
@@ -492,14 +513,21 @@ def ocr_preview_task(self,job_id: str,file_data: bytes,options: Dict[str, Any]) 
 
     try:
         with current_app.app_context():
-            job = JobOperationsWrapper.create_job_safely(
-                job_id=job_id,
-                task_type="ocr_preview",
-                input_data={
-                    "options": options,
-                    "file_size": len(file_data),
-                }
-            )
+            # Get existing job (should already exist from route handler)
+            job = JobOperations.get_job(job_id)
+            if not job:
+                # Fallback: create job if it doesn't exist
+                job = JobOperationsWrapper.create_job_safely(
+                    job_id=job_id,
+                    task_type="ocr_preview",
+                    input_data={
+                        "options": options,
+                        "file_size": len(file_data),
+                    }
+                )
+            
+            if not job:
+                raise Exception(f"Failed to get or create job {job_id}")
 
             JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
@@ -534,11 +562,18 @@ def ai_summarize_task(self, job_id: str, text: str, options: Dict[str, Any]) -> 
     
     try:
         logger.info(f"Starting AI summarisation task for job {job_id}")
-        job = JobOperationsWrapper.create_job_safely(
-            job_id=job_id,
-            task_type='ai_summarize',
-            input_data={'text_length': len(text), 'options': options}
-        )
+        # Get existing job (should already exist from route handler)
+        job = JobOperations.get_job(job_id)
+        if not job:
+            # Fallback: create job if it doesn't exist
+            job = JobOperationsWrapper.create_job_safely(
+                job_id=job_id,
+                task_type='ai_summarize',
+                input_data={'text_length': len(text), 'options': options}
+            )
+        
+        if not job:
+            raise Exception(f"Failed to get or create job {job_id}")
 
         JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
@@ -558,15 +593,22 @@ def ai_translate_task(self, job_id: str, text: str, target_language: str,
     
     try:
         logger.info(f"Starting AI translation task for job {job_id} (target: {target_language})")
-        job = JobOperationsWrapper.create_job_safely(
-            job_id=job_id,
-            task_type='ai_translate',
-            input_data={
-                'target_language': target_language,
-                'text_length': len(text),
-                'options': options
-            }
-        )
+        # Get existing job (should already exist from route handler)
+        job = JobOperations.get_job(job_id)
+        if not job:
+            # Fallback: create job if it doesn't exist
+            job = JobOperationsWrapper.create_job_safely(
+                job_id=job_id,
+                task_type='ai_translate',
+                input_data={
+                    'target_language': target_language,
+                    'text_length': len(text),
+                    'options': options
+                }
+            )
+        
+        if not job:
+            raise Exception(f"Failed to get or create job {job_id}")
 
         JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
