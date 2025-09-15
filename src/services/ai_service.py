@@ -10,9 +10,6 @@ import requests
 from typing import Dict, Any, Optional, List, Literal
 from datetime import datetime, timezone
 from enum import Enum
-from PIL import Image
-import numpy as np
-from pdf2image import convert_from_path
 from src.services.agent_prompt_framework import AgentPromptFramework, AgentRole
 
 logger = logging.getLogger(__name__)
