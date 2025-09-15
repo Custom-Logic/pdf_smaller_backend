@@ -41,7 +41,8 @@ pdf_suite_bp = Blueprint('pdf_suite', __name__)
 logger = logging.getLogger(__name__)
 
 # Note: File validation logic moved to src.utils.security_utils for centralization
-
+def create_job_id() -> str:
+    return str(uuid.uuid4())
 # ============================================================================
 # CONVERSION ROUTES (Job-Oriented)
 # ============================================================================
@@ -68,7 +69,7 @@ def convert_pdf():
             except json.JSONDecodeError:
                 return error_response(message="Invalid options format", status_code=400)
 
-        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        job_id = request.form.get('job_id', create_job_id())
 
         # Read file data
         file_data = file.read()
@@ -136,7 +137,7 @@ def get_conversion_preview():
             except json.JSONDecodeError:
                 return error_response(message="Invalid options format", status_code=400)
 
-        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        job_id = request.form.get('job_id', create_job_id())
 
         file_data = file.read()
 
@@ -204,7 +205,7 @@ def process_ocr():
             except json.JSONDecodeError:
                 return error_response(message="Invalid options format", status_code=400)
 
-        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        job_id = request.form.get('job_id', create_job_id())
 
         file_data = file.read()
 
@@ -266,7 +267,7 @@ def get_ocr_preview():
             except json.JSONDecodeError:
                 return error_response(message="Invalid options format", status_code=400)
 
-        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        job_id = request.form.get('job_id', create_job_id())
 
         file_data = file.read()
 
@@ -330,7 +331,7 @@ def summarize_pdf():
             return error_response(message="Text too long. Maximum length is 100KB.", status_code=400)
 
         options = data.get('options', {})
-        job_id = data.get('job_id', str(uuid.uuid4()))
+        job_id = data.get('job_id', create_job_id())
 
         # CREATE JOB FIRST - this is the fix!
         
@@ -388,7 +389,7 @@ def translate_text():
 
         target_language = data.get('target_language', 'en')
         options = data.get('options', {})
-        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        job_id = request.form.get('job_id', create_job_id())
 
         job = JobStatusManager.get_or_create_job(
             job_id=job_id,
@@ -432,7 +433,7 @@ def extract_text():
         if error:
             return error
 
-        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        job_id = request.form.get('job_id', create_job_id())
 
         file_data = file.read()
 
@@ -498,7 +499,7 @@ def extract_invoice():
             except json.JSONDecodeError:
                 return error_response(message="Invalid options format", status_code=400)
 
-        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        job_id = request.form.get('job_id', create_job_id())
         
 
         job = JobStatusManager.get_or_create_job(
@@ -566,7 +567,7 @@ def extract_bank_statement():
             except json.JSONDecodeError:
                 return error_response(message="Invalid options format", status_code=400)
 
-        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        job_id = request.form.get('job_id', create_job_id())
 
         job = JobStatusManager.get_or_create_job(
             job_id=job_id,

@@ -9,7 +9,9 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.services.file_management_service import FileManagementService
+from src.services import FileManagementService
+from src.jobs import JobOperationsWrapper, JobOperations
+from src.models import JobStatus
 
 logger = logging.getLogger(__name__)
 
@@ -101,8 +103,8 @@ class ConversionService:
             }
 
         finally:
-            if temp_pdf:
-                self.file_service.delete_file(str(temp_pdf))
+            pass
+
 
     def get_conversion_preview(self, file_data: bytes, target_format: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Light-weight preview; never crashes."""
@@ -597,8 +599,6 @@ class ConversionService:
         """
         Process a conversion job with provided file data and job status management
         """
-        from src.jobs import JobOperationsWrapper, JobOperations
-        from src.models import JobStatus
         
         try:
             # Get job information
