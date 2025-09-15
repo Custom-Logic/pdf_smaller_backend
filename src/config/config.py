@@ -213,8 +213,7 @@ class ProductionConfig(BaseConfig):
     }
     
     # Production database (SQLite)
-    -   SQLALCHEMY_DATABASE_URI = "sqlite:////root/app/pdf_smaller_backend/pdf_smaller_prod.db"
-    +   SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', "sqlite:////root/app/pdf_smaller_backend/pdf_smaller_prod.db")
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', "sqlite:////root/app/pdf_smaller_backend/pdf_smaller_prod.db")
         
     # Production file settings
     UPLOAD_FOLDER = "./uploads/dev"
