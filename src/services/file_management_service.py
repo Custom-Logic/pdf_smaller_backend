@@ -37,7 +37,7 @@ class FileManagementService:
         'completed': 24,  # 1 day for completed jobs
         'failed': 24,  # 1 day for failed jobs
         'pending': 1,  # 1 hour for pending jobs (shouldn't stay pending long)
-        'processing': 4  # 4 hours for processing jobs (should complete by then)
+        'processing': 8  # 8 hours for processing jobs (extended from 4 to prevent race conditions)
     }
     
     # File cleanup settings
@@ -566,6 +566,18 @@ class FileManagementService:
                     # Query jobs with this status that are older than cutoff
                     jobs = transaction.query(Job).filter_by(status=status).filter(
                         Job.created_at < cutoff_time).all()
+
+                    # Safety check: skip processing jobs that might still be active
+                    if status == 'processing':
+                        # Add extra buffer for processing jobs to prevent race conditions
+                        safe_cutoff = datetime.now(timezone.utc) - timedelta(hours=retention_hours + 2)
+                        jobs = [job for job in jobs if job.created_at < safe_cutoff]
+                        
+                        # Log when we're skipping processing jobs due to safety buffer
+                        skipped_count = len([j for j in transaction.query(Job).filter_by(status='processing').filter(
+                            Job.created_at >= safe_cutoff, Job.created_at < cutoff_time).all()])
+                        if skipped_count > 0:
+                            logger.info(f"Safety buffer: Skipping {skipped_count} processing jobs to prevent race conditions")
 
                     expired_jobs.extend(jobs)
 

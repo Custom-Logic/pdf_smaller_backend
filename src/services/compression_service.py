@@ -73,8 +73,8 @@ class CompressionService:
             return result
 
         except Exception as e:
-            # Update job status to failed if job was created
-            if 'job_id' in locals():
+            # Update job status to failed if job_id exists
+            if job_id is not None:
                 JobOperationsWrapper.update_job_status_safely(
                     job_id=job_id,
                     status=JobStatus.FAILED,
