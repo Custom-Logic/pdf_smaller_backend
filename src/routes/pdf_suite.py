@@ -9,9 +9,10 @@ import logging
 import uuid
 from datetime import datetime
 
+from celery import Task
 from flask import Blueprint, request
 
-from src.models import JobStatus
+from src.models import JobStatus, TaskType
 from src.services.service_registry import ServiceRegistry
 from src.utils.response_helpers import success_response, error_response
 from src.utils.security_utils import get_file_and_validate
@@ -26,6 +27,7 @@ from src.tasks.tasks import (
     extract_invoice_task,
     extract_bank_statement_task
 )
+from src.jobs import JobStatusManager
 
 # Initialize blueprint
 pdf_suite_bp = Blueprint('pdf_suite', __name__)
@@ -68,9 +70,23 @@ def convert_pdf():
 
         job_id = request.form.get('job_id', str(uuid.uuid4()))
 
-
         # Read file data
         file_data = file.read()
+
+        # CREATE JOB FIRST - this is the fix!        
+        job = JobStatusManager.get_or_create_job(
+            job_id=job_id,
+            task_type=TaskType.CONVERT.value,
+            input_data={
+                'target_format': target_format,
+                'options': options,
+                'file_size': len(file_data),
+                'original_filename': file.filename
+            }
+        )
+        
+        if not job:
+            return error_response(message='Failed to create conversion job', status_code=500)
 
         # Enqueue conversion task using .delay() pattern
         try:
@@ -92,6 +108,11 @@ def convert_pdf():
             }, status_code=202)
         except Exception as task_error:
              logger.error(f"Failed to enqueue conversion task {job_id}: {str(task_error)}")
+             JobStatusManager.update_job_status(
+                job_id=job_id,
+                status=JobStatus.FAILED,
+                error_message=f"Task enqueueing failed: {str(task_error)}"
+             )
              return error_response(message='Failed to queue conversion job', status_code=500)
 
     except Exception as e:
@@ -117,25 +138,48 @@ def get_conversion_preview():
 
         job_id = request.form.get('job_id', str(uuid.uuid4()))
 
-
         file_data = file.read()
 
-        # Enqueue conversion preview task using .delay() pattern
-        task = conversion_preview_task.delay(
-            job_id,
-            file_data,
-            format,
-            options,
-
+        # CREATE JOB FIRST - this is the fix!
+        
+        job = JobStatusManager.get_or_create_job(
+            job_id=job_id,
+            task_type=TaskType.CONVERSION_PREVIEW.value,
+            input_data={
+                'target_format': format,
+                'options': options,
+                'file_size': len(file_data),
+                'original_filename': file.filename
+            }
         )
+        
+        if not job:
+            return error_response(message='Failed to create conversion preview job', status_code=500)
 
-        logger.info(f"Conversion preview job {job_id} enqueued (task_id: {task.id})")
+        # Enqueue conversion preview task using .delay() pattern
+        try:
+            task = conversion_preview_task.delay(
+                job_id,
+                file_data,
+                format,
+                options,
+            )
 
-        return success_response(message="Conversion preview job queued successfully", data={
-            'job_id': job_id,
-            'task_id': task.id,
-            'status': JobStatus.PENDING.value
-        }, status_code=202)
+            logger.info(f"Conversion preview job {job_id} enqueued (task_id: {task.id})")
+
+            return success_response(message="Conversion preview job queued successfully", data={
+                'job_id': job_id,
+                'task_id': task.id,
+                'status': JobStatus.PENDING.value
+            }, status_code=202)
+        except Exception as task_error:
+            logger.error(f"Failed to enqueue conversion preview task {job_id}: {str(task_error)}")
+            JobStatusManager.update_job_status(
+                job_id=job_id,
+                status=JobStatus.FAILED,
+                error_message=f"Task enqueueing failed: {str(task_error)}"
+            )
+            return error_response(message='Failed to queue conversion preview job', status_code=500)
 
     except Exception as e:
         logger.error(f"Conversion preview job creation failed: {str(e)}")
@@ -160,25 +204,48 @@ def process_ocr():
             except json.JSONDecodeError:
                 return error_response(message="Invalid options format", status_code=400)
 
-
         job_id = request.form.get('job_id', str(uuid.uuid4()))
 
         file_data = file.read()
 
-        # Enqueue OCR task using .delay() pattern
-        task = ocr_process_task.delay(
+        # CREATE JOB FIRST - this is the fix!
+
+        job = JobStatusManager.get_or_create_job(
             job_id=job_id,
-            file_data=file_data,
-            options=options,
-            original_filename=file.filename)
+            task_type=TaskType.OCR.value,
+            input_data={
+                'options': options,
+                'file_size': len(file_data),
+                'original_filename': file.filename
+            }
+        )
+        
+        if not job:
+            return error_response(message='Failed to create OCR job', status_code=500)
 
-        logger.info(f"OCR job {job_id} enqueued (task_id: {task.id})")
+        # Enqueue OCR task using .delay() pattern
+        try:
+            task = ocr_process_task.delay(
+                job_id=job_id,
+                file_data=file_data,
+                options=options,
+                original_filename=file.filename)
 
-        return success_response(message="OCR job queued successfully", data={
-            'job_id': job_id,
-            'task_id': task.id,
-            'status': JobStatus.PENDING.value
-        }, status_code=202)
+            logger.info(f"OCR job {job_id} enqueued (task_id: {task.id})")
+
+            return success_response(message="OCR job queued successfully", data={
+                'job_id': job_id,
+                'task_id': task.id,
+                'status': JobStatus.PENDING.value
+            }, status_code=202)
+        except Exception as task_error:
+            logger.error(f"Failed to enqueue OCR task {job_id}: {str(task_error)}")
+            JobStatusManager.update_job_status(
+                job_id=job_id,
+                status=JobStatus.FAILED,
+                error_message=f"Task enqueueing failed: {str(task_error)}"
+            )
+            return error_response(message='Failed to queue OCR job', status_code=500)
 
     except Exception as e:
         logger.error(f"OCR job creation failed: {str(e)}")
@@ -201,24 +268,46 @@ def get_ocr_preview():
 
         job_id = request.form.get('job_id', str(uuid.uuid4()))
 
-
         file_data = file.read()
 
-        # Enqueue OCR preview task using .delay() pattern
-        task = ocr_preview_task.delay(
-            job_id,
-            file_data,
-            options,
-
+        # CREATE JOB FIRST - this is the fix!
+        
+        job = JobStatusManager.get_or_create_job(
+            job_id=job_id,
+            task_type=TaskType.OCV_PREVIEW.value,
+            input_data={
+                'options': options,
+                'file_size': len(file_data),
+                'original_filename': file.filename
+            }
         )
+        
+        if not job:
+            return error_response(message='Failed to create OCR preview job', status_code=500)
 
-        logger.info(f"OCR preview job {job_id} enqueued (task_id: {task.id})")
+        # Enqueue OCR preview task using .delay() pattern
+        try:
+            task = ocr_preview_task.delay(
+                job_id,
+                file_data,
+                options,
+            )
 
-        return success_response(message="OCR preview job queued successfully", data={
-            'job_id': job_id,
-            'task_id': task.id,
-            'status': JobStatus.PENDING.value
-        }, status_code=202)
+            logger.info(f"OCR preview job {job_id} enqueued (task_id: {task.id})")
+
+            return success_response(message="OCR preview job queued successfully", data={
+                'job_id': job_id,
+                'task_id': task.id,
+                'status': JobStatus.PENDING.value
+            }, status_code=202)
+        except Exception as task_error:
+            logger.error(f"Failed to enqueue OCR preview task {job_id}: {str(task_error)}")
+            JobStatusManager.update_job_status(
+                job_id=job_id,
+                status=JobStatus.FAILED,
+                error_message=f"Task enqueueing failed: {str(task_error)}"
+            )
+            return error_response(message='Failed to queue OCR preview job', status_code=500)
 
     except Exception as e:
         logger.error(f"OCR preview job creation failed: {str(e)}")
@@ -241,25 +330,45 @@ def summarize_pdf():
             return error_response(message="Text too long. Maximum length is 100KB.", status_code=400)
 
         options = data.get('options', {})
-        job_id = request.form.get('job_id', str(uuid.uuid4()))
+        job_id = data.get('job_id', str(uuid.uuid4()))
 
-
+        # CREATE JOB FIRST - this is the fix!
+        
+        job = JobStatusManager.get_or_create_job(
+            job_id=job_id,
+            task_type=TaskType.AI_SUMMARIZE.value,
+            input_data={
+                'text_length': len(text),
+                'options': options
+            }
+        )
+        
+        if not job:
+            return error_response(message='Failed to create summarization job', status_code=500)
 
         # Enqueue AI summarization task using .delay() pattern
-        task = ai_summarize_task.delay(
-            job_id,
-            text,
-            options,
+        try:
+            task = ai_summarize_task.delay(
+                job_id,
+                text,
+                options,
+            )
 
-        )
+            logger.info(f"AI summarization job {job_id} enqueued (task_id: {task.id})")
 
-        logger.info(f"AI summarization job {job_id} enqueued (task_id: {task.id})")
-
-        return success_response(message="Summarization job queued successfully", data={
-            'job_id': job_id,
-            'task_id': task.id,
-            'status': JobStatus.PENDING.value
-        }, status_code=202)
+            return success_response(message="Summarization job queued successfully", data={
+                'job_id': job_id,
+                'task_id': task.id,
+                'status': JobStatus.PENDING.value
+            }, status_code=202)
+        except Exception as task_error:
+            logger.error(f"Failed to enqueue AI summarization task {job_id}: {str(task_error)}")
+            JobStatusManager.update_job_status(
+                job_id=job_id,
+                status=JobStatus.FAILED,
+                error_message=f"Task enqueueing failed: {str(task_error)}"
+            )
+            return error_response(message='Failed to queue summarization job', status_code=500)
 
     except Exception as e:
         logger.error(f"AI summarization job creation failed: {str(e)}")
@@ -280,6 +389,15 @@ def translate_text():
         target_language = data.get('target_language', 'en')
         options = data.get('options', {})
         job_id = request.form.get('job_id', str(uuid.uuid4()))
+
+        job = JobStatusManager.get_or_create_job(
+            job_id=job_id,
+            task_type=TaskType.AI_TRANSLATE.value,
+            input_data={
+                'text_length': len(text),
+                'options': options
+            }
+        )
 
 
         # Enqueue AI translation task using .delay() pattern
@@ -318,21 +436,43 @@ def extract_text():
 
         file_data = file.read()
 
-        # Enqueue text extraction task using .delay() pattern
-        task = extract_text_task.delay(
-            job_id,
-            file_data,
-            file.filename,
+        # CREATE JOB FIRST - this is the fix!
 
+        job = JobStatusManager.get_or_create_job(
+            job_id=job_id,
+            task_type=TaskType.AI_EXTRACT_TEXT.value,
+            input_data={
+                'file_size': len(file_data),
+                'original_filename': file.filename
+            }
         )
+        
+        if not job:
+            return error_response(message='Failed to create text extraction job', status_code=500)
 
-        logger.info(f"Text extraction job {job_id} enqueued (task_id: {task.id})")
+        # Enqueue text extraction task using .delay() pattern
+        try:
+            task = extract_text_task.delay(
+                job_id,
+                file_data,
+                file.filename,
+            )
 
-        return success_response(message="Text extraction job queued successfully", data={
-            'job_id': job_id,
-            'task_id': task.id,
-            'status': JobStatus.PENDING.value
-        }, status_code=202)
+            logger.info(f"Text extraction job {job_id} enqueued (task_id: {task.id})")
+
+            return success_response(message="Text extraction job queued successfully", data={
+                'job_id': job_id,
+                'task_id': task.id,
+                'status': JobStatus.PENDING.value
+            }, status_code=202)
+        except Exception as task_error:
+            logger.error(f"Failed to enqueue text extraction task {job_id}: {str(task_error)}")
+            JobStatusManager.update_job_status(
+                job_id=job_id,
+                status=JobStatus.FAILED,
+                error_message=f"Task enqueueing failed: {str(task_error)}"
+            )
+            return error_response(message='Failed to queue text extraction job', status_code=500)
 
     except Exception as e:
         logger.error(f"Text extraction job creation failed: {str(e)}")
@@ -360,6 +500,17 @@ def extract_invoice():
 
         job_id = request.form.get('job_id', str(uuid.uuid4()))
         
+
+        job = JobStatusManager.get_or_create_job(
+            job_id=job_id,
+            task_type=TaskType.AI_INVOICE_EXTRACTION.value,
+            input_data={
+                'file_size': len(file_data),
+                'original_filename': file.filename,
+                'options': options
+            }
+        )
+
         # Save file temporarily
         file_service = ServiceRegistry.get_file_management_service()
         file_path = file_service.save_file(file, job_id)
@@ -416,6 +567,16 @@ def extract_bank_statement():
                 return error_response(message="Invalid options format", status_code=400)
 
         job_id = request.form.get('job_id', str(uuid.uuid4()))
+
+        job = JobStatusManager.get_or_create_job(
+            job_id=job_id,
+            task_type=TaskType.AI_BANK_STATEMENT_EXTRACTION.value,
+            input_data={
+                'file_size': len(file_data),
+                'original_filename': file.filename,
+                'options': options
+            }
+        )
         
         # Save file temporarily
         file_service = ServiceRegistry.get_file_management_service()

@@ -3,6 +3,7 @@ from bz2 import compress
 from enum import Enum
 from sqlalchemy import Index, CheckConstraint
 from src.models.base import db, BaseModel
+from src.tasks.tasks import ai_translate_task
 
 class JobStatus(Enum):
     """Job status enum"""
@@ -15,8 +16,13 @@ class TaskType(Enum):
     """Task Types Enum"""
     COMPRESS = 'compress'
     CONVERT = 'convert'
+    CONVERSION_PREVIEW= 'conversion_preview'
     OCR = 'ocr'
+    OCV_PREVIEW='ocv_preview'
     AI = 'ai'
+    AI_EXTRACT_TEXT = 'ai_extract_text'  
+    AI_SUMMARIZE = 'ai_summarize'  
+    AI_TRANSLATE = 'ai_translate'
     AI_INVOICE_EXTRACTION = 'ai_invoice_extraction'
     AI_BANK_STATEMENT_EXTRACTION = 'ai_bank_statement_extraction'
     
