@@ -180,3 +180,5 @@ def update_job_status_safely(job_id: str, status: JobStatus,
     return JobOperationsWrapper.update_job_status_safely(
         job_id, status, result, error_message, progress
     )
+
+__all__ = ['JobOperations', 'JobStatusManager', 'JobOperationsWrapper', 'create_job_safely', 'update_job_status_safely']
