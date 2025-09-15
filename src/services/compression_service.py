@@ -31,7 +31,7 @@ class CompressionService:
             job = JobOperations.get_job(job_id=job_id) if job_id else None
 
             if not isinstance(job, Job):
-                raise Exception("Failed to retrieve compression job")
+                raise Exception("Failed to retrieve compression job - process_file_data call.")
 
             job_id = job.job_id
 
@@ -40,19 +40,20 @@ class CompressionService:
                 job_id=job_id,
                 status=JobStatus.PROCESSING
             )
-
+            logger.error("Simulated Error - Updated Job Status to Processing.")
             # Save input file using file service
             file_id, input_file_path = self.file_service.save_file(file_data, original_filename or 'input.pdf')
-
+            logger.error(f"Simulated Error - {input_file_path}")
             original_size = len(file_data)
             compression_level = settings.get('compression_level', 'medium')
             image_quality = settings.get('image_quality', 80)
             output_filename = f"compressed_{file_id}.pdf"
             output_path = self.file_service.create_output_path(output_filename)
+            logger.error(f"Simulated Error: OutPutPath {output_path}")
             # Perform compression
             self._execute_compression(input_path=input_file_path,output_path=output_path,
                                       compression_level=compression_level, image_quality=image_quality)
-
+            logger.error("Compression Done")
             compressed_size = self.file_service.get_file_size(output_path)
             compression_ratio = ((original_size - compressed_size) / original_size) * 100
 
@@ -69,6 +70,7 @@ class CompressionService:
                 'input_file_id': file_id,
                 'output_file_id':file_id
             }
+            logger.error(f"Simulated Error Compression Result {result}")
 
             return result
 

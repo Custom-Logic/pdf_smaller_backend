@@ -188,7 +188,6 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
         )
         logger.debug(f"Starting compression task for job {job_id}")
 
-        JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
         logger.debug(f"Job {job_id} marked as processing")
 
         result = ServiceRegistry.get_compression_service().process_file_data(
