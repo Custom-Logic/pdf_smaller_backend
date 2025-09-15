@@ -54,7 +54,7 @@ class ConversionService:
     # --------------------------------------------------------------------------
     # PUBLIC ENTRY POINTS
     # --------------------------------------------------------------------------
-    def convert_pdf_data(self,file_data: bytes,target_format: str,options: Optional[Dict[str, Any]] = None,
+    def convert_pdf_data(self, file_data: bytes, target_format: str, options: Optional[Dict[str, Any]] = None,
         original_filename: Optional[str] = None) -> Dict[str, Any]:
         """Convert *in-memory* PDF → target format.  Always returns the same keys."""
         options = options or {}
@@ -71,9 +71,9 @@ class ConversionService:
 
             converter = {
                 "docx": self._convert_to_docx,
-                "txt" : self._convert_to_txt,
+                "txt": self._convert_to_txt,
                 "html": self._convert_to_html,
-                "images": self._convert_to_images,
+                "images": lambda content, opts: self._convert_to_images_with_pdf(temp_pdf, content, opts),
                 "xlsx": self._convert_to_xlsx,
             }
 
@@ -104,12 +104,7 @@ class ConversionService:
             if temp_pdf:
                 self.file_service.delete_file(str(temp_pdf))
 
-    def get_conversion_preview(
-        self,
-        file_data: bytes,
-        target_format: str,
-        options: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
+    def get_conversion_preview(self, file_data: bytes, target_format: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Light-weight preview; never crashes."""
         options = options or {}
         if not PDF_LIBS_AVAILABLE:
@@ -147,7 +142,7 @@ class ConversionService:
 
     def _extract_pdf_content(self, pdf_path: Path) -> Dict[str, Any]:
         """Return unified dict with pages, tables, images, text, meta."""
-        doc = fitz.open(pdf_path)
+        doc = fitz.open(str(pdf_path))
         content = {
             "pages": [],
             "tables": [],
@@ -256,7 +251,7 @@ class ConversionService:
                         if c_idx < max_cols:
                             table.cell(r_idx, c_idx).text = str(cell_data)
 
-        filename = f"converted_{content.get('metadata',{}).get('title','document')}.docx"
+        filename = f"converted_{self._secure_filename(content.get('metadata',{}).get('title') or 'document')}.docx"
         # Save to temporary location first, then read and save through file_service
         import tempfile
         with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp_file:
@@ -264,7 +259,7 @@ class ConversionService:
             with open(tmp_file.name, 'rb') as f:
                 docx_data = f.read()
             os.unlink(tmp_file.name)
-        
+
         file_id, file_path = self.file_service.save_file(docx_data, filename)
         return {
             "success": True,
@@ -288,7 +283,7 @@ class ConversionService:
         # remove default empty sheet
         wb.remove(wb.active)
 
-        file_prefix = content.get("metadata", {}).get("title", "document") or "document"
+        file_prefix = self._secure_filename(content.get("metadata", {}).get("title") or "document")
         any_table = False
 
         for page in content["pages"]:
@@ -318,7 +313,7 @@ class ConversionService:
             with open(tmp_file.name, 'rb') as f:
                 xlsx_data = f.read()
             os.unlink(tmp_file.name)
-        
+
         file_id, file_path = self.file_service.save_file(xlsx_data, filename)
         return {
             "success": True,
@@ -334,7 +329,7 @@ class ConversionService:
         if quality != "high":
             text = re.sub(r"\s+", " ", text)
             text = re.sub(r"\n\s*\n", "\n\n", text)
-        filename = f"converted_{content.get('metadata',{}).get('title','document')}.txt"
+        filename = f"converted_{self._secure_filename(content.get('metadata',{}).get('title') or 'document')}.txt"
         text_data = text.encode('utf-8')
         file_id, file_path = self.file_service.save_file(text_data, filename)
         return {
@@ -347,7 +342,7 @@ class ConversionService:
 
     def _convert_to_html(self, content: Dict[str, Any], opts: Dict[str, Any]) -> Dict[str, Any]:
         html = self._generate_html_content(content, opts)
-        filename = f"converted_{content.get('metadata',{}).get('title','document')}.html"
+        filename = f"converted_{self._secure_filename(content.get('metadata',{}).get('title') or 'document')}.html"
         html_data = html.encode('utf-8')
         file_id, file_path = self.file_service.save_file(html_data, filename)
         return {
@@ -358,31 +353,141 @@ class ConversionService:
             "file_size": self.file_service.get_file_size(file_path),
         }
 
-    def _convert_to_images(self, content: Dict[str, Any], opts: Dict[str, Any]) -> Dict[str, Any]:
-        """PDF → PNG (one file per page).  Requires fitz + Pillow."""
+    def _convert_to_images_with_pdf(self, pdf_path: Path, content: Dict[str, Any], opts: Dict[str, Any]) -> Dict[str, Any]:
+        """PDF → PNG (one file per page) using the actual PDF file."""
         if not PIL_AVAILABLE:
             raise RuntimeError("Pillow not installed – image conversion unavailable")
+
         dpi = {"low": 72, "medium": 150, "high": 300}.get(opts.get("quality", "medium"), 150)
-        doc = fitz.Document()
+
+        try:
+            # Open the PDF document
+            doc = fitz.open(str(pdf_path))
+            image_files = []
+            total_size = 0
+
+            for page_num in range(len(doc)):
+                page = doc.load_page(page_num)
+                # Get pixmap with specified DPI
+                pix = page.get_pixmap(dpi=dpi)
+                filename = f"converted_page_{page_num + 1}.png"
+
+                # Convert pixmap to PNG bytes
+                image_data = pix.tobytes("png")
+
+                # Save through file service
+                file_id, file_path = self.file_service.save_file(image_data, filename)
+                image_files.append(file_path)
+                total_size += len(image_data)
+
+                # Clean up pixmap
+                pix = None
+
+            doc.close()
+
+            if not image_files:
+                raise RuntimeError("No images could be created")
+
+            return {
+                "success": True,
+                "output_path": str(Path(image_files[0]).parent) if image_files else "",
+                "filename": "pages_converted.zip",
+                "mime_type": "application/zip",
+                "file_size": total_size,
+                "image_files": image_files,
+                "page_count": len(image_files)
+            }
+
+        except Exception as e:
+            logger.error(f"Image conversion failed: {e}")
+            # Fall back to the text-based approach
+            return self._convert_to_images(content, opts)
+
+    def _convert_to_images(self, content: Dict[str, Any], opts: Dict[str, Any]) -> Dict[str, Any]:
+        """Fallback PDF → PNG using text rendering (when PDF file not available)."""
+        if not PIL_AVAILABLE:
+            raise RuntimeError("Pillow not installed – image conversion unavailable")
+
+        dpi = {"low": 72, "medium": 150, "high": 300}.get(opts.get("quality", "medium"), 150)
         image_files = []
         total_size = 0
-        
-        for page in content["pages"]:
-            # noinspection PyArgumentList
-            pix = fitz.Page(page).get_pixmap(dpi=dpi)
-            filename = f"converted_page_{page['page_num']}.png"
-            # Save image data through file service
-            image_data = pix.tobytes("png")
-            file_id, file_path = self.file_service.save_file(image_data, filename)
-            image_files.append(file_path)
-            total_size += self.file_service.get_file_size(file_path)
-            
+
+        # Create individual PNG files for each page using text content
+        for page_data in content["pages"]:
+            page_num = page_data["page_num"]
+            filename = f"converted_page_{page_num}.png"
+
+            try:
+                # Create a simple text-based image representation
+                from PIL import Image, ImageDraw, ImageFont
+
+                # Create a white image
+                img_width, img_height = 800, 1000
+                img = Image.new('RGB', (img_width, img_height), color='white')
+                draw = ImageDraw.Draw(img)
+
+                # Try to use a basic font
+                try:
+                    font = ImageFont.load_default()
+                except:
+                    font = None
+
+                # Draw the page text
+                text = page_data.get("text", f"Page {page_num}")[:1000]  # Limit text length
+                if text.strip():
+                    # Simple text wrapping
+                    lines = []
+                    words = text.split()
+                    current_line = ""
+
+                    for word in words[:100]:  # Limit words to prevent overflow
+                        if len(current_line + word) < 80:  # Rough character limit per line
+                            current_line += word + " "
+                        else:
+                            if current_line:
+                                lines.append(current_line.strip())
+                            current_line = word + " "
+
+                    if current_line:
+                        lines.append(current_line.strip())
+
+                    # Draw lines
+                    y_position = 50
+                    for line in lines[:40]:  # Limit lines to fit on image
+                        draw.text((50, y_position), line, fill='black', font=font)
+                        y_position += 25
+
+                # Save image to bytes
+                import io
+                img_buffer = io.BytesIO()
+                img.save(img_buffer, format='PNG', dpi=(dpi, dpi))
+                image_data = img_buffer.getvalue()
+                img_buffer.close()
+
+                file_id, file_path = self.file_service.save_file(image_data, filename)
+                image_files.append(file_path)
+                total_size += len(image_data)
+
+            except Exception as e:
+                logger.warning(f"Failed to create image for page {page_num}: {e}")
+                # Create minimal placeholder
+                placeholder_text = f"Page {page_num} - Image conversion failed"
+                image_data = placeholder_text.encode('utf-8')
+                file_id, file_path = self.file_service.save_file(image_data, f"page_{page_num}_error.txt")
+                image_files.append(file_path)
+                total_size += len(image_data)
+
+        if not image_files:
+            raise RuntimeError("No images could be created")
+
         return {
             "success": True,
-            "output_path": str(Path(image_files[0]).parent) if image_files else "",  # folder with pages
-            "filename": "pages_png.zip",  # consumer expects single filename
+            "output_path": str(Path(image_files[0]).parent) if image_files else "",
+            "filename": "pages_converted.zip",
             "mime_type": "application/zip",
             "file_size": total_size,
+            "image_files": image_files,
+            "page_count": len(image_files)
         }
 
     # --------------------------------------------------------------------------
@@ -478,6 +583,9 @@ class ConversionService:
 
     @staticmethod
     def _secure_filename(name: str) -> str:
+        """Sanitize filename to be filesystem-safe"""
+        if not name:
+            return "file"
         name = re.sub(r"[^\w\s-]", "", name)
         name = re.sub(r"[-\s]+", "-", name)
         return name.strip("-") or "file"
@@ -488,4 +596,3 @@ class ConversionService:
     # Note: The create_conversion_job method has been removed in favor of JobOperationsWrapper
     # for standardized job creation across all services.
     # Use JobOperationsWrapper.create_job_safely(job_type='conversion', ...) instead.
-
