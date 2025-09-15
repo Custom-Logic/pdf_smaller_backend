@@ -359,25 +359,20 @@ def convert_pdf_task(
             if not job:
                 raise Exception(f"Failed to get or create job {job_id}")
 
-            JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
+            # Job status will be managed by process_conversion_job method
 
             current_task.update_state(
                 state="PROGRESS",
                 meta={"progress": 10, "status": f"Starting {target_format} conversion"},
             )
 
-            result = ServiceRegistry.get_conversion_service().convert_pdf_data(
+            # Use process_conversion_job which handles job status updates internally
+            result = ServiceRegistry.get_conversion_service().process_conversion_job(
+                job_id=job_id,
                 file_data=file_data,
                 target_format=target_format,
-                options=options,
-                original_filename=original_filename,
+                options=options
             )
-
-            # result always contains success/error
-            if result["success"]:
-                JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
-            else:
-                JobOperationsWrapper.update_job_status_safely(job_id=job_id, status=JobStatus.FAILED, error_message=result["error"])
 
             current_task.update_state(
                 state="SUCCESS",

@@ -591,6 +591,69 @@ class ConversionService:
         return name.strip("-") or "file"
 
     # --------------------------------------------------------------------------
+    # JOB PROCESSING METHODS
+    # --------------------------------------------------------------------------
+    def process_conversion_job(self, job_id: str, file_data: bytes, target_format: str, options: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        Process a conversion job with provided file data and job status management
+        """
+        from src.jobs import JobOperationsWrapper, JobOperations
+        from src.models import JobStatus
+        
+        try:
+            # Get job information
+            job_info = JobOperationsWrapper.get_job_with_progress(job_id)
+            if not job_info:
+                raise ValueError(f"Job {job_id} not found")
+
+            # Update job status to processing
+            JobOperationsWrapper.update_job_status_safely(
+                job_id=job_id,
+                status=JobStatus.PROCESSING
+            )
+
+            # Get full job details for input data
+            job = JobOperations.get_job(job_id=job_id)
+            if not job:
+                raise ValueError(f"Job {job_id} not found")
+
+            input_data = job.input_data or {}
+            original_filename = input_data.get('original_filename')
+            
+            # Process the file data using existing convert_pdf_data method
+            result = self.convert_pdf_data(
+                file_data=file_data,
+                target_format=target_format,
+                options=options or {},
+                original_filename=original_filename
+            )
+
+            # Update job status based on result
+            if result.get('success', False):
+                JobOperationsWrapper.update_job_status_safely(
+                    job_id=job_id,
+                    status=JobStatus.COMPLETED,
+                    result=result
+                )
+            else:
+                JobOperationsWrapper.update_job_status_safely(
+                    job_id=job_id,
+                    status=JobStatus.FAILED,
+                    error_message=result.get('error', 'Conversion failed')
+                )
+
+            return result
+
+        except Exception as e:
+            JobOperationsWrapper.update_job_status_safely(
+                job_id=job_id,
+                status=JobStatus.FAILED,
+                error_message=str(e)
+            )
+            logger.error(f"Error processing conversion job {job_id}: {str(e)}")
+            raise
+
+    # --------------------------------------------------------------------------
     # DEPRECATED: Use JobOperationsWrapper.create_job_safely instead
     # --------------------------------------------------------------------------
     # Note: The create_conversion_job method has been removed in favor of JobOperationsWrapper
