@@ -6,7 +6,7 @@ from pathlib import Path
 jobs_bp = Blueprint('jobs', __name__)
 
 # ----------------------------  status  ----------------------------
-@jobs_bp.route('/jobs/<job_id>/status', methods=['GET'])
+@jobs_bp.route('/jobs/<job_id>', methods=['GET'])
 def get_job_status(job_id):
     """Get job status by ID"""
     try:
