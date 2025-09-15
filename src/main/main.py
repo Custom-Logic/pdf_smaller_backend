@@ -109,39 +109,7 @@ def create_app(config_name=None, config_override=None):
         # Register configuration endpoint (development only)
         
         register_debug_endpoints(app)
-        
-        # Add global monitoring endpoint
-        @app.route('/api/health')
-        def global_health_check():
-            """Global health check endpoint for monitoring"""
-            try:
-                # Check database
-                from src.models.job import Job
-                db.session.execute(text('SELECT 1'))
-                
-                # Check file system
-                upload_dir = app.config.get('UPLOAD_FOLDER', '/tmp')
-                os.makedirs(upload_dir, exist_ok=True)
-                
-                # Basic health status
-                health_data = {
-                    'status': 'healthy',
-                    'timestamp': datetime.utcnow().isoformat(),
-                    'version': '1.0.0',
-                    'environment': config_name or 'production',
-                    'uptime_seconds': (datetime.utcnow() - datetime.fromtimestamp(os.path.getmtime(__file__))).total_seconds()
-                }
-                
-                return jsonify(health_data), 200
-                
-            except Exception as e:
-                logging.error(f"Global health check failed: {str(e)}")
-                return jsonify({
-                    'status': 'unhealthy',
-                    'error': str(e),
-                    'timestamp': datetime.utcnow().isoformat()
-                }), 503
-        # Creates background scheduler tasks and attach them to app
+                # Creates background scheduler tasks and attach them to app
         scheduler.init_app(app=app)
         app.logger.info("Application factory completed successfully")
         initialize_extensions(app)
