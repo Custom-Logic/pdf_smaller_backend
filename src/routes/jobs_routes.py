@@ -6,29 +6,37 @@ from pathlib import Path
 jobs_bp = Blueprint('jobs', __name__)
 
 # ----------------------------  status  ----------------------------
-@jobs_bp.route('/jobs/<job_id>', methods=['GET'])
+@jobs_bp.route('/jobs/<job_id>/status', methods=['GET'])
 def get_job_status(job_id):
-    job = Job.query.filter_by(job_id=job_id).first()
-    if not job:
-        return error_response(message="Job not found", status_code=404)
-
-    data = {
-        "job_id":   job.job_id,
-        "status":   job.status,
-        "task_type": job.task_type,
-        "created_at": job.created_at.isoformat(),
-        "updated_at": job.updated_at.isoformat(),
-    }
-    if job.status == JobStatus.COMPLETED and job.result:
-        data["result"] = job.result
-        if job.result.get("output_path") and os.path.exists(job.result["output_path"]):
-            data["download_url"] = f"/api/jobs/{job_id}/download"
-            data["download_available"] = True
-        else:
-            data["download_available"] = False
-    elif job.status == JobStatus.FAILED and job.error:
-        data["error"] = job.error
-    return success_response(message="Job status retrieved", data=data, status_code=200)
+    """Get job status by ID"""
+    try:
+        job = Job.query.filter_by(job_id=job_id).first()
+        if not job:
+            return error_response(
+                message='Job not found',
+                error_code='JOB_NOT_FOUND',
+                status_code=404
+            )
+        
+        # Add monitoring metrics
+        job_data = job.to_dict()
+        job_data['monitoring'] = {
+            'created_at_iso': job.created_at.isoformat() if job.created_at else None,
+            'updated_at_iso': job.updated_at.isoformat() if job.updated_at else None,
+            'processing_duration_seconds': (job.updated_at - job.created_at).total_seconds() if job.updated_at and job.created_at else None
+        }
+        
+        return success_response(
+            message='Job status retrieved successfully',
+            data=job_data
+        )
+    except Exception as e:
+        logger.error(f"Error retrieving job status: {str(e)}", extra={'job_id': job_id})
+        return error_response(
+            message='Failed to retrieve job status',
+            error_code='JOB_STATUS_ERROR',
+            status_code=500
+        )
 
 
 

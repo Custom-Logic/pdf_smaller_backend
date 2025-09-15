@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import datetime
 
 from flask import Flask, jsonify, request
 from sqlalchemy import text
@@ -33,11 +34,28 @@ def create_app(config_name=None, config_override=None):
     if config_name not in ['development', 'testing'] and not (config_override and getattr(config_override, 'TESTING', False)):
         try:
             import sentry_sdk
+            from sentry_sdk.integrations.flask import FlaskIntegration
+            from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+            from sentry_sdk.integrations.logging import LoggingIntegration
+            
+            sentry_logging = LoggingIntegration(
+                level=logging.INFO,
+                event_level=logging.ERROR
+            )
+            
             sentry_sdk.init(
                 dsn="https://ad33a061c36eab16eaba8e51bb76e4f9@o544206.ingest.us.sentry.io/4509991179124736",
+                integrations=[
+                    FlaskIntegration(),
+                    SqlalchemyIntegration(),
+                    sentry_logging
+                ],
                 # Add data like request headers and IP for users,
                 # see https://docs.sentry.io/platforms/python/data-management/data-collected/ for more info
                 send_default_pii=True,
+                traces_sample_rate=0.1,  # Sample 10% of requests for performance monitoring
+                profiles_sample_rate=0.1,  # Sample 10% for profiling
+                environment=config_name or 'production'
             )
             logging.info("Sentry SDK initialized for production environment")
         except ImportError:
@@ -91,6 +109,38 @@ def create_app(config_name=None, config_override=None):
         # Register configuration endpoint (development only)
         
         register_debug_endpoints(app)
+        
+        # Add global monitoring endpoint
+        @app.route('/api/health')
+        def global_health_check():
+            """Global health check endpoint for monitoring"""
+            try:
+                # Check database
+                from src.models.job import Job
+                db.session.execute(text('SELECT 1'))
+                
+                # Check file system
+                upload_dir = app.config.get('UPLOAD_FOLDER', '/tmp')
+                os.makedirs(upload_dir, exist_ok=True)
+                
+                # Basic health status
+                health_data = {
+                    'status': 'healthy',
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'version': '1.0.0',
+                    'environment': config_name or 'production',
+                    'uptime_seconds': (datetime.utcnow() - datetime.fromtimestamp(os.path.getmtime(__file__))).total_seconds()
+                }
+                
+                return jsonify(health_data), 200
+                
+            except Exception as e:
+                logging.error(f"Global health check failed: {str(e)}")
+                return jsonify({
+                    'status': 'unhealthy',
+                    'error': str(e),
+                    'timestamp': datetime.utcnow().isoformat()
+                }), 503
         # Creates background scheduler tasks and attach them to app
         scheduler.init_app(app=app)
         app.logger.info("Application factory completed successfully")

@@ -7,10 +7,12 @@ import os
 import logging
 import json
 import requests
-import uuid
 from typing import Dict, Any, Optional, List, Literal
 from datetime import datetime, timezone
 from enum import Enum
+from PIL import Image
+import numpy as np
+from pdf2image import convert_from_path
 from src.services.agent_prompt_framework import AgentPromptFramework, AgentRole
 
 logger = logging.getLogger(__name__)
@@ -909,8 +911,69 @@ class AIService:
             logger.warning(f"Error getting cost-efficient models: {str(e)}")
             return [self.config['openrouter']['default_model']]
     
-    def extract_text_from_pdf_data(self, pdf_data: Any):
-        """
-            Use AI to Extract Text from PDF Documents
-        """
-        pass
+    def extract_text_from_pdf(self, file_path, task_type, **kwargs):
+        """Extract text from PDF using AI/ML models with comprehensive monitoring"""
+        import time
+        start_time = time.time()
+        try:
+            logger.info(
+                f"Starting AI text extraction for {task_type}: {file_path}",
+                extra={
+                    'task_type': task_type,
+                    'file_path': file_path,
+                    'operation': 'ai_extraction_start'
+                }
+            )
+            
+            # Validate file exists
+            if not os.path.exists(file_path):
+                raise FileNotFoundError(f"PDF file not found: {file_path}")
+            
+            # Get file size and metadata for monitoring
+            file_size = os.path.getsize(file_path)
+            file_stats = os.stat(file_path)
+            
+            logger.info(
+                f"Processing PDF file: {file_path} ({file_size} bytes)",
+                extra={
+                    'file_size_bytes': file_size,
+                    'file_modified': datetime.fromtimestamp(file_stats.st_mtime).isoformat(),
+                    'operation': 'ai_extraction_metadata'
+                }
+            )
+            
+            # Extract text based on task type
+            if task_type == 'bank_statement':
+                result = self._extract_bank_statement_data(file_path, **kwargs)
+            elif task_type == 'invoice':
+                result = self._extract_invoice_data(file_path, **kwargs)
+            else:
+                result = self._extract_general_text(file_path, **kwargs)
+            
+            # Log completion metrics
+            processing_time = time.time() - start_time
+            logger.info(
+                f"AI text extraction completed for {task_type}",
+                extra={
+                    'task_type': task_type,
+                    'processing_time_seconds': processing_time,
+                    'result_size': len(str(result)) if result else 0,
+                    'operation': 'ai_extraction_complete'
+                }
+            )
+            
+            return result
+                
+        except Exception as e:
+            processing_time = time.time() - start_time
+            logger.error(
+                f"AI text extraction failed for {task_type}: {str(e)}",
+                extra={
+                    'task_type': task_type,
+                    'file_path': file_path,
+                    'processing_time_seconds': processing_time,
+                    'error_type': type(e).__name__,
+                    'operation': 'ai_extraction_error'
+                }
+            )
+            raise AIProcessingError(f"Failed to extract text from PDF: {str(e)}")

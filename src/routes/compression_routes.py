@@ -1,7 +1,7 @@
 import logging
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 from flask import Blueprint, request, jsonify
@@ -16,7 +16,6 @@ logger = logging.getLogger(__name__)
 
 compression_bp = Blueprint('compression', __name__)
 # CORS(compression_bp, resources={r"/api": {"origins": ["https://www.pdfsmaller.site"]}})
-
 
 # Updated tasks.py - Ensure proper error handling
 
@@ -142,65 +141,87 @@ def bulk_compress():
         
     except Exception as e:
         logger.error(f"Error creating bulk compression job: {str(e)}")
-        return jsonify({
-            'error': 'Failed to create bulk compression job',
-            'error_code': 'SYSTEM_ERROR'
-        }), 500
+        return error_response(message='Failed to create bulk compression job', error_code='SYSTEM_ERROR', status_code=500)
 
 @compression_bp.route('/health', methods=['GET'])
 def compression_health_check():
-    """Health check for compression service"""
+    """Comprehensive health check endpoint with monitoring data"""
     try:
+        import os
+        from flask import current_app
+        
+        # Check database connectivity
+        db.session.execute('SELECT 1')
+        
+        # Check file system access
+        upload_dir = os.path.join(current_app.config.get('UPLOAD_FOLDER', '/tmp'), 'health_check')
+        os.makedirs(upload_dir, exist_ok=True)
+        test_file = os.path.join(upload_dir, 'health_test.txt')
+        with open(test_file, 'w') as f:
+            f.write('health check')
+        os.remove(test_file)
+        
         # Check if required tools are available
         import subprocess
+        pdfinfo_available = False
+        ghostscript_available = False
         
-        # Check pdfinfo
         try:
             subprocess.run(['pdfinfo', '--version'], capture_output=True, timeout=5)
             pdfinfo_available = True
         except:
-            pdfinfo_available = False
+            pass
         
-        # Check Ghostscript
         try:
             subprocess.run(['gs', '--version'], capture_output=True, timeout=5)
             ghostscript_available = True
         except:
-            ghostscript_available = False
+            pass
         
-        # Check Redis connection (for job queue)
-        redis_available = False
+        # Check Redis connection
+        redis_status = 'connected'
         try:
             from src.celery_app import get_celery_app
             celery_app = get_celery_app()
             redis_available = celery_app.control.ping(timeout=1.0) is not None
+            if not redis_available:
+                redis_status = 'disconnected'
         except:
-            pass
+            redis_status = 'disconnected'
         
-        return jsonify({
-            'success': True,
-            'status': 'healthy',
-            'services': {
-                'pdfinfo': pdfinfo_available,
-                'ghostscript': ghostscript_available,
-                'redis_queue': redis_available,
-                'compression_service': True
-            },
-            'timestamp': datetime.utcnow().isoformat()
-        })
+        # Get system metrics
+        import psutil
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        
+        return success_response(
+            message='Compression service is healthy',
+            data={
+                'service': 'compression',
+                'status': 'healthy',
+                'timestamp': datetime.now(timezone.utc).isoformat(),
+                'system': {
+                    'memory_usage_percent': memory.percent,
+                    'disk_usage_percent': disk.percent,
+                    'cpu_count': psutil.cpu_count(),
+                    'load_average': psutil.getloadavg() if hasattr(psutil, 'getloadavg') else None
+                },
+                'dependencies': {
+                    'database': 'connected',
+                    'filesystem': 'accessible',
+                    'pdfinfo': pdfinfo_available,
+                    'ghostscript': ghostscript_available,
+                    'redis': redis_status
+                },
+                'version': '1.0.0'
+            }
+        )
         
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
-        return jsonify({
-            'success': False,
-            'status': 'unhealthy',
-            'error': str(e),
-            'timestamp': datetime.utcnow().isoformat()
-        }), 500
-
-# Remove user-specific endpoints since backend is now user-agnostic
-# The following endpoints are removed:
-# - /jobs (GET) - user job history
-# - /jobs/<int:job_id> (GET) - specific user job
-# - /bulk/jobs (GET) - user bulk jobs
-# These are now handled by the frontend using the generic job status endpoint
+        return error_response(
+            message='Health check failed',
+            error_code='HEALTH_CHECK_FAILED',
+            details={'error': str(e)},
+            status_code=503
+        )
