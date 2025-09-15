@@ -1,9 +1,7 @@
 from datetime import datetime, timezone
-from bz2 import compress
 from enum import Enum
 from sqlalchemy import Index, CheckConstraint
 from src.models.base import db, BaseModel
-from src.tasks.tasks import ai_translate_task
 
 class JobStatus(Enum):
     """Job status enum"""
