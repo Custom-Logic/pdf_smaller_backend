@@ -87,7 +87,7 @@ class JobOperationsWrapper:
         Returns:
             Dictionary with job information including progress, or None if not found
         """
-        job: Job = JobOperations.get_job(job_id=job_id,lock=True)
+        job: Job = JobOperations.get_job(job_id=job_id)
         if not job:
             return None
 

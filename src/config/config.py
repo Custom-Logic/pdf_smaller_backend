@@ -17,7 +17,7 @@ class BaseConfig:
     MAX_CONTENT_LENGTH = int(os.environ.get('MAX_CONTENT_LENGTH', 100 * 1024 * 1024))  # 100MB default
     
     # Database settings
-    SQLALCHEMY_DATABASE_URI = "sqlite:////root/app/pdf_smaller_backend/pdf_smaller_dev.db"
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', "sqlite:////root/app/pdf_smaller_backend/pdf_smaller_dev.db")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,
@@ -162,7 +162,7 @@ class DevelopmentConfig(BaseConfig):
     SECURITY_HEADERS = {}
     
     # Development database (SQLite by default)
-    SQLALCHEMY_DATABASE_URI = "sqlite:////root/app/pdf_smaller_backend/pdf_smaller_dev.db"
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', "sqlite:////root/app/pdf_smaller_backend/pdf_smaller_dev.db")
     
     # Development origins
     ALLOWED_ORIGINS = ['https://pdfsmaller.site,https://www.pdfsmaller.site']
@@ -178,7 +178,7 @@ class TestingConfig(BaseConfig):
     TESTING = True
     
     # In-memory database for testing
-    SQLALCHEMY_DATABASE_URI = "sqlite:////root/app/pdf_smaller_backend/pdf_smaller_dev.db"
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', "sqlite:////root/app/pdf_smaller_backend/pdf_smaller_dev.db")
     
     # Disable CSRF for testing
     WTF_CSRF_ENABLED = False
@@ -213,8 +213,9 @@ class ProductionConfig(BaseConfig):
     }
     
     # Production database (SQLite)
-    SQLALCHEMY_DATABASE_URI = "sqlite:////root/app/pdf_smaller_backend/pdf_smaller_prod.db"
-    
+    -   SQLALCHEMY_DATABASE_URI = "sqlite:////root/app/pdf_smaller_backend/pdf_smaller_prod.db"
+    +   SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL', "sqlite:////root/app/pdf_smaller_backend/pdf_smaller_prod.db")
+        
     # Production file settings
     UPLOAD_FOLDER = "./uploads/dev"
     
@@ -225,7 +226,7 @@ class ProductionConfig(BaseConfig):
     def validate_config(cls) -> List[str]:
         """Additional production-specific validation"""
         errors = super().validate_config()
-
+    
         return errors
 
 

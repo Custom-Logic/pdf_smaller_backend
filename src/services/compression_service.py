@@ -172,7 +172,7 @@ class CompressionService:
             # Get full job details through JobOperationsWrapper
             # Since we need input_data, we'll use a direct approach for now
             # In production, you'd extend JobOperationsWrapper to include input_data
-            job = JobOperations.get_job(job_id=job_id, lock=True)
+            job = JobOperations.get_job(job_id=job_id)
             if not isinstance(job, Job):
                 raise ValueError(f"Job {job_id} not found")
 
