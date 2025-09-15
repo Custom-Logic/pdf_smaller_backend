@@ -102,9 +102,6 @@ class ConversionService:
                 "original_size": len(file_data),
             }
 
-        finally:
-            pass
-
 
     def get_conversion_preview(self, file_data: bytes, target_format: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Light-weight preview; never crashes."""
@@ -602,25 +599,25 @@ class ConversionService:
         
         try:
             # Get job information
-            job_info = JobOperationsWrapper.get_job_with_progress(job_id)
-            if not job_info:
+            job = JobOperations.get_job(job_id=job_id)
+            if not job:
                 raise ValueError(f"Job {job_id} not found")
 
             # Update job status to processing
             JobOperationsWrapper.update_job_status_safely(
-                job_id=job_id,
+                job_id=job.job_id,
                 status=JobStatus.PROCESSING
             )
 
             # Get full job details for input data
-            job = JobOperations.get_job(job_id=job_id)
-            if not job:
-                raise ValueError(f"Job {job_id} not found")
 
             input_data = job.input_data or {}
             original_filename = input_data.get('original_filename')
             
             # Process the file data using existing convert_pdf_data method
+            if not input_data:
+                raise ValueError(f"Job {job_id} malformed data")
+
             result = self.convert_pdf_data(
                 file_data=file_data,
                 target_format=target_format,
