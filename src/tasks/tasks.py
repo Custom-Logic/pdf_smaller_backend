@@ -20,7 +20,7 @@ from src.models.base import db
 from src.services.service_registry import ServiceRegistry
 from src.exceptions.extraction_exceptions import ExtractionError, ExtractionValidationError
 from src.utils.db_transaction import transactional
-from src.jobs import JobOperationsWrapper
+from src.jobs import JobOperationsWrapper, JobOperations
 
 # Exception imports for specific error handling
 from sqlalchemy.exc import DBAPIError, OperationalError, IntegrityError

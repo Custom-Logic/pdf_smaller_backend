@@ -9,7 +9,7 @@ from flask import Blueprint, request, jsonify
 from src.models import db, Job, JobStatus
 from src.utils.security_utils import validate_file
 from src.utils.response_helpers import success_response, error_response
-from src.jobs.job_manager import JobStatusManager
+from src.jobs import JobStatusManager
 from src.tasks.tasks import compress_task, bulk_compress_task
 
 logger = logging.getLogger(__name__)
