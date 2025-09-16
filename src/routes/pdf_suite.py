@@ -95,9 +95,12 @@ def _enqueue_job(
     
     try:
         # Create job record first
-        job = JobOperations.get_job(job_id=job_id)
+        job_operations = JobOperations()
+        job_operations_wrapper = JobOperationsWrapper()
+
+        job = job_operations.get_job(job_id=job_id)
         if not isinstance(job, Job):
-            job = JobOperationsWrapper.create_job_safely(job_id=job_id, task_type=task_type.value, input_data=input_data)
+            job = job_operations_wrapper.create_job_safely(job_id=job_id, task_type=task_type.value, input_data=input_data)
         if not isinstance(job, Job):
             logger.error(f"Failed to create job record for {job_id}")
             return {}, "Failed to create job record"
@@ -111,7 +114,7 @@ def _enqueue_job(
         # CRITICAL FIX: Store task_id in job record
         if task and hasattr(task, 'id'):
             logger.info(f"Task enqueued with task_id: {task.id} for job {job_id}")
-            JobOperations.update_job(job_id, {
+            job_operations.update_job(job_id, {
                 'task_id': task.id,
                 'updated_at': datetime.utcnow()
             })
@@ -129,7 +132,7 @@ def _enqueue_job(
         
         # Try to mark job as failed
         try:
-            JobOperationsWrapper.update_job_status_safely(
+            job_operations_wrapper.update_job_status_safely(
                 job_id=job_id,
                 status=JobStatus.FAILED,
                 error_message=f"Enqueue failed: {exc}",
