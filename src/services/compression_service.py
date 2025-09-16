@@ -5,7 +5,7 @@ import tempfile
 from typing import Dict, Any, Optional
 
 from src.models import TaskType, JobStatus, Job
-from src.jobs import JobOperationsWrapper, JobOperations
+from src.jobs import job_operations_wrapper, job_operations
 from src.services.file_management_service import FileManagementService
 
 logger = logging.getLogger(__name__)
@@ -155,20 +155,20 @@ class CompressionService:
         """
         try:
             # Get job information
-            job_info = JobOperationsWrapper.get_job_with_progress(job_id)
+            job_info = job_operations_wrapper.get_job_with_progress(job_id)
             if not job_info:
                 raise ValueError(f"Job {job_id} not found")
 
             # Update job status to processing
-            JobOperationsWrapper.update_job_status_safely(
+            job_operations_wrapper.update_job_status_safely(
                 job_id=job_id,
                 status=JobStatus.PROCESSING
             )
 
-            # Get full job details through JobOperationsWrapper
+            # Get full job details through job_operations_wrapper
             # Since we need input_data, we'll use a direct approach for now
-            # In production, you'd extend JobOperationsWrapper to include input_data
-            job = JobOperations.get_job(job_id=job_id)
+            # In production, you'd extend job_operations_wrapper to include input_data
+            job = job_operations.get_job(job_id=job_id)
             if not isinstance(job, Job):
                 raise ValueError(f"Job {job_id} not found")
 
@@ -187,7 +187,7 @@ class CompressionService:
             return result
 
         except Exception as e:
-            JobOperationsWrapper.update_job_status_safely(
+            job_operations_wrapper.update_job_status_safely(
                 job_id=job_id,
                 status=JobStatus.FAILED,
                 error_message=str(e)
@@ -201,7 +201,7 @@ class CompressionService:
         Create a compression job and return job ID
         """
         try:
-            job = JobOperationsWrapper.create_job_safely(
+            job = job_operations_wrapper.create_job_safely(
                 job_id=job_id,
                 task_type=TaskType.COMPRESS.value,
                 input_data={
@@ -415,7 +415,7 @@ class CompressionService:
         """
         try:
             # Get job information
-            job_info = JobOperationsWrapper.get_job_with_progress(job_id)
+            job_info = job_operations_wrapper.get_job_with_progress(job_id)
             if not job_info:
                 logger.warning(f"Job {job_id} not found for cleanup")
                 return False

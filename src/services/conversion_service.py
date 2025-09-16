@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, BinaryIO
 
 from src.services import FileManagementService
-from src.jobs import JobOperationsWrapper, JobOperations
+from src.jobs import job_operations, job_operations_wrapper
 from src.models import JobStatus
 
 logger = logging.getLogger(__name__)
@@ -67,13 +67,13 @@ class ConversionService:
             logger.debug(f"Starting conversion job {job_id} to {target_format}")
             
             # Verify job exists (it should have been created in the route/task)
-            job = JobOperations.get_job(job_id=job_id)
+            job = job_operations.get_job(job_id=job_id)
             if not job:
                 logger.error(f"Job {job_id} not found")
                 raise ValueError(f"Job {job_id} not found")
 
             # Update status to processing
-            JobOperationsWrapper.update_job_status_safely(
+            job_operations_wrapper.update_job_status_safely(
                 job_id=job_id,
                 status=JobStatus.PROCESSING,
                 progress=10.0
@@ -102,7 +102,7 @@ class ConversionService:
 
             # Update job status based on result
             if result.get('success', False):
-                JobOperationsWrapper.update_job_status_safely(
+                job_operations_wrapper.update_job_status_safely(
                     job_id=job_id,
                     status=JobStatus.COMPLETED,
                     result=result,
@@ -111,7 +111,7 @@ class ConversionService:
                 logger.info(f"Conversion job {job_id} completed successfully")
             else:
                 error_msg = result.get('error', 'Unknown conversion error')
-                JobOperationsWrapper.update_job_status_safely(
+                job_operations_wrapper.update_job_status_safely(
                     job_id=job_id,
                     status=JobStatus.FAILED,
                     error_message=error_msg
@@ -122,7 +122,7 @@ class ConversionService:
 
         except Exception as e:
             logger.exception(f"Error processing conversion job {job_id}")
-            JobOperationsWrapper.update_job_status_safely(
+            job_operations_wrapper.update_job_status_safely(
                 job_id=job_id,
                 status=JobStatus.FAILED,
                 error_message=str(e)

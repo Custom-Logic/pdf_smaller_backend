@@ -29,7 +29,7 @@ from src.tasks.tasks import (
     extract_invoice_task,
     extract_bank_statement_task,
 )
-from src.jobs import JobStatusManager, JobOperationsWrapper, JobOperations
+from src.jobs import JobStatusManager, JobOperationsWrapper, JobOperations, job_operations, job_operations_wrapper
 
 pdf_suite_bp = Blueprint("pdf_suite", __name__)
 logger = logging.getLogger(__name__)
@@ -95,8 +95,6 @@ def _enqueue_job(
     
     try:
         # Create job record first
-        job_operations = JobOperations()
-        job_operations_wrapper = JobOperationsWrapper()
 
         job = job_operations.get_job(job_id=job_id)
         if not isinstance(job, Job):

@@ -6,7 +6,7 @@ import logging
 from typing import Dict, Any, Optional, List
 
 from src.models import TaskType
-from src.jobs.job_operations import JobOperations
+from src.jobs.job_operations import JobOperations, job_operations
 from src.jobs.job_manager import JobStatusManager
 from src.models.job import Job, JobStatus
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ class JobOperationsWrapper:
             # Use JobOperations for session-managed job creation
             # Guard Statement incase of the tasktype error
             task_type = task_type.value if isinstance(task_type, TaskType) else task_type
-            job = JobOperations.create_job(job_id=job_id, task_type=task_type, input_data=input_data)
+            job = job_operations.create_job(job_id=job_id, task_type=task_type, input_data=input_data)
 
             if isinstance(job, Job):
                 logger.info(f"Successfully created job {job_id} with type {task_type}")
@@ -80,7 +80,7 @@ class JobOperationsWrapper:
 
         # Update progress if needed (separate operation since it's not part of core status logic)
         if success and progress is not None:
-            JobOperations.update_job(job_id, {'progress': progress})
+            job_operations.update_job(job_id, {'progress': progress})
 
         return success
 
@@ -94,7 +94,7 @@ class JobOperationsWrapper:
         Returns:
             Dictionary with job information including progress, or None if not found
         """
-        job: Job = JobOperations.get_job(job_id=job_id)
+        job: Job = job_operations.get_job(job_id=job_id)
         if not job:
             return None
 
@@ -165,7 +165,7 @@ class JobOperationsWrapper:
             Existing or newly created Job instance, or None if failed
         """
         # Try to get existing job first
-        job = JobOperations.get_job(job_id)
+        job = job_operations.get_job(job_id)
 
         if job:
             return job
@@ -187,5 +187,5 @@ def update_job_status_safely(job_id: str, status: JobStatus,
     return JobOperationsWrapper.update_job_status_safely(
         job_id, status, result, error_message, progress
     )
-
-__all__ = ['JobOperations', 'JobStatusManager', 'JobOperationsWrapper', 'create_job_safely', 'update_job_status_safely']
+job_operations_wrapper = JobOperationsWrapper()
+__all__ = ['JobOperations', 'JobStatusManager', 'JobOperationsWrapper', 'create_job_safely', 'update_job_status_safely', 'job_operations_wrapper', 'job_operations']

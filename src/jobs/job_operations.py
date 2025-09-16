@@ -201,3 +201,7 @@ class JobOperations:
             max_retries=1,
             default_return=[]
         )
+
+
+job_operations = JobOperations()
+

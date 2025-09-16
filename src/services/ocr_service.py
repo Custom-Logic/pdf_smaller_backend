@@ -395,11 +395,11 @@ class OCRService:
         return rec
 
     # --------------------------------------------------------------------------
-    # DEPRECATED: Use JobOperations.create_job_safely instead
+    # DEPRECATED: Use job_operations.create_job_safely instead
     # --------------------------------------------------------------------------
-    # Note: The create_ocr_job method has been removed in favor of JobOperations
+    # Note: The create_ocr_job method has been removed in favor of job_operations
     # for standardized job creation across all services.
-    # Use JobOperations.create_job_safely(job_type='ocr', ...) instead.
+    # Use job_operations.create_job_safely(job_type='ocr', ...) instead.
 
     def cleanup_temp_files(self) -> None:
         """Cleanup temporary files using file management service."""
