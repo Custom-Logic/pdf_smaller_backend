@@ -97,7 +97,7 @@ def _enqueue_job(
         # Create job record first
         job = JobOperations.get_job(job_id=job_id)
         if not isinstance(job, Job):
-            job = JobOperationsWrapper.create_job_safely(job_id=job_id, task_type=task_type, input_data=input_data)
+            job = JobOperationsWrapper.create_job_safely(job_id=job_id, task_type=task_type.value, input_data=input_data)
         if not isinstance(job, Job):
             logger.error(f"Failed to create job record for {job_id}")
             return {}, "Failed to create job record"

@@ -4,6 +4,8 @@ This now becomes a thin wrapper around JobOperations and JobStatusManager.
 """
 import logging
 from typing import Dict, Any, Optional, List
+
+from src.models import TaskType
 from src.jobs.job_operations import JobOperations
 from src.jobs.job_manager import JobStatusManager
 from src.models.job import Job, JobStatus
@@ -37,6 +39,8 @@ class JobOperationsWrapper:
         """
         try:
             # Use JobOperations for session-managed job creation
+            # Guard Statement incase of the tasktype error
+            task_type = task_type.value if isinstance(task_type, TaskType) else task_type
             job = JobOperations.create_job(job_id=job_id, task_type=task_type, input_data=input_data)
 
             if job:
