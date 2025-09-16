@@ -89,7 +89,13 @@ def create_job_safely(job_data: dict) -> Optional[Job]:
         Created job instance if successful, None if failed
     """
     def create_operation():
-        job = Job(**job_data)
+        job = Job(
+            job_id=job_data.get('job_id'), 
+            task_id=job_data.get('task_id'), 
+            task_type= job_data.get('task_type'), 
+            status=job_data.get('status'), 
+            input_data=job_data.get('input_data'), 
+            result=input_data.get('result'), error=input_data.get('error'))
         db.session.add(job)
         return job
     
