@@ -90,28 +90,54 @@ def _enqueue_job(
     task_args: Tuple[Any, ...],
     task_kwargs: Dict[str, Any],
 ) -> Tuple[Dict[str, Any], Optional[str]]:
-    """Create job record and enqueue Celery task with unified error handling."""
+    """Create job record and enqueue Celery task with enhanced debugging."""
+    logger.info(f"Starting enqueue for job {job_id}, task_type: {task_type.name}")
+    
     try:
+        # Create job record first
         job = JobStatusManager.get_or_create_job(
             job_id=job_id,
             task_type=task_type.value,
             input_data=input_data,
         )
         if not job:
+            logger.error(f"Failed to create job record for {job_id}")
             return {}, "Failed to create job record"
 
+        logger.info(f"Job record created for {job_id}, status: {job.status}")
+        
+        # Try to enqueue task
+        logger.info(f"Enqueueing Celery task for job {job_id}")
         task = task_func.delay(*task_args, **task_kwargs)
-        logger.info("%s job %s enqueued (task_id: %s)", task_type.name, job_id, task.id)
-        return {"job_id": job_id, "task_id": task.id, "status": JobStatus.PENDING.value}, None
+        
+        # CRITICAL FIX: Store task_id in job record
+        JobOperations.update_job(job_id, {
+            'task_id': task.id,
+            'updated_at': datetime.utcnow()
+        })
+        
+        logger.info(f"Task enqueued successfully: job_id={job_id}, task_id={task.id}")
+        
+        return {
+            "job_id": job_id, 
+            "task_id": task.id, 
+            "status": JobStatus.PENDING.value
+        }, None
 
     except Exception as exc:
-        logger.error("Enqueue %s job %s failed: %s", task_type.name, job_id, exc)
-        JobStatusManager.update_job_status(
-            job_id=job_id,
-            status=JobStatus.FAILED,
-            error_message=f"Enqueue failed: {exc}",
-        )
-        return {}, f"Failed to queue {task_type.name.lower()} job"
+        logger.error(f"Enqueue failed for job {job_id}: {exc}", exc_info=True)
+        
+        # Try to mark job as failed
+        try:
+            JobStatusManager.update_job_status(
+                job_id=job_id,
+                status=JobStatus.FAILED,
+                error_message=f"Enqueue failed: {exc}",
+            )
+        except Exception as update_exc:
+            logger.error(f"Failed to update job status: {update_exc}")
+        
+        return {}, f"Failed to queue {task_type.name.lower()} job: {exc}"
 
 # --------------------------------------------------------------------------- #
 # Generic request guards
