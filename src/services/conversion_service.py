@@ -58,21 +58,12 @@ class ConversionService:
     # --------------------------------------------------------------------------
     # MAIN ENTRY POINT - Matches compression service pattern
     # --------------------------------------------------------------------------
-    def process_conversion_job(self, job_id: str, file_data: bytes, target_format: str, 
-                              options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def process_conversion_job(self, job_id: str, file_data: bytes, target_format: str,
+                                original_filename: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Process conversion job with job status management - main entry point."""
         from src.main import job_operations_controller
         try:
-            job_info = job_operations_controller.get_job_with_progress(job_id)
-            if not job_info:
-                raise ValueError(f"Job {job_id} not found")
-
             # Update status to processing
-            job_operations_controller.update_job_status_safely(
-                job_id=job_id,
-                status=JobStatus.PROCESSING
-            )
-
             job = job_operations_controller.job_operations.get_job(job_id=job_id)
             if not isinstance(job, Job):
                 raise ValueError(f"Job {job_id} not found")
@@ -166,12 +157,8 @@ class ConversionService:
                 "original_size": len(file_data) if file_data else 0,
             }
         finally:
-            # Clean up temporary PDF file
-            if temp_pdf_id and self.file_service:
-                try:
-                    self.file_service.delete_file(self.file_service.get_file_path(temp_pdf_id))
-                except Exception as e:
-                    logger.warning(f"Failed to cleanup temp file: {e}")
+            pass
+
 
     def get_conversion_preview(self, file_data: bytes, target_format: str, 
                               options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:

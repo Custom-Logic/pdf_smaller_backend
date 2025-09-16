@@ -368,7 +368,8 @@ def convert_pdf_task(
             job_id=job_id,
             file_data=file_data,
             target_format=target_format,
-            options=options
+            options=options,
+            original_filename=original_filename
         )
 
         job_operations_controller.update_job_status_safely(

@@ -152,6 +152,7 @@ def _content_length_guard():
 # --------------------------------------------------------------------------- #
 # CONVERSION
 # --------------------------------------------------------------------------- #
+# noinspection DuplicatedCode
 @pdf_suite_bp.route("/convert", methods=["POST", "GET"])
 def convert_pdf():
     """Convert PDF to target format (txt/docx/xlsx/html)."""
@@ -162,16 +163,16 @@ def convert_pdf():
             return error_response(message=f"Unsupported format: {target}", status_code=400)
 
         file, err = get_file_and_validate("conversion")
-        if err:
+        if bool(err):
             return err
 
         options, err = _load_json_options()
-        if err:
+        if bool(err):
             return error_response(message=err, status_code=400)
 
         job_id = _validate_job_id(request.form.get("job_id"))
-        file_bytes = file.read()  # single read
-        if len(file_bytes) > MAX_FILE_SIZE:
+        file_data = file.read()  # single read
+        if len(file_data) > MAX_FILE_SIZE:
             return error_response(message="File too large", status_code=413)
         # noinspection PyTypeChecker
         data, err = _enqueue_job(
@@ -180,14 +181,14 @@ def convert_pdf():
             input_data={
                 "target_format": target,
                 "options": options,
-                "file_size": len(file_bytes),
+                "file_size": len(file_data),
                 "original_filename": file.filename,
             },
             task_func=convert_pdf_task,
-            task_args=(job_id, file_bytes, target, options, file.filename),
+            task_args=(job_id, file_data, target, options, file.filename),
             task_kwargs={},
         )
-        if err:
+        if bool(err):
             return error_response(message=err, status_code=500)
 
         return success_response(message="Conversion job queued", data={**data, "format": target}, status_code=202)
