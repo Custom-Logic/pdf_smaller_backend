@@ -50,8 +50,8 @@ class JobOperations:
     def get_job(self, job_id: str) -> Optional[Job]:
         """Get job by ID (simplified)."""
         with self.session_scope(auto_commit=False) as session:
-            return session.query(Job).filter_by(job_id=job_id).first()
-        return None
+            job = session.query(Job).filter_by(job_id=job_id).first()
+        return job
 
     def create_job(self, job_id: str, task_type: str, input_data: Dict[str, Any]) -> Optional[Job]:
         """Create a new job; prevent duplicates by checking first."""
@@ -66,8 +66,8 @@ class JobOperations:
                 input_data=input_data
             )
             session.add(job)
-            return job
-        return None
+        return job
+
 
     def update_job(self, job_id: str, updates: Dict[str, Any]) -> bool:
         """Update job fields directly (no row-level lock)."""
@@ -82,8 +82,8 @@ class JobOperations:
                     setattr(job, key, value)
 
             job.updated_at = datetime.now(timezone.utc)
-            return job
-        return None
+        return job
+
 
 
     def bulk_update_jobs(self, job_updates: List[Dict[str, Any]]) -> Dict[str, bool]:
@@ -113,8 +113,8 @@ class JobOperations:
                     logger.error(f"Failed to update job {job_id}: {e}")
                     results[job_id] = False
 
-            return results
-        return None
+        return results
+
 
 
     def delete_job(self, job_id: str) -> bool:
@@ -125,8 +125,8 @@ class JobOperations:
                 return False
 
             session.delete(job)
-            return True
-        return None
+        return True
+
 
     def cleanup_old_jobs(self, days_old: int = 30) -> int:
         """Delete jobs older than `days_old` with completed/failed status."""
@@ -141,15 +141,15 @@ class JobOperations:
             )
             deleted_count = result.rowcount or 0
             logger.info(f"Cleaned up {deleted_count} jobs older than {days_old} days")
-            return deleted_count
-        return None
+        return deleted_count
+
 
     def get_jobs_by_status(self, status: JobStatus, limit: int = 100) -> List[Job]:
         """Get jobs by status."""
 
         with self.session_scope(auto_commit=False) as session:
             results = session.query(Job).filter_by(status=status.value).limit(limit).order_by(Job.created_at.desc()).all()
-            return results
-        return []
+        return results
+
 
 
