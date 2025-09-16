@@ -131,7 +131,7 @@ class ConversionService:
         """Convert PDF to target format - internal method."""
         options = options or {}
         
-        if target_format not in self.supported_formats:
+        if target_format.casefold() not in [val.casefold() for val in self.supported_formats]:
             raise ValueError(f"Unsupported format {target_format}")
 
         if not PDF_LIBS_AVAILABLE:
