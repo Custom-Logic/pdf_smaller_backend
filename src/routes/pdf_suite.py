@@ -146,7 +146,7 @@ def convert_pdf():
         job_id = _validate_job_id(request.form.get("job_id"))
         file_bytes = file.read()  # single read
         if len(file_bytes) > MAX_FILE_SIZE:
-            return error_response(message="File too large", status_code413)
+            return error_response(message="File too large", status_code=413)
 
         data, err = _enqueue_job(
             job_id=job_id,
@@ -179,12 +179,12 @@ def get_conversion_preview():
         target = request.form.get("format", "docx")
         options, err = _load_json_options()
         if err:
-            return error_response(err, 400)
+            return error_response(message=err, status_code=400)
 
         job_id = _validate_job_id(request.form.get("job_id"))
         file_bytes = file.read()
         if len(file_bytes) > MAX_FILE_SIZE:
-            return error_response("File too large", 413)
+            return error_response(message="File too large", status_code=413)
 
         data, err = _enqueue_job(
             job_id=job_id,
@@ -200,11 +200,11 @@ def get_conversion_preview():
             task_kwargs={},
         )
         if err:
-            return error_response(err, 500)
+            return error_response(message=err, status_code=500)
         return success_response(message="Preview job queued", data=data, status_code=202)
     except Exception as exc:
         logger.exception("conversion preview failed")
-        return error_response(f"Preview job failed: {exc}", 500)
+        return error_response(message=f"Preview job failed: {exc}", status_code=500)
 
 # --------------------------------------------------------------------------- #
 # OCR
@@ -218,12 +218,12 @@ def process_ocr():
             return err
         options, err = _load_json_options()
         if err:
-            return error_response(err, 400)
+            return error_response(message=err, status_code=400)
 
         job_id = _validate_job_id(request.form.get("job_id"))
         file_bytes = file.read()
         if len(file_bytes) > MAX_FILE_SIZE:
-            return error_response("File too large", 413)
+            return error_response(message="File too large", status_code=413)
 
         data, err = _enqueue_job(
             job_id=job_id,
@@ -238,11 +238,11 @@ def process_ocr():
             task_kwargs={},
         )
         if err:
-            return error_response(err, 500)
+            return error_response(message=err, status_code=500)
         return success_response(message="OCR job queued", data=data, status_code=202)
     except Exception as exc:
         logger.exception("OCR job failed")
-        return error_response(f"OCR job failed: {exc}", 500)
+        return error_response(message=f"OCR job failed: {exc}", status_code=500)
 
 @pdf_suite_bp.route("/ocr/preview", methods=["POST", "GET"])
 def get_ocr_preview():
@@ -253,12 +253,12 @@ def get_ocr_preview():
             return err
         options, err = _load_json_options()
         if err:
-            return error_response(err, 400)
+            return error_response(message=err, status_code=400)
 
         job_id = _validate_job_id(request.form.get("job_id"))
         file_bytes = file.read()
         if len(file_bytes) > MAX_FILE_SIZE:
-            return error_response("File too large", 413)
+            return error_response(message="File too large", status_code=413)
 
         data, err = _enqueue_job(
             job_id=job_id,
@@ -273,11 +273,11 @@ def get_ocr_preview():
             task_kwargs={},
         )
         if err:
-            return error_response(err, 500)
+            return error_response(message=err, status_code=500)
         return success_response(message="OCR preview queued", data=data, status_code=202)
     except Exception as exc:
         logger.exception("OCR preview failed")
-        return error_response(f"OCR preview failed: {exc}", 500)
+        return error_response(message=f"OCR preview failed: {exc}", status_code=500)
 
 # --------------------------------------------------------------------------- #
 # AI – SUMMARIZE / TRANSLATE
