@@ -146,7 +146,7 @@ def convert_pdf():
         job_id = _validate_job_id(request.form.get("job_id"))
         file_bytes = file.read()  # single read
         if len(file_bytes) > MAX_FILE_SIZE:
-            return error_response("File too large", 413)
+            return error_response(message="File too large", status_code413)
 
         data, err = _enqueue_job(
             job_id=job_id,
@@ -164,12 +164,10 @@ def convert_pdf():
         if err:
             return error_response(err, 500)
 
-        return success_response(
-            "Conversion job queued", {**data, "format": target}, 202
-        )
+        return success_response(message="Conversion job queued", data={**data, "format": target}, status_code=202)
     except Exception as exc:
         logger.exception("convert_pdf failed")
-        return error_response(f"Job creation failed: {exc}", 500)
+        return error_response(message=f"Job creation failed: {exc}", status_code=500)
 
 @pdf_suite_bp.route("/convert/preview", methods=["POST", "GET"])
 def get_conversion_preview():
@@ -203,7 +201,7 @@ def get_conversion_preview():
         )
         if err:
             return error_response(err, 500)
-        return success_response("Preview job queued", data, 202)
+        return success_response(message="Preview job queued", data=data, status_code=202)
     except Exception as exc:
         logger.exception("conversion preview failed")
         return error_response(f"Preview job failed: {exc}", 500)
@@ -241,7 +239,7 @@ def process_ocr():
         )
         if err:
             return error_response(err, 500)
-        return success_response("OCR job queued", data, 202)
+        return success_response(message="OCR job queued", data=data, status_code=202)
     except Exception as exc:
         logger.exception("OCR job failed")
         return error_response(f"OCR job failed: {exc}", 500)
@@ -276,7 +274,7 @@ def get_ocr_preview():
         )
         if err:
             return error_response(err, 500)
-        return success_response("OCR preview queued", data, 202)
+        return success_response(message="OCR preview queued", data=data, status_code=202)
     except Exception as exc:
         logger.exception("OCR preview failed")
         return error_response(f"OCR preview failed: {exc}", 500)
@@ -317,7 +315,7 @@ def summarize_pdf():
         )
         if err:
             return error_response(err, 500)
-        return success_response("Summarization queued", payload, 202)
+        return success_response(message="Summarization queued", data=payload, status_code=202)
     except (UnsupportedMediaType, ValueError) as exc:
         return error_response(str(exc), 400)
     except Exception as exc:
@@ -353,7 +351,7 @@ def translate_text():
         )
         if err:
             return error_response(err, 500)
-        return success_response("Translation queued", payload, 202)
+        return success_response(message="Translation queued", data=payload, status_code=202)
     except (UnsupportedMediaType, ValueError) as exc:
         return error_response(str(exc), 400)
     except Exception as exc:
@@ -388,7 +386,7 @@ def extract_text():
         )
         if err:
             return error_response(err, 500)
-        return success_response("Text extraction queued", payload, 202)
+        return success_response(message="Text extraction queued", data=payload, status_code=202)
     except Exception as exc:
         logger.exception("text extraction failed")
         return error_response(f"Text extraction failed: {exc}", 500)
@@ -428,7 +426,7 @@ def extract_invoice():
         )
         if err:
             return error_response(err, 500)
-        return success_response("Invoice extraction queued", payload, 202)
+        return success_response(message="Invoice extraction queued", data=payload, status_code=202)
     except Exception as exc:
         logger.exception("invoice extraction failed")
         return error_response(f"Invoice extraction failed: {exc}", 500)
@@ -439,7 +437,7 @@ def get_invoice_capabilities():
     try:
         svc = _get_safe_service("get_invoice_extraction_service")
         caps = svc.get_extraction_capabilities()
-        return success_response("Capabilities retrieved", caps)
+        return success_response(message="Capabilities retrieved", data=caps)
     except Exception as exc:
         logger.exception("invoice capabilities failed")
         return error_response(f"Capabilities failed: {exc}", 500)
@@ -478,7 +476,7 @@ def extract_bank_statement():
         )
         if err:
             return error_response(err, 500)
-        return success_response("Bank-statement extraction queued", payload, 202)
+        return success_response(message="Bank-statement extraction queued", data=payload, status_code=202)
     except Exception as exc:
         logger.exception("bank-statement extraction failed")
         return error_response(f"Bank-statement extraction failed: {exc}", 500)
@@ -489,7 +487,7 @@ def get_bank_statement_capabilities():
     try:
         svc = _get_safe_service("get_bank_statement_extraction_service")
         caps = svc.get_extraction_capabilities()
-        return success_response("Capabilities retrieved", caps)
+        return success_response(message="Capabilities retrieved", data=caps, status_code=200)
     except Exception as exc:
         logger.exception("bank-statement capabilities failed")
         return error_response(f"Capabilities failed: {exc}", 500)
@@ -541,7 +539,7 @@ def get_extended_features_status():
             "queue": {"redis_available": redis_ok, "job_processing": True},
             "timestamp": datetime.utcnow().isoformat(),
         }
-        return success_response("Status retrieved", status)
+        return success_response(message="Status retrieved", data=status, status_code=200)
     except Exception as exc:
         logger.exception("status endpoint failed")
         return error_response(f"Status failed: {exc}", 500)
@@ -621,7 +619,7 @@ def get_extended_features_capabilities():
                 "processing_mode": "sync",
             },
         }
-        return success_response("Capabilities retrieved", caps)
+        return success_response(message="Capabilities retrieved", data=caps, status_code=200)
     except Exception as exc:
         logger.exception("capabilities endpoint failed")
         return error_response(f"Capabilities failed: {exc}", 500)
