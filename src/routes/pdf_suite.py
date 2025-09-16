@@ -102,10 +102,10 @@ def _enqueue_job(
             logger.error(f"Failed to create job record for {job_id}")
             return {}, "Failed to create job record"
 
-        logger.info(f"Job record created for {job_id}, status: {job.status}")
+        # logger.info(f"Job record created for {job_id}, status: {job.status}")
         
         # Try to enqueue task
-        logger.info(f"Enqueueing Celery task for job {job_id}")
+        # logger.info(f"Enqueueing Celery task for job {job_id}")
         task = task_func.delay(*task_args, **task_kwargs)
         
         # CRITICAL FIX: Store task_id in job record
@@ -116,7 +116,7 @@ def _enqueue_job(
         #         'updated_at': datetime.now(timezone.utc)
         #     })
         
-        logger.info(f"Task enqueued successfully: job_id={job_id}, task_id={task.id}")
+        # logger.info(f"Task enqueued successfully: job_id={job_id}, task_id={task.id}")
         
         return {
             "job_id": job_id, 
