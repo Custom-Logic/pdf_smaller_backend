@@ -1,12 +1,13 @@
 import os
+import logging
 from flask import Blueprint, send_file
 from src.models.job import Job, JobStatus
 from src.utils.response_helpers import error_response, success_response
 from pathlib import Path
 jobs_bp = Blueprint('jobs', __name__)
-
+logger = logging.getLogger(__name__)
 # ----------------------------  status  ----------------------------
-@jobs_bp.route('/jobs/<job_id>', methods=['GET'])
+@jobs_bp.route('/jobs/<job_id>', methods=['GET', 'POST'])
 def get_job_status(job_id):
     """Get job status by ID"""
     try:
@@ -41,7 +42,7 @@ def get_job_status(job_id):
 
 
 # ----------------------------  download  ----------------------------
-@jobs_bp.route('/jobs/<job_id>/download', methods=['GET'])
+@jobs_bp.route('/jobs/<job_id>/download', methods=['GET','POST'])
 def download_job_result(job_id):
     job = Job.query.filter_by(job_id=job_id).first()
     if not job:
