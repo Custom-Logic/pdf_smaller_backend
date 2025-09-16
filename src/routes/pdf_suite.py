@@ -14,7 +14,7 @@ from typing import Any, Dict, Optional, Tuple
 from flask import Blueprint, request, current_app
 from werkzeug.exceptions import UnsupportedMediaType, RequestEntityTooLarge
 
-from src.models import JobStatus, TaskType
+from src.models import JobStatus, TaskType, Job
 from src.services.service_registry import ServiceRegistry
 from src.utils.response_helpers import success_response, error_response
 from src.utils.security_utils import get_file_and_validate
@@ -102,7 +102,8 @@ def _enqueue_job(
                 task_type=task_type.value,
                 input_data=input_data}
             )
-        if not job:
+
+        if not isinstance(job, Job):
             logger.error(f"Failed to create job record for {job_id}")
             return {}, "Failed to create job record"
 
