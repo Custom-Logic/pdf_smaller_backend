@@ -17,10 +17,10 @@ from src.config.config import Config
 from src.models import Job, JobStatus
 from src.models.base import db
 
-from src.services.service_registry import ServiceRegistry
+
 from src.exceptions.extraction_exceptions import ExtractionError, ExtractionValidationError
 from src.utils.db_transaction import transactional
-from src.main import job_operations_controller
+from src.main import job_operations_controller, service_registry
 
 # Exception imports for specific error handling
 from sqlalchemy.exc import DBAPIError, OperationalError, IntegrityError
@@ -40,7 +40,7 @@ from src.utils.exceptions import ValidationError, ConfigurationError
 logger = logging.getLogger(__name__)
 config = Config()
 
-# Services are now managed through ServiceRegistry
+# Services are now managed through service_registry
 # No need for global service instances
 
 # Three-tier error handling configuration
@@ -206,7 +206,7 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
         logger.debug(f"Job {job_id} marked as processing")
 
         # Process the file - pass job_id to service
-        result = ServiceRegistry.get_compression_service().process_file_data(
+        result = service_registry.get_compression_service().process_file_data(
             file_data=file_data,
             settings=compression_settings,
             original_filename=original_filename,
@@ -263,7 +263,7 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
                         'status': f'Processing file {i+1} of {total_files}: {filename}'
                     }
                 )
-                result = ServiceRegistry.get_compression_service().process_file_data(file_data=file_data,
+                result = service_registry.get_compression_service().process_file_data(file_data=file_data,
                                                                                      settings=settings,
                                                                                      original_filename=filename)
                 processed_files.append(result)
@@ -278,7 +278,7 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
         if processed_files:
             try:
                 # Create archive of processed files and store on disk
-                output_path = ServiceRegistry.get_compression_service().file_service.create_result_archive(
+                output_path = service_registry.get_compression_service().file_service.create_result_archive(
                     processed_files=processed_files, job_id=job_id)
 
                 result_data = {
@@ -335,50 +335,48 @@ def convert_pdf_task(
     original_filename: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Convert PDF → target format with centralized error handling."""
-    from flask import current_app
+
     job = None
 
     # noinspection PyBroadException
     try:
-        with current_app.app_context():  # push context
-            # Get existing job (should already exist from route handler)
-            job = job_operations_controller.job_operations.get_job(job_id)
-            if not job:
-                # Fallback: create job if it doesn't exist
-                job = job_operations_controller.create_job_safely(
-                    job_id=job_id,
-                    task_type="convert",
-                    input_data={
-                        "target_format": target_format,
-                        "options": options,
-                        "file_size": len(file_data),
-                        "original_filename": original_filename,
-                    }
-                )
-            
-            if not job:
-                raise Exception(f"Failed to get or create job {job_id}")
-
-            # Job status will be managed by process_conversion_job method
-
-            current_task.update_state(
-                state="PROGRESS",
-                meta={"progress": 10, "status": f"Starting {target_format} conversion"},
-            )
-
-            # Use process_conversion_job which handles job status updates internally
-            result = ServiceRegistry.get_conversion_service().process_conversion_job(
+        # Get existing job (should already exist from route handler)
+        job = job_operations_controller.job_operations.get_job(job_id)
+        if not job:
+            # Fallback: create job if it doesn't exist
+            job = job_operations_controller.create_job_safely(
                 job_id=job_id,
-                file_data=file_data,
-                target_format=target_format,
-                options=options
+                task_type="convert",
+                input_data={
+                    "target_format": target_format,
+                    "options": options,
+                    "file_size": len(file_data),
+                    "original_filename": original_filename,
+                }
             )
 
-            current_task.update_state(
-                state="SUCCESS",
-                meta={"progress": 100, "status": f"Conversion to {target_format} completed"},
-            )
-            return result
+        if not job:
+            raise Exception(f"Failed to get or create job {job_id}")
+
+        job_operations_controller.update_job_status_safely(
+            job_id=job_id,
+            status=JobStatus.PROCESSING
+        )
+
+        # Use process_conversion_job which handles job status updates internally
+        result = service_registry.get_conversion_service().process_conversion_job(
+            job_id=job_id,
+            file_data=file_data,
+            target_format=target_format,
+            options=options
+        )
+
+        job_operations_controller.update_job_status_safely(
+            job_id=job_id,
+            status=JobStatus.COMPLETED,
+            result=result
+        )
+        return result
 
     except Exception as exc:
         return handle_task_error(task_instance=self, exc=exc, job_id=job_id, job=job)
@@ -417,7 +415,7 @@ def conversion_preview_task(
 
             job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
-            preview = ServiceRegistry.get_conversion_service().get_conversion_preview(file_data, target_format, options)
+            preview = service_registry.get_conversion_service().get_conversion_preview(file_data, target_format, options)
             job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=preview)
             return preview
 
@@ -436,7 +434,7 @@ def conversion_preview_task(
                 "estimated_time": 0,
                 "complexity": "unknown",
                 "recommendations": [],
-                "supported_formats": ServiceRegistry.get_conversion_service().supported_formats,
+                "supported_formats": service_registry.get_conversion_service().supported_formats,
             }
 
 # --------------------------------------------------------------------------
@@ -480,7 +478,7 @@ def ocr_process_task(
                 state="PROGRESS", meta={"progress": 10, "status": "Starting OCR"}
             )
 
-            result = ServiceRegistry.get_ocr_service().process_ocr_data(
+            result = service_registry.get_ocr_service().process_ocr_data(
                 file_data=file_data,
                 options=options,
                 original_filename=original_filename,
@@ -526,7 +524,7 @@ def ocr_preview_task(self,job_id: str,file_data: bytes,options: Dict[str, Any]) 
 
             job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
-            preview = ServiceRegistry.get_ocr_service().get_ocr_preview(file_data, options)
+            preview = service_registry.get_ocr_service().get_ocr_preview(file_data, options)
             job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=preview)
             return preview
 
@@ -543,8 +541,8 @@ def ocr_preview_task(self,job_id: str,file_data: bytes,options: Dict[str, Any]) 
             "complexity": "unknown",
             "estimated_accuracy": 0.0,
             "recommendations": [],
-            "supported_formats": ServiceRegistry.get_ocr_service().output_formats,
-            "supported_languages": ServiceRegistry.get_ocr_service().supported_languages,
+            "supported_formats": service_registry.get_ocr_service().output_formats,
+            "supported_languages": service_registry.get_ocr_service().supported_languages,
         }
 
 # ------------------------------------------------------
@@ -572,7 +570,7 @@ def ai_summarize_task(self, job_id: str, text: str, options: Dict[str, Any]) -> 
 
         job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
-        result = ServiceRegistry.get_ai_service().summarize_text(text=text, options=options)
+        result = service_registry.get_ai_service().summarize_text(text=text, options=options)
         job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
         logger.info(f"AI summarisation task completed for job {job_id}")
         return result
@@ -607,7 +605,7 @@ def ai_translate_task(self, job_id: str, text: str, target_language: str,
 
         job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
-        result = ServiceRegistry.get_ai_service().translate_text(text, target_language, options)
+        result = service_registry.get_ai_service().translate_text(text, target_language, options)
         job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
         logger.info(f"AI translation task completed for job {job_id}")
         return result
@@ -632,7 +630,7 @@ def extract_text_task(self, job_id: str, file_data: bytes,
         job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
         current_task.update_state(state='PROGRESS', meta={'progress': 10, 'status': 'Starting text extraction'})
-        text_content = ServiceRegistry.get_ai_service().extract_text_from_pdf_data(file_data)
+        text_content = service_registry.get_ai_service().extract_text_from_pdf_data(file_data)
         result = {'text': text_content, 'length': len(text_content), 'original_filename': original_filename}
         job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
         current_task.update_state(state='SUCCESS', meta={'progress': 100, 'status': 'Text extraction completed'})
@@ -660,7 +658,7 @@ def cleanup_expired_jobs(self) -> Dict[str, Any]:
         cleaned_count = error_count = total_size_freed = 0
         for job in expired_jobs:
             try:
-                job_size_mb = ServiceRegistry.get_file_management_service().cleanup_job_files(job)
+                job_size_mb = service_registry.get_file_management_service().cleanup_job_files(job)
                 total_size_freed += job_size_mb
                 cleaned_count += 1
                 db.session.delete(job)
@@ -753,7 +751,7 @@ def extract_invoice_task(self, job_id: str, file_path: str, extraction_options: 
         )
         
         start_time = datetime.now(timezone.utc)
-        extraction_result = ServiceRegistry.get_invoice_extraction_service().extract_invoice_data(file_path, extraction_options)
+        extraction_result = service_registry.get_invoice_extraction_service().extract_invoice_data(file_path, extraction_options)
         processing_time = (datetime.now(timezone.utc) - start_time).total_seconds()
         
         # Add processing time to metadata
@@ -775,7 +773,7 @@ def extract_invoice_task(self, job_id: str, file_path: str, extraction_options: 
             )
             
             try:
-                export_result = ServiceRegistry.get_export_service().export_invoice_data(
+                export_result = service_registry.get_export_service().export_invoice_data(
                     extraction_result,
                     export_format,
                     extraction_options.get('export_filename')
@@ -854,14 +852,14 @@ def health_check_task(self) -> Dict[str, Any]:
         
         # Service availability checks
         services_to_check = [
-            ('compression', ServiceRegistry.get_compression_service()),
-            ('file_management', ServiceRegistry.get_file_management_service()),
-            ('conversion', ServiceRegistry.get_conversion_service()),
-            ('ocr', ServiceRegistry.get_ocr_service()),
-            ('ai', ServiceRegistry.get_ai_service()),
-            ('export', ServiceRegistry.get_export_service()),
-            ('invoice_extraction', ServiceRegistry.get_invoice_extraction_service()),
-            ('bank_statement_extraction', ServiceRegistry.get_bank_statement_extraction_service()),
+            ('compression', service_registry.get_compression_service()),
+            ('file_management', service_registry.get_file_management_service()),
+            ('conversion', service_registry.get_conversion_service()),
+            ('ocr', service_registry.get_ocr_service()),
+            ('ai', service_registry.get_ai_service()),
+            ('export', service_registry.get_export_service()),
+            ('invoice_extraction', service_registry.get_invoice_extraction_service()),
+            ('bank_statement_extraction', service_registry.get_bank_statement_extraction_service()),
         ]
         for service_name, service_instance in services_to_check:
             try:
@@ -949,7 +947,7 @@ def extract_bank_statement_task(self, job_id: str, file_path: str, extraction_op
         )
 
         start_time = datetime.now(timezone.utc)
-        extraction_result = ServiceRegistry.get_bank_statement_extraction_service().extract_statement_data(file_path, extraction_options)
+        extraction_result = service_registry.get_bank_statement_extraction_service().extract_statement_data(file_path, extraction_options)
         processing_time = (datetime.now(timezone.utc) - start_time).total_seconds()
         
         # Add processing time to metadata
@@ -971,7 +969,7 @@ def extract_bank_statement_task(self, job_id: str, file_path: str, extraction_op
             )
             
             try:
-                export_result = ServiceRegistry.get_export_service().export_bank_statement_data(
+                export_result = service_registry.get_export_service().export_bank_statement_data(
                     extraction_result,
                     export_format,
                     extraction_options.get('export_filename')

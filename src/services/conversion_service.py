@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-
+from src.models import Job
 from src.models import JobStatus
 
 logger = logging.getLogger(__name__)
@@ -61,26 +61,21 @@ class ConversionService:
     def process_conversion_job(self, job_id: str, file_data: bytes, target_format: str, 
                               options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Process conversion job with job status management - main entry point."""
+        from src.main import job_operations_controller
         try:
-            from src.main import job_operations_controller
-            logger.debug(f"Starting conversion job {job_id} to {target_format}")
-            
-            # Verify job exists (it should have been created in the route/task)
-            job = job_operations_controller.job_operations.get_job(job_id=job_id)
-            if not job:
-                logger.error(f"Job {job_id} not found")
+            job_info = job_operations_controller.get_job_with_progress(job_id)
+            if not job_info:
                 raise ValueError(f"Job {job_id} not found")
 
             # Update status to processing
             job_operations_controller.update_job_status_safely(
                 job_id=job_id,
-                status=JobStatus.PROCESSING,
-                progress=10.0
+                status=JobStatus.PROCESSING
             )
-            logger.debug(f"Job {job_id} marked as processing")
 
-            # Get original filename from job input data
-            # src/services/conversion_service.py  (top of process_conversion_job)
+            job = job_operations_controller.job_operations.get_job(job_id=job_id)
+            if not isinstance(job, Job):
+                raise ValueError(f"Job {job_id} not found")
 
             try:
                 input_data = json.loads(job.input_data) if isinstance(job.input_data, str) else (job.input_data or {})
@@ -98,25 +93,6 @@ class ConversionService:
                 options=options or {},
                 original_filename=original_filename
             )
-
-            # Update job status based on result
-            if result.get('success', False):
-                job_operations_controller.update_job_status_safely(
-                    job_id=job_id,
-                    status=JobStatus.COMPLETED,
-                    result=result,
-                    progress=100.0
-                )
-                logger.info(f"Conversion job {job_id} completed successfully")
-            else:
-                error_msg = result.get('error', 'Unknown conversion error')
-                job_operations_controller.update_job_status_safely(
-                    job_id=job_id,
-                    status=JobStatus.FAILED,
-                    error_message=error_msg
-                )
-                logger.error(f"Conversion job {job_id} failed: {error_msg}")
-
             return result
 
         except Exception as e:
