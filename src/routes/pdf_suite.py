@@ -97,8 +97,7 @@ def _enqueue_job(
 
         job = job_operations_controller.job_status_manager.get_or_create_job(job_id=job_id,
                                                                              task_type=task_type.value,
-                                                                             input_data=input_data,
-                                                                             )
+                                                                             input_data=input_data)
         if not isinstance(job, Job):
             logger.error(f"Failed to create job record for {job_id}")
             return {}, "Failed to create job record"
@@ -110,12 +109,12 @@ def _enqueue_job(
         task = task_func.delay(*task_args, **task_kwargs)
         
         # CRITICAL FIX: Store task_id in job record
-        if task and hasattr(task, 'id'):
-            logger.info(f"Task enqueued with task_id: {task.id} for job {job_id}")
-            job_operations_controller.job_operations.update_job(job_id, {
-                'task_id': task.id,
-                'updated_at': datetime.now(timezone.utc)
-            })
+        # if task and hasattr(task, 'id'):
+        #     logger.info(f"Task enqueued with task_id: {task.id} for job {job_id}")
+        #     job_operations_controller.job_operations.update_job(job_id, {
+        #         'task_id': task.id,
+        #         'updated_at': datetime.now(timezone.utc)
+        #     })
         
         logger.info(f"Task enqueued successfully: job_id={job_id}, task_id={task.id}")
         
