@@ -29,7 +29,7 @@ from src.tasks.tasks import (
     extract_invoice_task,
     extract_bank_statement_task,
 )
-from src.jobs import JobStatusManager
+from src.jobs import JobStatusManager, JobOperationsWrapper, JobOperations
 
 pdf_suite_bp = Blueprint("pdf_suite", __name__)
 logger = logging.getLogger(__name__)
@@ -95,11 +95,13 @@ def _enqueue_job(
     
     try:
         # Create job record first
-        job = JobStatusManager.get_or_create_job(
-            job_id=job_id,
-            task_type=task_type.value,
-            input_data=input_data,
-        )
+        job = JobOperations.get_job(job_id=job_id)
+        if not isinstance(job, Job):
+            job = JobOperationsWrapper.create_job_safely(job_data={
+                job_id=job_id,
+                task_type=task_type.value,
+                input_data=input_data}
+            )
         if not job:
             logger.error(f"Failed to create job record for {job_id}")
             return {}, "Failed to create job record"
@@ -129,7 +131,7 @@ def _enqueue_job(
         
         # Try to mark job as failed
         try:
-            JobStatusManager.update_job_status(
+            JobOperationsWrapper.update_job_status_safely(
                 job_id=job_id,
                 status=JobStatus.FAILED,
                 error_message=f"Enqueue failed: {exc}",
