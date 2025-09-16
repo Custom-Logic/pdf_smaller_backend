@@ -225,6 +225,11 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
         return result
 
     except Exception as exc:
+        job_operations_controller.update_job_status_safely(
+            job_id=job_id,
+            status=JobStatus.FAILED,
+            error_message=str(exc)
+        )
         return handle_task_error(task_instance=self, exc=exc, job_id=job_id, job=job)
 # ------------------------------------------------------
 #  BULK COMPRESSION  (logic 100 % preserved)
@@ -380,6 +385,11 @@ def convert_pdf_task(
         return result
 
     except Exception as exc:
+        job_operations_controller.update_job_status_safely(
+            job_id=job_id,
+            status=JobStatus.FAILED,
+            error_message=str(exc)
+        )
         return handle_task_error(task_instance=self, exc=exc, job_id=job_id, job=job)
 
 

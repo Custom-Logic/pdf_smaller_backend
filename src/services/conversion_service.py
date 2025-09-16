@@ -70,7 +70,7 @@ class ConversionService:
 
             try:
                 input_data = json.loads(job.input_data) if isinstance(job.input_data, str) else (job.input_data or {})
-                original_filename = input_data.get('original_filename') or 'document.pdf'
+                original_filename = input_data.get('original_filename') or original_filename
             except Exception:
                 logger.exception('Could not parse job.input_data, using defaults')
                 input_data = {}
