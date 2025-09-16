@@ -4,6 +4,7 @@ import os
 from flask import Flask, jsonify, request
 from sqlalchemy import text
 
+from src.services import ServiceRegistry
 from src.config.config import get_config, validate_current_config, ConfigValidationError
 from src.database import init_database
 
@@ -13,6 +14,7 @@ from src.utils.db_transaction import safe_db_operation
 from src.utils.error_handlers import register_error_handlers
 from src.jobs import JobOperationsController, JobOperations, JobStatusManager
 
+service_registry = ServiceRegistry()
 job_operations = JobOperations()
 job_status_manager = JobStatusManager()
 job_operations_controller = JobOperationsController()
@@ -101,9 +103,11 @@ def create_app(config_name=None, config_override=None):
 
     with app.app_context():
         # Initialize extensions
+        service_registry.init_app(app=app)
         job_operations.init_app(app=app)
         job_status_manager.init_app(app=app, job_operations=job_operations)
         job_operations_controller.init_app(app=app, job_operations=job_operations, job_status_manager=job_status_manager)
+
         # Register error handlers
         register_error_handlers(app)
 

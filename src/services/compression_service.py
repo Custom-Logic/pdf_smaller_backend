@@ -151,8 +151,8 @@ class CompressionService:
         """
         Process a compression job with provided file data
         """
+        from src.main import job_operations_controller
         try:
-            from src.main import job_operations_controller
             # Get job information
             job_info = job_operations_controller.get_job_with_progress(job_id)
             if not job_info:
@@ -182,7 +182,6 @@ class CompressionService:
                 original_filename=original_filename,
                 job_id=job_id
             )
-
             return result
 
         except Exception as e:
@@ -413,9 +412,10 @@ class CompressionService:
         """
         Clean up files associated with a compression job using FileManagementService
         """
+        from src.main import job_operations_controller
         try:
             # Get job information
-            job_info = job_operations_wrapper.get_job_with_progress(job_id)
+            job_info = job_operations_controller.get_job_with_progress(job_id)
             if not job_info:
                 logger.warning(f"Job {job_id} not found for cleanup")
                 return False

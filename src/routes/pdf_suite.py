@@ -11,13 +11,11 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
-from flask import Blueprint, request, current_app
+from flask import Blueprint, request
 from werkzeug.exceptions import UnsupportedMediaType, RequestEntityTooLarge
 
+from src.main import job_operations_controller, service_registry
 from src.models import JobStatus, TaskType, Job
-from src.services.service_registry import ServiceRegistry
-from src.utils.response_helpers import success_response, error_response
-from src.utils.security_utils import get_file_and_validate
 from src.tasks.tasks import (
     convert_pdf_task,
     conversion_preview_task,
@@ -29,8 +27,8 @@ from src.tasks.tasks import (
     extract_invoice_task,
     extract_bank_statement_task,
 )
-from src.main import job_operations_controller
-
+from src.utils.response_helpers import success_response, error_response
+from src.utils.security_utils import get_file_and_validate
 
 pdf_suite_bp = Blueprint("pdf_suite", __name__)
 logger = logging.getLogger(__name__)
@@ -74,7 +72,7 @@ def _load_json_options() -> Tuple[Dict[str, Any], Optional[str]]:
 def _get_safe_service(getter_name: str):
     """Return a service or raise a RuntimeError if missing."""
     try:
-        svc = getattr(ServiceRegistry, getter_name)()
+        svc = getattr(service_registry, getter_name)()
         if svc is None:
             raise RuntimeError(f"Service {getter_name} not registered")
         return svc
@@ -347,7 +345,7 @@ def summarize_pdf():
             return error_response(message=err, status_code=500)
         return success_response(message="Summarization queued", data=payload, status_code=202)
     except (UnsupportedMediaType, ValueError) as exc:
-        return error_response(str(message=exc), status_code=400)
+        return error_response(message=str(exc), status_code=400)
     except Exception as exc:
         logger.exception("summarize failed")
         return error_response(message=f"Summarization failed: {exc}", status_code=500)
@@ -380,7 +378,7 @@ def translate_text():
             task_kwargs={},
         )
         if err:
-            return error_response(err, 500)
+            return error_response(message=err, status_code=500)
         return success_response(message="Translation queued", data=payload, status_code=202)
     except (UnsupportedMediaType, ValueError) as exc:
         return error_response(message=str(exc), status_code=400)
@@ -481,12 +479,12 @@ def extract_bank_statement():
             return err
         options, err = _load_json_options()
         if err:
-            return error_response(err, 400)
+            return error_response(message=err, status_code=400)
 
         job_id = _validate_job_id(request.form.get("job_id"))
         file_bytes = file.read()
         if len(file_bytes) > MAX_FILE_SIZE:
-            return error_response("File too large", 413)
+            return error_response(message="File too large", status_code=413)
 
         file_svc = _get_safe_service("get_file_management_service")
         file_path = file_svc.save_file(file, job_id)
@@ -504,11 +502,11 @@ def extract_bank_statement():
             task_kwargs={},
         )
         if err:
-            return error_response(err, 500)
+            return error_response(message=err, status_code=500)
         return success_response(message="Bank-statement extraction queued", data=payload, status_code=202)
     except Exception as exc:
         logger.exception("bank-statement extraction failed")
-        return error_response(f"Bank-statement extraction failed: {exc}", 500)
+        return error_response(message=f"Bank-statement extraction failed: {exc}", status_code=500)
 
 @pdf_suite_bp.route("/ai/bank-statement-capabilities", methods=["POST", "GET"])
 def get_bank_statement_capabilities():
@@ -519,7 +517,7 @@ def get_bank_statement_capabilities():
         return success_response(message="Capabilities retrieved", data=caps, status_code=200)
     except Exception as exc:
         logger.exception("bank-statement capabilities failed")
-        return error_response(f"Capabilities failed: {exc}", 500)
+        return error_response(message=f"Capabilities failed: {exc}", status_code=500)
 
 # --------------------------------------------------------------------------- #
 # HEALTH / STATUS
@@ -571,7 +569,7 @@ def get_extended_features_status():
         return success_response(message="Status retrieved", data=status, status_code=200)
     except Exception as exc:
         logger.exception("status endpoint failed")
-        return error_response(f"Status failed: {exc}", 500)
+        return error_response(message=f"Status failed: {exc}", status_code=500)
 
 @pdf_suite_bp.route("/extended-features/capabilities", methods=["POST", "GET"])
 def get_extended_features_capabilities():

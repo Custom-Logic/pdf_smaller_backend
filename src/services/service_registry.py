@@ -10,7 +10,12 @@ from typing import Dict, Any, Optional
 class ServiceRegistry:
     """Centralized service management with singleton pattern for service instances"""
     _instances: Dict[str, Any] = {}
-    
+    def __init__(self):
+        pass
+
+    def init_app(self, app):
+        pass
+
     @classmethod
     def get_file_management_service(cls, upload_folder: Optional[str] = None):
         """Get FileManagementService instance
