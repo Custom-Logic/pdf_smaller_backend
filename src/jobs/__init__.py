@@ -12,6 +12,9 @@ logger = logging.getLogger(__name__)
 class JobOperationsWrapper:
     """Wrapper for backward compatibility with enhanced job operations."""
 
+    def __init__(self):
+        pass
+
     @staticmethod
     def create_job_safely(job_id: str, task_type: str,
                          input_data: Dict[str, Any] = None) -> Optional[Job]:
