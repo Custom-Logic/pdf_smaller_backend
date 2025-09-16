@@ -20,7 +20,7 @@ from src.models.base import db
 from src.services.service_registry import ServiceRegistry
 from src.exceptions.extraction_exceptions import ExtractionError, ExtractionValidationError
 from src.utils.db_transaction import transactional
-from src.jobs import job_operations_wrapper, job_operations
+from src.main import job_operations_controller
 
 # Exception imports for specific error handling
 from sqlalchemy.exc import DBAPIError, OperationalError, IntegrityError
@@ -180,10 +180,10 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
     job = None
     try:
         # Get existing job (should already exist from route handler)
-        job = job_operations.get_job(job_id)
+        job = job_operations_controller.job_operations.get_job(job_id)
         if not job:
             # Fallback: create job if it doesn't exist
-            job = job_operations_wrapper.create_job_safely(
+            job = job_operations_controller.create_job_safely(
                 job_id=job_id,
                 task_type='compress',
                 input_data={
@@ -199,7 +199,7 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
         logger.debug(f"Starting compression task for job {job_id}")
 
         # Update status to processing
-        job_operations_wrapper.update_job_status_safely(
+        job_operations_controller.update_job_status_safely(
             job_id=job_id,
             status=JobStatus.PROCESSING
         )
@@ -216,7 +216,7 @@ def compress_task(self, job_id: str, file_data: bytes, compression_settings: Dic
         logger.debug(f"File processed for job {job_id}, result: {result}")
 
         # Update to completed
-        job_operations_wrapper.update_job_status_safely(
+        job_operations_controller.update_job_status_safely(
             job_id=job_id,
             status=JobStatus.COMPLETED,
             result=result
@@ -236,7 +236,7 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
     job = None
     try:
         logger.info(f"Starting bulk compression task for job {job_id}")
-        job = job_operations_wrapper.create_job_safely(
+        job = job_operations_controller.create_job_safely(
             job_id=job_id,
             task_type='bulk_compress',
             input_data={
@@ -246,7 +246,7 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
             }
         )
 
-        job_operations_wrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
+        job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
         total_files = len(file_data_list)
         processed_files, errors = [], []
@@ -292,13 +292,13 @@ def bulk_compress_task(self, job_id: str, file_data_list: List[bytes],
                 logger.info(f"Created result archive for job {job_id}: {output_path}")
 
                 if errors and not processed_files:
-                    job_operations_wrapper.update_job_status_safely(job_id=job_id,
+                    job_operations_controller.update_job_status_safely(job_id=job_id,
                                                            status=JobStatus.FAILED, error_message=f"All files failed: {len(errors)} errors")
                 elif errors:
                     result_data['warning'] = f"Completed with {len(errors)} errors"
-                    job_operations_wrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result_data)
+                    job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result_data)
                 else:
-                    job_operations_wrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result_data)
+                    job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result_data)
 
                 current_task.update_state(
                     state='SUCCESS',
@@ -342,10 +342,10 @@ def convert_pdf_task(
     try:
         with current_app.app_context():  # push context
             # Get existing job (should already exist from route handler)
-            job = job_operations.get_job(job_id)
+            job = job_operations_controller.job_operations.get_job(job_id)
             if not job:
                 # Fallback: create job if it doesn't exist
-                job = job_operations_wrapper.create_job_safely(
+                job = job_operations_controller.create_job_safely(
                     job_id=job_id,
                     task_type="convert",
                     input_data={
@@ -399,10 +399,10 @@ def conversion_preview_task(
     try:
         with current_app.app_context():
             # Get existing job (should already exist from route handler)
-            job = job_operations.get_job(job_id)
+            job = job_operations_controller.job_operations.get_job(job_id)
             if not job:
                 # Fallback: create job if it doesn't exist
-                job = job_operations_wrapper.create_job_safely(
+                job = job_operations_controller.create_job_safely(
                     job_id=job_id,
                     task_type="conversion_preview",
                     input_data={
@@ -415,10 +415,10 @@ def conversion_preview_task(
             if not job:
                 raise Exception(f"Failed to get or create job {job_id}")
 
-            job_operations_wrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
+            job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
             preview = ServiceRegistry.get_conversion_service().get_conversion_preview(file_data, target_format, options)
-            job_operations_wrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=preview)
+            job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=preview)
             return preview
 
     except Exception as exc:
@@ -458,10 +458,10 @@ def ocr_process_task(
     try:
         with current_app.app_context():
             # Get existing job (should already exist from route handler)
-            job = job_operations.get_job(job_id)
+            job = job_operations_controller.job_operations.get_job(job_id)
             if not job:
                 # Fallback: create job if it doesn't exist
-                job = job_operations_wrapper.create_job_safely(
+                job = job_operations_controller.create_job_safely(
                     job_id=job_id,
                     task_type="ocr",
                     input_data={
@@ -474,7 +474,7 @@ def ocr_process_task(
             if not job:
                 raise Exception(f"Failed to get or create job {job_id}")
 
-            job_operations_wrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
+            job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
             current_task.update_state(
                 state="PROGRESS", meta={"progress": 10, "status": "Starting OCR"}
@@ -487,9 +487,9 @@ def ocr_process_task(
             )
 
             if result["success"]:
-                job_operations_wrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
+                job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
             else:
-                job_operations_wrapper.update_job_status_safely(job_id=job_id, status=JobStatus.FAILED, error_message=result["error"])
+                job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.FAILED, error_message=result["error"])
 
             current_task.update_state(
                 state="SUCCESS", meta={"progress": 100, "status": "OCR completed"}
@@ -509,10 +509,10 @@ def ocr_preview_task(self,job_id: str,file_data: bytes,options: Dict[str, Any]) 
     try:
         with current_app.app_context():
             # Get existing job (should already exist from route handler)
-            job = job_operations.get_job(job_id)
+            job = job_operations_controller.job_operations.get_job(job_id)
             if not job:
                 # Fallback: create job if it doesn't exist
-                job = job_operations_wrapper.create_job_safely(
+                job = job_operations_controller.create_job_safely(
                     job_id=job_id,
                     task_type="ocr_preview",
                     input_data={
@@ -524,10 +524,10 @@ def ocr_preview_task(self,job_id: str,file_data: bytes,options: Dict[str, Any]) 
             if not job:
                 raise Exception(f"Failed to get or create job {job_id}")
 
-            job_operations_wrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
+            job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
             preview = ServiceRegistry.get_ocr_service().get_ocr_preview(file_data, options)
-            job_operations_wrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=preview)
+            job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=preview)
             return preview
 
     except Exception as exc:
@@ -558,10 +558,10 @@ def ai_summarize_task(self, job_id: str, text: str, options: Dict[str, Any]) -> 
     try:
         logger.info(f"Starting AI summarisation task for job {job_id}")
         # Get existing job (should already exist from route handler)
-        job = job_operations.get_job(job_id)
+        job = job_operations_controller.job_operations.get_job(job_id)
         if not job:
             # Fallback: create job if it doesn't exist
-            job = job_operations_wrapper.create_job_safely(
+            job = job_operations_controller.create_job_safely(
                 job_id=job_id,
                 task_type='ai_summarize',
                 input_data={'text_length': len(text), 'options': options}
@@ -570,10 +570,10 @@ def ai_summarize_task(self, job_id: str, text: str, options: Dict[str, Any]) -> 
         if not job:
             raise Exception(f"Failed to get or create job {job_id}")
 
-        job_operations_wrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
+        job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
         result = ServiceRegistry.get_ai_service().summarize_text(text=text, options=options)
-        job_operations_wrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
+        job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
         logger.info(f"AI summarisation task completed for job {job_id}")
         return result
 
@@ -589,10 +589,10 @@ def ai_translate_task(self, job_id: str, text: str, target_language: str,
     try:
         logger.info(f"Starting AI translation task for job {job_id} (target: {target_language})")
         # Get existing job (should already exist from route handler)
-        job = job_operations.get_job(job_id)
+        job = job_operations_controller.job_operations.get_job(job_id)
         if not job:
             # Fallback: create job if it doesn't exist
-            job = job_operations_wrapper.create_job_safely(
+            job = job_operations_controller.create_job_safely(
                 job_id=job_id,
                 task_type='ai_translate',
                 input_data={
@@ -605,10 +605,10 @@ def ai_translate_task(self, job_id: str, text: str, target_language: str,
         if not job:
             raise Exception(f"Failed to get or create job {job_id}")
 
-        job_operations_wrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
+        job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
         result = ServiceRegistry.get_ai_service().translate_text(text, target_language, options)
-        job_operations_wrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
+        job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
         logger.info(f"AI translation task completed for job {job_id}")
         return result
 
@@ -623,18 +623,18 @@ def extract_text_task(self, job_id: str, file_data: bytes,
     
     try:
         logger.info(f"Starting text-extraction task for job {job_id}")
-        job = job_operations_wrapper.create_job_safely(
+        job = job_operations_controller.create_job_safely(
             job_id=job_id,
             task_type='extract_text',
             input_data={'file_size': len(file_data), 'original_filename': original_filename}
         )
 
-        job_operations_wrapper.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
+        job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.PROCESSING)
 
         current_task.update_state(state='PROGRESS', meta={'progress': 10, 'status': 'Starting text extraction'})
         text_content = ServiceRegistry.get_ai_service().extract_text_from_pdf_data(file_data)
         result = {'text': text_content, 'length': len(text_content), 'original_filename': original_filename}
-        job_operations_wrapper.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
+        job_operations_controller.update_job_status_safely(job_id=job_id, status=JobStatus.COMPLETED, result=result)
         current_task.update_state(state='SUCCESS', meta={'progress': 100, 'status': 'Text extraction completed'})
         logger.info(f"Text-extraction task completed for job {job_id}")
         return result

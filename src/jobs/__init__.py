@@ -5,21 +5,30 @@ This now becomes a thin wrapper around JobOperations and JobStatusManager.
 import logging
 from typing import Dict, Any, Optional, List
 
+from flask import Flask
+
 from src.models import TaskType
-from src.jobs.job_operations import JobOperations, job_operations
+from src.jobs.job_operations import JobOperations
 from src.jobs.job_manager import JobStatusManager
 from src.models.job import Job, JobStatus
 logger = logging.getLogger(__name__)
 # For backward compatibility, you can keep the old interface
-class JobOperationsWrapper:
+
+class JobOperationsController:
     """Wrapper for backward compatibility with enhanced job operations."""
 
-    def __init__(self):
-        pass
+    # noinspection PyShadowingNames
+    def __init__(self, job_operations: JobOperations | None = None, job_status_manager: JobStatusManager | None = None):
+        self.job_operations = job_operations if job_operations else JobOperations()
+        self.job_status_manager = job_status_manager if job_status_manager else JobStatusManager()
 
-    @staticmethod
-    def create_job_safely(job_id: str, task_type: str,
-                         input_data: Dict[str, Any] = None) -> Optional[Job]:
+    # noinspection PyShadowingNames
+    def init_app(self, app: Flask,job_operations: JobOperations | None = None, job_status_manager: JobStatusManager | None = None):
+        self.job_operations = job_operations if job_operations else JobOperations()
+        self.job_status_manager = job_status_manager if job_status_manager else JobStatusManager()
+
+
+    def create_job_safely(self, job_id: str, task_type: str, input_data: Dict[str, Any] = None) -> Optional[Job]:
         """Create a new job safely using the new architecture.
 
         Args:
@@ -31,7 +40,7 @@ class JobOperationsWrapper:
             Created Job instance or None if creation failed
 
         Example:
-            >>> job = JobOperationsWrapper.create_job_safely(
+            >>> job = JobOperationsController.create_job_safely(
             ...     job_id="extract_123",
             ...     task_type='extract_text',
             ...     input_data={'file_size': 1024, 'original_filename': 'document.pdf'}
@@ -41,7 +50,7 @@ class JobOperationsWrapper:
             # Use JobOperations for session-managed job creation
             # Guard Statement incase of the tasktype error
             task_type = task_type.value if isinstance(task_type, TaskType) else task_type
-            job = job_operations.create_job(job_id=job_id, task_type=task_type, input_data=input_data)
+            job = self.job_operations.create_job(job_id=job_id, task_type=task_type, input_data=input_data)
 
             if isinstance(job, Job):
                 logger.info(f"Successfully created job {job_id} with type {task_type}")
@@ -54,12 +63,11 @@ class JobOperationsWrapper:
             logger.error(f"Error creating job {job_id}: {e}")
             return None
 
-    @staticmethod
-    def update_job_status_safely(job_id: str, status: JobStatus,
-                               result: Dict[str, Any] = None,
-                               error_message: str = None,
-                               progress: Optional[float] = None) -> bool:
-        """Update job status using the new architecture.
+
+    def update_job_status_safely(self, job_id: str, status: JobStatus, result: Dict[str, Any] = None,
+                               error_message: str = None, progress: Optional[float] = None) -> bool:
+        """
+        Update job status using the new architecture.
 
         Args:
             job_id: Unique identifier of the job
@@ -71,21 +79,17 @@ class JobOperationsWrapper:
         Returns:
             True if update was successful, False otherwise
         """
-        success = JobStatusManager.update_job_status(
-            job_id=job_id,
-            status=status,
-            result=result,
-            error_message=error_message
-        )
+        success = self.job_status_manager.update_job_status(job_id=job_id, status=status, result=result,
+                                                            error_message=error_message)
 
         # Update progress if needed (separate operation since it's not part of core status logic)
         if success and progress is not None:
-            job_operations.update_job(job_id, {'progress': progress})
+            self.job_operations.update_job(job_id=job_id, updates={'progress': progress})
 
         return success
 
-    @staticmethod
-    def get_job_with_progress(job_id: str) -> Optional[Dict[str, Any]]:
+
+    def get_job_with_progress(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Get job with progress information.
 
         Args:
@@ -94,8 +98,8 @@ class JobOperationsWrapper:
         Returns:
             Dictionary with job information including progress, or None if not found
         """
-        job: Job = job_operations.get_job(job_id=job_id)
-        if not job:
+        job: Job = self.job_operations.get_job(job_id=job_id)
+        if not isinstance(job, Job):
             return None
 
         return {
@@ -107,8 +111,7 @@ class JobOperationsWrapper:
             'updated_at': job.updated_at
         }
 
-    @staticmethod
-    def batch_create_jobs(jobs_data: List[Dict[str, Any]]) -> Dict[str, Optional[Job]]:
+    def batch_create_jobs(self, jobs_data: List[Dict[str, Any]]) -> Dict[str, Optional[Job]]:
         """Batch create multiple jobs.
 
         Args:
@@ -131,7 +134,7 @@ class JobOperationsWrapper:
             ...         'input_data': {'file_size': 2048, 'filename': 'doc2.pdf'}
             ...     }
             ... ]
-            >>> results = JobOperationsWrapper.batch_create_jobs(jobs_to_create)
+            >>> results = JobOperationsController.batch_create_jobs(jobs_to_create)
         """
         results = {}
 
@@ -144,13 +147,13 @@ class JobOperationsWrapper:
                 results[job_id] = None
                 continue
 
-            job = JobOperationsWrapper.create_job_safely(job_id, task_type, input_data)
+            job = self.create_job_safely(job_id=job_id, task_type=task_type, input_data=input_data)
             results[job_id] = job
 
         return results
 
-    @staticmethod
-    def ensure_job_exists(job_id: str, task_type: str,
+
+    def ensure_job_exists(self, job_id: str, task_type: str,
                          input_data: Dict[str, Any] = None) -> Optional[Job]:
         """Ensure a job exists, creating it if necessary.
 
@@ -165,27 +168,13 @@ class JobOperationsWrapper:
             Existing or newly created Job instance, or None if failed
         """
         # Try to get existing job first
-        job = job_operations.get_job(job_id)
-
-        if job:
+        job = self.job_operations.get_job(job_id=job_id)
+        if isinstance(job, Job):
             return job
 
         # Job doesn't exist, create it
-        return JobOperationsWrapper.create_job_safely(job_id, task_type, input_data)
+        return self.create_job_safely(job_id=job_id, task_type=task_type, input_data=input_data)
 
-# For even simpler backward compatibility, you can add module-level functions
-def create_job_safely(job_id: str, task_type: str,
-                     input_data: Dict[str, Any] = None) -> Optional[Job]:
-    """Module-level function for backward compatibility."""
-    return JobOperationsWrapper.create_job_safely(job_id, task_type, input_data)
 
-def update_job_status_safely(job_id: str, status: JobStatus,
-                           result: Dict[str, Any] = None,
-                           error_message: str = None,
-                           progress: Optional[float] = None) -> bool:
-    """Module-level function for backward compatibility."""
-    return JobOperationsWrapper.update_job_status_safely(
-        job_id, status, result, error_message, progress
-    )
-job_operations_wrapper = JobOperationsWrapper()
-__all__ = ['JobOperations', 'JobStatusManager', 'JobOperationsWrapper', 'create_job_safely', 'update_job_status_safely', 'job_operations_wrapper', 'job_operations']
+
+__all__ = ['JobOperations', 'JobStatusManager', 'JobOperationsController']

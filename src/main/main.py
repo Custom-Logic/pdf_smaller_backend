@@ -1,22 +1,26 @@
 import logging
 import os
-from datetime import datetime
 
 from flask import Flask, jsonify, request
 from sqlalchemy import text
 
 from src.config.config import get_config, validate_current_config, ConfigValidationError
 from src.database import init_database
+
 from src.models.base import db
-from src.routes import compression_bp, pdf_suite_bp, jobs_bp
 from src.utils import setup_logging
-
-from src.utils.error_handlers import register_error_handlers
-from src.utils.scheduler import TaskScheduler
 from src.utils.db_transaction import safe_db_operation
+from src.utils.error_handlers import register_error_handlers
+from src.jobs import JobOperationsController, JobOperations, JobStatusManager
 
+job_operations = JobOperations()
+job_status_manager = JobStatusManager()
+job_operations_controller = JobOperationsController()
+
+from src.utils.scheduler import TaskScheduler
 # Global scheduler instance
 scheduler = TaskScheduler()
+
 
 def create_app(config_name=None, config_override=None):
     """
@@ -97,8 +101,9 @@ def create_app(config_name=None, config_override=None):
 
     with app.app_context():
         # Initialize extensions
-
-
+        job_operations.init_app(app=app)
+        job_status_manager.init_app(app=app, job_operations=job_operations)
+        job_operations_controller.init_app(app=app, job_operations=job_operations, job_status_manager=job_status_manager)
         # Register error handlers
         register_error_handlers(app)
 
@@ -148,7 +153,7 @@ def initialize_extensions(app: Flask):
 
 def register_blueprints(app: Flask):
     """Register application blueprints"""
-
+    from src.routes import compression_bp, pdf_suite_bp, jobs_bp
     blueprints = [
         (compression_bp, '/api'),
         (pdf_suite_bp, '/api'),

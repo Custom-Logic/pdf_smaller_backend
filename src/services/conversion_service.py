@@ -3,17 +3,14 @@ Conversion Service – Job-Oriented Architecture
 Handles PDF → Word, Text, HTML, Images, Excel
 Refactored to match compression service patterns
 """
-import logging
-import os
-import re
-import uuid
 import io
 import json
+import logging
+import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, BinaryIO
+from typing import Any, Dict, List, Optional
 
-from src.services import FileManagementService
-from src.jobs import job_operations, job_operations_wrapper
+
 from src.models import JobStatus
 
 logger = logging.getLogger(__name__)
@@ -53,8 +50,9 @@ except ImportError:
 class ConversionService:
     """Convert PDFs to docx/txt/html/images/xlsx – follows compression service pattern."""
     
-    def __init__(self, file_service: Optional[FileManagementService] = None):
-        self.file_service = file_service or FileManagementService()
+    def __init__(self, file_service = None):
+        from src.services import ServiceRegistry
+        self.file_service = file_service or ServiceRegistry.get_file_management_service()
         self.supported_formats = ("docx", "txt", "html", "images", "xlsx")
 
     # --------------------------------------------------------------------------
@@ -64,16 +62,17 @@ class ConversionService:
                               options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Process conversion job with job status management - main entry point."""
         try:
+            from src.main import job_operations_controller
             logger.debug(f"Starting conversion job {job_id} to {target_format}")
             
             # Verify job exists (it should have been created in the route/task)
-            job = job_operations.get_job(job_id=job_id)
+            job = job_operations_controller.job_operations.get_job(job_id=job_id)
             if not job:
                 logger.error(f"Job {job_id} not found")
                 raise ValueError(f"Job {job_id} not found")
 
             # Update status to processing
-            job_operations_wrapper.update_job_status_safely(
+            job_operations_controller.update_job_status_safely(
                 job_id=job_id,
                 status=JobStatus.PROCESSING,
                 progress=10.0
@@ -102,7 +101,7 @@ class ConversionService:
 
             # Update job status based on result
             if result.get('success', False):
-                job_operations_wrapper.update_job_status_safely(
+                job_operations_controller.update_job_status_safely(
                     job_id=job_id,
                     status=JobStatus.COMPLETED,
                     result=result,
@@ -111,7 +110,7 @@ class ConversionService:
                 logger.info(f"Conversion job {job_id} completed successfully")
             else:
                 error_msg = result.get('error', 'Unknown conversion error')
-                job_operations_wrapper.update_job_status_safely(
+                job_operations_controller.update_job_status_safely(
                     job_id=job_id,
                     status=JobStatus.FAILED,
                     error_message=error_msg
@@ -122,7 +121,7 @@ class ConversionService:
 
         except Exception as e:
             logger.exception(f"Error processing conversion job {job_id}")
-            job_operations_wrapper.update_job_status_safely(
+            job_operations_controller.update_job_status_safely(
                 job_id=job_id,
                 status=JobStatus.FAILED,
                 error_message=str(e)

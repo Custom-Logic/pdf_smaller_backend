@@ -253,7 +253,7 @@ class OCRService:
         ocr_text = "\n".join(full_text)
 
         # ---------- 2.  return the *correct* disk file ----------
-        if output_format == "searchable_pdf":
+        if output_format == "pdf":
             # make searchable PDF
             doc = fitz.open(pdf_path)  # re-open to copy pages
             out_doc = fitz.open()
@@ -286,7 +286,7 @@ class OCRService:
         ...
         ocr_text = self._perform_image_ocr_bytes(img_path.read_bytes(), lang, quality)
 
-        if output_format == "json":
+        if opts.get('output_format') == "json":
             return self._create_json_output(ocr_text, img_path)
         # default = plain text
         return self._create_text_output(ocr_text, img_path)

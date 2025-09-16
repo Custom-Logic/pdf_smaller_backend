@@ -22,7 +22,7 @@ from src.app import create_app
 from src.models.base import db
 from src.models import Job, JobStatus
 from src.services.conversion_service import ConversionService
-from src.jobs import JobOperationsWrapper
+from src.jobs import JobOperationsController
 
 def test_conversion_job_status():
     """Test conversion job status transitions"""
@@ -40,8 +40,8 @@ def test_conversion_job_status():
         
         print(f"Testing conversion job status handling for job {job_id}")
         
-        # Create job using JobOperationsWrapper
-        job = JobOperationsWrapper.create_job_safely(
+        # Create job using JobOperationsController
+        job = JobOperationsController.create_job_safely(
             job_id=job_id,
             task_type='convert',
             input_data={

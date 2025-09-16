@@ -1,12 +1,9 @@
 import logging
 import os
 import subprocess
-import tempfile
 from typing import Dict, Any, Optional
-
 from src.models import TaskType, JobStatus, Job
-from src.jobs import job_operations_wrapper, job_operations
-from src.services.file_management_service import FileManagementService
+
 
 logger = logging.getLogger(__name__)
 
@@ -14,8 +11,9 @@ logger = logging.getLogger(__name__)
 class CompressionService:
     GHOSTSCRIPT_BINARY = "/usr/bin/gs"
 
-    def __init__(self, file_service: Optional[FileManagementService] = None):
-        self.file_service = file_service or FileManagementService()
+    def __init__(self, file_service = None):
+        from src.services import ServiceRegistry
+        self.file_service = file_service or ServiceRegistry.get_file_management_service()
         self._service_available = os.path.exists(self.GHOSTSCRIPT_BINARY)
         if not self._service_available:
             logger.warning(f"Ghostscript not found at {self.GHOSTSCRIPT_BINARY}")
@@ -154,13 +152,14 @@ class CompressionService:
         Process a compression job with provided file data
         """
         try:
+            from src.main import job_operations_controller
             # Get job information
-            job_info = job_operations_wrapper.get_job_with_progress(job_id)
+            job_info = job_operations_controller.get_job_with_progress(job_id)
             if not job_info:
                 raise ValueError(f"Job {job_id} not found")
 
             # Update job status to processing
-            job_operations_wrapper.update_job_status_safely(
+            job_operations_controller.update_job_status_safely(
                 job_id=job_id,
                 status=JobStatus.PROCESSING
             )
@@ -168,7 +167,7 @@ class CompressionService:
             # Get full job details through job_operations_wrapper
             # Since we need input_data, we'll use a direct approach for now
             # In production, you'd extend job_operations_wrapper to include input_data
-            job = job_operations.get_job(job_id=job_id)
+            job = job_operations_controller.job_operations.get_job(job_id=job_id)
             if not isinstance(job, Job):
                 raise ValueError(f"Job {job_id} not found")
 
@@ -187,7 +186,7 @@ class CompressionService:
             return result
 
         except Exception as e:
-            job_operations_wrapper.update_job_status_safely(
+            job_operations_controller.update_job_status_safely(
                 job_id=job_id,
                 status=JobStatus.FAILED,
                 error_message=str(e)
@@ -201,7 +200,8 @@ class CompressionService:
         Create a compression job and return job ID
         """
         try:
-            job = job_operations_wrapper.create_job_safely(
+            from src.main import job_operations_controller
+            job = job_operations_controller.create_job_safely(
                 job_id=job_id,
                 task_type=TaskType.COMPRESS.value,
                 input_data={

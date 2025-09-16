@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
 from flask import Blueprint, request, current_app
@@ -29,7 +29,8 @@ from src.tasks.tasks import (
     extract_invoice_task,
     extract_bank_statement_task,
 )
-from src.jobs import JobStatusManager, JobOperationsWrapper, JobOperations, job_operations, job_operations_wrapper
+from src.main import job_operations_controller
+
 
 pdf_suite_bp = Blueprint("pdf_suite", __name__)
 logger = logging.getLogger(__name__)
@@ -96,9 +97,9 @@ def _enqueue_job(
     try:
         # Create job record first
 
-        job = job_operations.get_job(job_id=job_id)
+        job = job_operations_controller.job_operations.get_job(job_id=job_id)
         if not isinstance(job, Job):
-            job = job_operations_wrapper.create_job_safely(job_id=job_id, task_type=task_type.value, input_data=input_data)
+            job = job_operations_controller.create_job_safely(job_id=job_id, task_type=task_type.value, input_data=input_data)
         if not isinstance(job, Job):
             logger.error(f"Failed to create job record for {job_id}")
             return {}, "Failed to create job record"
@@ -112,9 +113,9 @@ def _enqueue_job(
         # CRITICAL FIX: Store task_id in job record
         if task and hasattr(task, 'id'):
             logger.info(f"Task enqueued with task_id: {task.id} for job {job_id}")
-            job_operations.update_job(job_id, {
+            job_operations_controller.job_operations.update_job(job_id, {
                 'task_id': task.id,
-                'updated_at': datetime.utcnow()
+                'updated_at': datetime.now(timezone.utc)
             })
         
         logger.info(f"Task enqueued successfully: job_id={job_id}, task_id={task.id}")
@@ -130,7 +131,7 @@ def _enqueue_job(
         
         # Try to mark job as failed
         try:
-            job_operations_wrapper.update_job_status_safely(
+            job_operations_controller.update_job_status_safely(
                 job_id=job_id,
                 status=JobStatus.FAILED,
                 error_message=f"Enqueue failed: {exc}",
@@ -160,7 +161,7 @@ def convert_pdf():
         target = request.form.get("format", "txt").lower()
         conv_svc = _get_safe_service("get_conversion_service")
         if target not in conv_svc.supported_formats:
-            return error_response(f"Unsupported format: {target}", 400)
+            return error_response(message=f"Unsupported format: {target}", status_code=400)
 
         file, err = get_file_and_validate("conversion")
         if err:
@@ -168,7 +169,7 @@ def convert_pdf():
 
         options, err = _load_json_options()
         if err:
-            return error_response(err, 400)
+            return error_response(message=err, status_code=400)
 
         job_id = _validate_job_id(request.form.get("job_id"))
         file_bytes = file.read()  # single read
@@ -189,7 +190,7 @@ def convert_pdf():
             task_kwargs={},
         )
         if err:
-            return error_response(err, 500)
+            return error_response(message=err, status_code=500)
 
         return success_response(message="Conversion job queued", data={**data, "format": target}, status_code=202)
     except Exception as exc:
@@ -326,9 +327,9 @@ def summarize_pdf():
         data = _get_json_from_request()
         text = data.get("text", "")
         if not text:
-            return error_response("No text provided", 400)
+            return error_response(message="No text provided", status_code=400)
         if len(text.encode("utf-8")) > MAX_TEXT_PAYLOAD:
-            return error_response("Text too large (limit 100 kB)", 400)
+            return error_response(message="Text too large (limit 100 kB)", status_code=400)
 
         options = data.get("options", {})
         job_id = _validate_job_id(data.get("job_id"))
@@ -343,13 +344,13 @@ def summarize_pdf():
             task_kwargs={},
         )
         if err:
-            return error_response(err, 500)
+            return error_response(message=err, status_code=500)
         return success_response(message="Summarization queued", data=payload, status_code=202)
     except (UnsupportedMediaType, ValueError) as exc:
-        return error_response(str(exc), 400)
+        return error_response(str(message=exc), status_code=400)
     except Exception as exc:
         logger.exception("summarize failed")
-        return error_response(f"Summarization failed: {exc}", 500)
+        return error_response(message=f"Summarization failed: {exc}", status_code=500)
 
 @pdf_suite_bp.route("/ai/translate", methods=["POST", "GET"])
 def translate_text():
@@ -358,9 +359,9 @@ def translate_text():
         data = _get_json_from_request()
         text = data.get("text", "")
         if not text:
-            return error_response("No text provided", 400)
+            return error_response(message="No text provided", status_code=400)
         if len(text.encode("utf-8")) > MAX_TEXT_PAYLOAD:
-            return error_response("Text too large (limit 100 kB)", 400)
+            return error_response(message="Text too large (limit 100 kB)", status_code=400)
 
         target = data.get("target_language", "en")
         options = data.get("options", {})
@@ -382,10 +383,10 @@ def translate_text():
             return error_response(err, 500)
         return success_response(message="Translation queued", data=payload, status_code=202)
     except (UnsupportedMediaType, ValueError) as exc:
-        return error_response(str(exc), 400)
+        return error_response(message=str(exc), status_code=400)
     except Exception as exc:
         logger.exception("translation failed")
-        return error_response(f"Translation failed: {exc}", 500)
+        return error_response(message=f"Translation failed: {exc}", status_code=500)
 
 # --------------------------------------------------------------------------- #
 # TEXT / INVOICE / BANK-STATEMENT EXTRACTION
@@ -400,7 +401,7 @@ def extract_text():
         job_id = _validate_job_id(request.form.get("job_id"))
         file_bytes = file.read()
         if len(file_bytes) > MAX_FILE_SIZE:
-            return error_response("File too large", 413)
+            return error_response(message="File too large", status_code=413)
         # noinspection PyTypeChecker
         payload, err = _enqueue_job(
             job_id=job_id,
@@ -414,11 +415,11 @@ def extract_text():
             task_kwargs={},
         )
         if err:
-            return error_response(err, 500)
+            return error_response(message=err, status_code=500)
         return success_response(message="Text extraction queued", data=payload, status_code=202)
     except Exception as exc:
         logger.exception("text extraction failed")
-        return error_response(f"Text extraction failed: {exc}", 500)
+        return error_response(message=f"Text extraction failed: {exc}", status_code=500)
 
 # --------------- invoice --------------- #
 @pdf_suite_bp.route("/ai/extract-invoice", methods=["POST", "GET"])
@@ -430,13 +431,12 @@ def extract_invoice():
             return err
         options, err = _load_json_options()
         if err:
-            return error_response(err, 400)
+            return error_response(message=err, status_code=400)
 
         job_id = _validate_job_id(request.form.get("job_id"))
         file_bytes = file.read()
         if len(file_bytes) > MAX_FILE_SIZE:
-            return error_response("File too large", 413)
-
+            return error_response(message="File too large", status_code=413)
         # persist file
         file_svc = _get_safe_service("get_file_management_service")
         file_path = file_svc.save_file(file, job_id)
@@ -454,11 +454,11 @@ def extract_invoice():
             task_kwargs={},
         )
         if err:
-            return error_response(err, 500)
+            return error_response(message=err, status_code=500)
         return success_response(message="Invoice extraction queued", data=payload, status_code=202)
     except Exception as exc:
         logger.exception("invoice extraction failed")
-        return error_response(f"Invoice extraction failed: {exc}", 500)
+        return error_response(message=f"Invoice extraction failed: {exc}", status_code=500)
 
 @pdf_suite_bp.route("/ai/invoice-capabilities", methods=["POST", "GET"])
 def get_invoice_capabilities():
@@ -469,7 +469,7 @@ def get_invoice_capabilities():
         return success_response(message="Capabilities retrieved", data=caps)
     except Exception as exc:
         logger.exception("invoice capabilities failed")
-        return error_response(f"Capabilities failed: {exc}", 500)
+        return error_response(message=f"Capabilities failed: {exc}", status_code=500)
 
 # --------------- bank statement --------------- #
 @pdf_suite_bp.route("/ai/extract-bank-statement", methods=["POST", "GET"])
@@ -566,7 +566,7 @@ def get_extended_features_status():
                 "features": ["invoice_extraction", "bank_statement_extraction"],
             },
             "queue": {"redis_available": redis_ok, "job_processing": True},
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         return success_response(message="Status retrieved", data=status, status_code=200)
     except Exception as exc:

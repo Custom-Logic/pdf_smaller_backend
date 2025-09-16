@@ -1,6 +1,6 @@
 🔍 Root Cause Identified
 
-The conversion service is stuck because there's a job creation conflict between the route handler and the task. Your route handler creates a job using JobStatusManager.get_or_create_job(), but then the conversion task tries to create the same job again using JobOperationsWrapper.create_job_safely(), causing a conflict.
+The conversion service is stuck because there's a job creation conflict between the route handler and the task. Your route handler creates a job using JobStatusManager.get_or_create_job(), but then the conversion task tries to create the same job again using JobOperationsController.create_job_safely(), causing a conflict.
 
 🎯 Enhanced Debugging Prompt
 
@@ -20,7 +20,7 @@ The conversion service is stuck because there's a job creation conflict between 
 
 **Current Problem Code**:
 ```python
-job = JobOperationsWrapper.create_job_safely(
+job = JobOperationsController.create_job_safely(
     job_id=job_id,
     task_type="convert",
     input_data={...}
@@ -32,7 +32,7 @@ Fix: Replace with the compression service pattern:
 job = JobOperations.get_job(job_id)
 if not job:
     # Fallback: create job if it doesn't exist
-    job = JobOperationsWrapper.create_job_safely(
+    job = JobOperationsController.create_job_safely(
         job_id=job_id,
         task_type="convert",
         input_data={...}
@@ -58,7 +58,7 @@ ocr_preview_task (lines 495-502)
 
 
 
-Any other tasks that use JobOperationsWrapper.create_job_safely()
+Any other tasks that use JobOperationsController.create_job_safely()
 
 3. Verify Task Registration
 
@@ -134,7 +134,7 @@ This fix should resolve the "pending" status issue by eliminating the job creati
 
 ### The Issue
 1. **Route Handler** (`pdf_suite.py:77-86`): Creates job using `JobStatusManager.get_or_create_job()`
-2. **Conversion Task** (`tasks.py:344-353`): Tries to create the same job again using `JobOperationsWrapper.create_job_safely()`
+2. **Conversion Task** (`tasks.py:344-353`): Tries to create the same job again using `JobOperationsController.create_job_safely()`
 3. **Result**: Job creation conflict prevents task from proceeding to "processing" status
 
 ### The Working Pattern (Compression Service)

@@ -16,7 +16,7 @@ class TaskType(Enum):
     CONVERT = 'convert'
     CONVERSION_PREVIEW= 'conversion_preview'
     OCR = 'ocr'
-    OCV_PREVIEW='ocv_preview'
+    OCR_PREVIEW= 'ocv_preview'
     AI = 'ai'
     AI_EXTRACT_TEXT = 'ai_extract_text'  
     AI_SUMMARIZE = 'ai_summarize'  

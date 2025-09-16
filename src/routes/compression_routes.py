@@ -1,16 +1,15 @@
 import logging
-
 import uuid
 from datetime import datetime, timezone
 
+from flask import Blueprint, request
 
-from flask import Blueprint, request, jsonify
 
-from src.models import db, Job, JobStatus
-from src.utils.security_utils import validate_file
-from src.utils.response_helpers import success_response, error_response
-from src.jobs import JobStatusManager
+from src.models import db, JobStatus
 from src.tasks.tasks import compress_task, bulk_compress_task
+from src.utils.response_helpers import success_response, error_response
+from src.utils.security_utils import validate_file
+from src.main import job_operations_controller
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +56,7 @@ def compress_pdf():
         }
 
         # CREATE JOB FIRST - this is the fix!
-        job = JobStatusManager.get_or_create_job(
+        job = job_operations_controller.job_status_manager.get_or_create_job(
             job_id=job_id,
             task_type='compress',
             input_data={
@@ -85,7 +84,7 @@ def compress_pdf():
 
         except Exception as task_error:
             logger.error(f"Failed to enqueue compression task {job_id}: {str(task_error)}")
-            JobStatusManager.update_job_status(
+            job_operations_controller.job_status_manager.update_job_status(
                 job_id=job_id,
                 status=JobStatus.FAILED,
                 error_message=f"Task enqueueing failed: {str(task_error)}"
@@ -143,7 +142,7 @@ def bulk_compress():
             return error_response(message='No valid files provided', error_code='NO_VALID_FILES', status_code=400)
 
         # CREATE JOB FIRST - this is the fix!
-        job = JobStatusManager.get_or_create_job(
+        job = job_operations_controller.job_status_manager.get_or_create_job(
             job_id=job_id,
             task_type='bulk_compress',
             input_data={
@@ -179,7 +178,7 @@ def bulk_compress():
 
         except Exception as task_error:
             logger.error(f"Failed to enqueue bulk compression task {job_id}: {str(task_error)}")
-            JobStatusManager.update_job_status(
+            job_operations_controller.job_status_manager.update_job_status(
                 job_id=job_id,
                 status=JobStatus.FAILED,
                 error_message=f"Task enqueueing failed: {str(task_error)}"

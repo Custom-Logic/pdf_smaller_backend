@@ -7,20 +7,28 @@ and SQLite’s database-level locks.
 """
 
 import logging
-from typing import Dict, Any, Optional, List, Callable
-from datetime import datetime, timedelta, timezone
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+from typing import Dict, Any, Optional, List
+
+from flask import Flask
 from sqlalchemy import select, delete
 from sqlalchemy.orm import Session
+
 from src.models import Job, JobStatus
 from src.models.base import db
-from src.utils.db_transaction import safe_db_operation
 
 logger = logging.getLogger(__name__)
 
 
 class JobOperations:
     """Centralized database session management for job operations (SQLite)."""
+
+    def __init__(self):
+        pass
+
+    def init_app(self, app: Flask):
+        pass
 
     @staticmethod
     @contextmanager
@@ -37,27 +45,6 @@ class JobOperations:
             raise
         finally:
             session.close()
-
-    @staticmethod
-    def execute_with_lock(job_id: str, operation: Callable[[Job, Session], Any]) -> Any:
-        """
-        Execute operation on a job.
-        NOTE: SQLite does not support row-level locking; we rely on transaction isolation
-        and retries if the database is locked.
-        """
-        def wrapped_operation():
-            with JobOperations.session_scope() as session:
-                job = session.query(Job).filter_by(job_id=job_id).first()
-                if not isinstance(job, Job):
-                    raise ValueError(f"Job {job_id} not found")
-                return operation(job, session)
-
-        return safe_db_operation(
-            wrapped_operation,
-            f"execute_with_lock_{job_id}",
-            max_retries=2,
-            default_return=None
-        )
 
 
     def get_job(self, job_id: str) -> Optional[Job]:
@@ -98,110 +85,71 @@ class JobOperations:
             return job
         return None
 
-    @staticmethod
-    def bulk_update_jobs(job_updates: List[Dict[str, Any]]) -> Dict[str, bool]:
+
+    def bulk_update_jobs(self, job_updates: List[Dict[str, Any]]) -> Dict[str, bool]:
         """Update multiple jobs in a single transaction."""
         results: Dict[str, bool] = {}
+        with self.session_scope() as session:
+            for update_info in job_updates:
+                job_id = update_info.get('job_id')
+                if not job_id:
+                    results[job_id] = False
+                    continue
 
-        def bulk_operation():
-            with JobOperations.session_scope() as session:
-                for update_info in job_updates:
-                    job_id = update_info.get('job_id')
-                    if not job_id:
+                try:
+                    job = session.query(Job).filter_by(job_id=job_id).first()
+                    if not isinstance(job, Job):
                         results[job_id] = False
                         continue
 
-                    try:
-                        job = session.execute(
-                            select(Job).where(Job.job_id == job_id)
-                        ).scalar_one_or_none()
+                    for key, value in update_info.items():
+                        if key != 'job_id' and hasattr(job, key):
+                            setattr(job, key, value)
 
-                        if not isinstance(job, Job):
-                            results[job_id] = False
-                            continue
+                    job.updated_at = datetime.now(timezone.utc)
+                    results[job_id] = True
 
-                        for key, value in update_info.items():
-                            if key != 'job_id' and hasattr(job, key):
-                                setattr(job, key, value)
+                except Exception as e:
+                    logger.error(f"Failed to update job {job_id}: {e}")
+                    results[job_id] = False
 
-                        job.updated_at = datetime.now(timezone.utc)
-                        results[job_id] = True
+            return results
+        return None
 
-                    except Exception as e:
-                        logger.error(f"Failed to update job {job_id}: {e}")
-                        results[job_id] = False
 
-                return results
-
-        return safe_db_operation(
-            bulk_operation,
-            "bulk_update_jobs",
-            max_retries=1,
-            default_return=results
-        )
-
-    @staticmethod
-    def delete_job(job_id: str) -> bool:
+    def delete_job(self, job_id: str) -> bool:
         """Delete a job by ID."""
-        def delete_operation():
-            with JobOperations.session_scope() as session:
-                job = session.query(Job).filter_by(job_id=job_id).first()
-                if not isinstance(job, Job):
-                    return False
+        with self.session_scope() as session:
+            job = session.query(Job).filter_by(job_id=job_id).first()
+            if not isinstance(job, Job):
+                return False
 
-                session.delete(job)
-                return True
+            session.delete(job)
+            return True
+        return None
 
-        return safe_db_operation(
-            delete_operation,
-            f"delete_job_{job_id}",
-            max_retries=1,
-            default_return=False
-        )
-
-    @staticmethod
-    def cleanup_old_jobs(days_old: int = 30) -> int:
+    def cleanup_old_jobs(self, days_old: int = 30) -> int:
         """Delete jobs older than `days_old` with completed/failed status."""
-        def cleanup_operation():
-            with JobOperations.session_scope() as session:
-                cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_old)
-                result = session.execute(
-                    delete(Job).where(
-                        Job.created_at < cutoff_date,
-                        Job.status.in_([JobStatus.COMPLETED.value, JobStatus.FAILED.value])
-                    )
+
+        with self.session_scope() as session:
+            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_old)
+            result = session.execute(
+                delete(Job).where(
+                    Job.created_at < cutoff_date,
+                    Job.status.in_([JobStatus.COMPLETED.value, JobStatus.FAILED.value])
                 )
-                deleted_count = result.rowcount or 0
-                logger.info(f"Cleaned up {deleted_count} jobs older than {days_old} days")
-                return deleted_count
+            )
+            deleted_count = result.rowcount or 0
+            logger.info(f"Cleaned up {deleted_count} jobs older than {days_old} days")
+            return deleted_count
+        return None
 
-        return safe_db_operation(
-            cleanup_operation,
-            "cleanup_old_jobs",
-            max_retries=1,
-            default_return=0
-        )
-
-    @staticmethod
-    def get_jobs_by_status(status: JobStatus, limit: int = 100) -> List[Job]:
+    def get_jobs_by_status(self, status: JobStatus, limit: int = 100) -> List[Job]:
         """Get jobs by status."""
-        def query_operation():
-            with JobOperations.session_scope(auto_commit=False) as session:
-                result = session.execute(
-                    select(Job)
-                    .where(Job.status == status.value)
-                    .limit(limit)
-                    .order_by(Job.created_at.desc())
-                )
-                return result.scalars().all()
 
-        return safe_db_operation(
-            query_operation,
-            f"get_jobs_by_status_{status.value}",
-            max_retries=1,
-            default_return=[]
-        )
+        with self.session_scope(auto_commit=False) as session:
+            results = session.query(Job).filter_by(status=status.value).limit(limit).order_by(Job.created_at.desc()).all()
+            return results
+        return []
 
-
-job_operations = JobOperations()
 

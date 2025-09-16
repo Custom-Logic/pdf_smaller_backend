@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Callable, Dict, Any
 from flask import Flask
-from src.services import ServiceRegistry, FileManagementService
+from src.services import ServiceRegistry
 
 
 logger = logging.getLogger(__name__)
@@ -14,13 +14,13 @@ logger = logging.getLogger(__name__)
 class TaskScheduler:
     """Simple task scheduler for running periodic cleanup operations"""
     
-    def __init__(self, file_service: FileManagementService | None =None):
+    def __init__(self, file_service: None =None):
         self.tasks = {}
         self.running = False
         self.thread = None
-        self.file_service: FileManagementService = file_service
+        self.file_service = file_service if file_service else ServiceRegistry.get_file_management_service()
 
-    def init_app(self, app: Flask, file_service: FileManagementService | None = None):
+    def init_app(self, app: Flask, file_service: None = None):
         """Initialize the scheduler with the Flask app context"""
 
         self.file_service = ServiceRegistry.get_file_management_service()
