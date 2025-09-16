@@ -84,16 +84,12 @@ class ConversionService:
             # src/services/conversion_service.py  (top of process_conversion_job)
 
             try:
-                raw_input = job.input_data or {}
-                # handle both dict (already deserialized) and str (still JSON)
-                if isinstance(raw_input, str):
-                    input_data = json.loads(raw_input)
-                else:
-                    input_data = raw_input
-            except (TypeError, ValueError):
+                input_data = json.loads(job.input_data) if isinstance(job.input_data, str) else (job.input_data or {})
+                original_filename = input_data.get('original_filename') or 'document.pdf'
+            except Exception:
+                logger.exception('Could not parse job.input_data, using defaults')
                 input_data = {}
-
-            original_filename = input_data.get('original_filename') or 'document.pdf'
+                original_filename = 'document.pdf'
 
 
             # Process the conversion
