@@ -8,6 +8,7 @@ import os
 import re
 import uuid
 import io
+import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, BinaryIO
 
@@ -80,9 +81,21 @@ class ConversionService:
             logger.debug(f"Job {job_id} marked as processing")
 
             # Get original filename from job input data
-            input_data = job.input_data or {}
-            original_filename = input_data.get('original_filename', 'document.pdf')
-            
+            # src/services/conversion_service.py  (top of process_conversion_job)
+
+            try:
+                raw_input = job.input_data or {}
+                # handle both dict (already deserialized) and str (still JSON)
+                if isinstance(raw_input, str):
+                    input_data = json.loads(raw_input)
+                else:
+                    input_data = raw_input
+            except (TypeError, ValueError):
+                input_data = {}
+
+            original_filename = input_data.get('original_filename') or 'document.pdf'
+
+
             # Process the conversion
             result = self.convert_pdf_data(
                 file_data=file_data,
