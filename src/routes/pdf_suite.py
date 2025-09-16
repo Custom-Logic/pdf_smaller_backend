@@ -109,10 +109,12 @@ def _enqueue_job(
         task = task_func.delay(*task_args, **task_kwargs)
         
         # CRITICAL FIX: Store task_id in job record
-        JobOperations.update_job(job_id, {
-            'task_id': task.id,
-            'updated_at': datetime.utcnow()
-        })
+        if task and hasattr(task, 'id'):
+            logger.info(f"Task enqueued with task_id: {task.id} for job {job_id}")
+            JobOperations.update_job(job_id, {
+                'task_id': task.id,
+                'updated_at': datetime.utcnow()
+            })
         
         logger.info(f"Task enqueued successfully: job_id={job_id}, task_id={task.id}")
         
@@ -171,7 +173,7 @@ def convert_pdf():
         file_bytes = file.read()  # single read
         if len(file_bytes) > MAX_FILE_SIZE:
             return error_response(message="File too large", status_code=413)
-
+        # noinspection PyTypeChecker
         data, err = _enqueue_job(
             job_id=job_id,
             task_type=TaskType.CONVERT,
@@ -209,7 +211,7 @@ def get_conversion_preview():
         file_bytes = file.read()
         if len(file_bytes) > MAX_FILE_SIZE:
             return error_response(message="File too large", status_code=413)
-
+        # noinspection PyTypeChecker
         data, err = _enqueue_job(
             job_id=job_id,
             task_type=TaskType.CONVERSION_PREVIEW,
@@ -249,6 +251,7 @@ def process_ocr():
         if len(file_bytes) > MAX_FILE_SIZE:
             return error_response(message="File too large", status_code=413)
 
+        # noinspection PyTypeChecker
         data, err = _enqueue_job(
             job_id=job_id,
             task_type=TaskType.OCR,
@@ -283,7 +286,7 @@ def get_ocr_preview():
         file_bytes = file.read()
         if len(file_bytes) > MAX_FILE_SIZE:
             return error_response(message="File too large", status_code=413)
-
+        # noinspection PyTypeChecker
         data, err = _enqueue_job(
             job_id=job_id,
             task_type=TaskType.OCR_PREVIEW,
@@ -329,6 +332,7 @@ def summarize_pdf():
         options = data.get("options", {})
         job_id = _validate_job_id(data.get("job_id"))
 
+        # noinspection PyTypeChecker
         payload, err = _enqueue_job(
             job_id=job_id,
             task_type=TaskType.AI_SUMMARIZE,
@@ -360,7 +364,7 @@ def translate_text():
         target = data.get("target_language", "en")
         options = data.get("options", {})
         job_id = _validate_job_id(data.get("job_id"))
-
+        # noinspection PyTypeChecker
         payload, err = _enqueue_job(
             job_id=job_id,
             task_type=TaskType.AI_TRANSLATE,
@@ -396,7 +400,7 @@ def extract_text():
         file_bytes = file.read()
         if len(file_bytes) > MAX_FILE_SIZE:
             return error_response("File too large", 413)
-
+        # noinspection PyTypeChecker
         payload, err = _enqueue_job(
             job_id=job_id,
             task_type=TaskType.AI_EXTRACT_TEXT,
@@ -435,7 +439,7 @@ def extract_invoice():
         # persist file
         file_svc = _get_safe_service("get_file_management_service")
         file_path = file_svc.save_file(file, job_id)
-
+        # noinspection PyTypeChecker
         payload, err = _enqueue_job(
             job_id=job_id,
             task_type=TaskType.AI_INVOICE_EXTRACTION,
@@ -485,7 +489,7 @@ def extract_bank_statement():
 
         file_svc = _get_safe_service("get_file_management_service")
         file_path = file_svc.save_file(file, job_id)
-
+        # noinspection PyTypeChecker
         payload, err = _enqueue_job(
             job_id=job_id,
             task_type=TaskType.AI_BANK_STATEMENT_EXTRACTION,
