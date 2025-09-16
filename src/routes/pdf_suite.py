@@ -1,16 +1,18 @@
 """
-PDF Suite Routes - Job-Oriented Architecture
-Handles conversion, OCR, AI, and cloud integration endpoints
-Returns job IDs for async processing
+PDF Suite Routes – Job-oriented architecture
+Handles conversion, OCR, AI, and cloud integration endpoints.
+Returns job IDs for async processing.
 """
+from __future__ import annotations
 
 import json
 import logging
 import uuid
 from datetime import datetime
-from typing import Dict, Any, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
-from flask import Blueprint, request
+from flask import Blueprint, request, current_app
+from werkzeug.exceptions import UnsupportedMediaType, RequestEntityTooLarge
 
 from src.models import JobStatus, TaskType
 from src.services.service_registry import ServiceRegistry
@@ -25,650 +27,601 @@ from src.tasks.tasks import (
     ai_translate_task,
     extract_text_task,
     extract_invoice_task,
-    extract_bank_statement_task
+    extract_bank_statement_task,
 )
 from src.jobs import JobStatusManager
 
-# Initialize blueprint
-pdf_suite_bp = Blueprint('pdf_suite', __name__)
+pdf_suite_bp = Blueprint("pdf_suite", __name__)
 logger = logging.getLogger(__name__)
 
-def create_job_id() -> str:
-    """Generate a unique job ID."""
-    return str(uuid.uuid4())
+# --------------------------------------------------------------------------- #
+# Constants
+# --------------------------------------------------------------------------- #
+MAX_JSON_OPTIONS_SIZE = 64 * 1024          # 64 kB
+MAX_TEXT_PAYLOAD      = 100 * 1024         # 100 kB
+MAX_FILE_SIZE         = 100 * 1024 * 1024  # 100 MB
 
-def _parse_options_from_request() -> Tuple[Dict[str, Any], Optional[str]]:
-    """Parse options from request form data."""
-    options = {}
-    error = None
-    
-    if 'options' in request.form:
+# --------------------------------------------------------------------------- #
+# Helpers
+# --------------------------------------------------------------------------- #
+def _validate_job_id(jid: Optional[str]) -> str:
+    """Return a safe job-id (uuid4 if none or invalid)."""
+    if not jid:
+        return str(uuid.uuid4())
+    try:
+        uuid.UUID(jid)
+        return jid
+    except ValueError:
+        return str(uuid.uuid4())
+
+def _load_json_options() -> Tuple[Dict[str, Any], Optional[str]]:
+    """Load options from form field with size guard."""
+    options: Dict[str, Any] = {}
+    error: Optional[str] = None
+    raw = request.form.get("options")
+    if raw:
+        if len(raw.encode("utf-8")) > MAX_JSON_OPTIONS_SIZE:
+            return {}, "Options payload too large"
         try:
-            options = json.loads(request.form['options'])
+            options = json.loads(raw)
+            if not isinstance(options, dict):
+                return {}, "Options must be a JSON object"
         except json.JSONDecodeError:
-            error = "Invalid options format"
-    
+            error = "Invalid JSON in options"
     return options, error
 
-def _create_and_enqueue_job(
+def _get_safe_service(getter_name: str):
+    """Return a service or raise a RuntimeError if missing."""
+    try:
+        svc = getattr(ServiceRegistry, getter_name)()
+        if svc is None:
+            raise RuntimeError(f"Service {getter_name} not registered")
+        return svc
+    except Exception as exc:
+        logger.exception("Service lookup failed")
+        raise RuntimeError(f"Service unavailable: {exc}") from exc
+
+def _enqueue_job(
+    *,
     job_id: str,
     task_type: TaskType,
     input_data: Dict[str, Any],
-    task_function,
-    task_args: tuple,
-    task_kwargs: Dict[str, Any]
-) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-    """Create job and enqueue task with proper error handling."""
+    task_func,
+    task_args: Tuple[Any, ...],
+    task_kwargs: Dict[str, Any],
+) -> Tuple[Dict[str, Any], Optional[str]]:
+    """Create job record and enqueue Celery task with unified error handling."""
     try:
-        # Create job first
         job = JobStatusManager.get_or_create_job(
             job_id=job_id,
             task_type=task_type.value,
-            input_data=input_data
+            input_data=input_data,
         )
-        
         if not job:
-            return None, 'Failed to create job'
+            return {}, "Failed to create job record"
 
-        # Enqueue task
-        task = task_function.delay(*task_args, **task_kwargs)
+        task = task_func.delay(*task_args, **task_kwargs)
+        logger.info("%s job %s enqueued (task_id: %s)", task_type.name, job_id, task.id)
+        return {"job_id": job_id, "task_id": task.id, "status": JobStatus.PENDING.value}, None
 
-        logger.info(f"{task_type.name} job {job_id} enqueued (task_id: {task.id})")
-
-        return {
-            'job_id': job_id,
-            'task_id': task.id,
-            'status': JobStatus.PENDING.value
-        }, None
-
-    except Exception as e:
-        logger.error(f"Failed to enqueue {task_type.name} task {job_id}: {str(e)}")
+    except Exception as exc:
+        logger.error("Enqueue %s job %s failed: %s", task_type.name, job_id, exc)
         JobStatusManager.update_job_status(
             job_id=job_id,
             status=JobStatus.FAILED,
-            error_message=f"Task enqueueing failed: {str(e)}"
+            error_message=f"Enqueue failed: {exc}",
         )
-        return None, f'Failed to queue {task_type.name.lower()} job'
+        return {}, f"Failed to queue {task_type.name.lower()} job"
 
-# ============================================================================
-# CONVERSION ROUTES
-# ============================================================================
+# --------------------------------------------------------------------------- #
+# Generic request guards
+# --------------------------------------------------------------------------- #
+@pdf_suite_bp.before_request
+def _content_length_guard():
+    """Reject oversized requests before they hit handlers."""
+    cl = request.content_length or 0
+    if cl > MAX_FILE_SIZE:
+        raise RequestEntityTooLarge()
 
-@pdf_suite_bp.route('/convert', methods=['POST'])
+# --------------------------------------------------------------------------- #
+# CONVERSION
+# --------------------------------------------------------------------------- #
+@pdf_suite_bp.route("/convert", methods=["POST"])
 def convert_pdf():
-    """Convert PDF to specified format - returns job ID"""
+    """Convert PDF to target format (txt/docx/xlsx/html)."""
     try:
-        target_format = request.form.get('format', 'txt').lower()
-        
-        # Validate format
-        conversion_service = ServiceRegistry.get_conversion_service()
-        if target_format not in conversion_service.supported_formats:
-            return error_response(message=f"Unsupported format: {target_format}", status_code=400)
+        target = request.form.get("format", "txt").lower()
+        conv_svc = _get_safe_service("get_conversion_service")
+        if target not in conv_svc.supported_formats:
+            return error_response(f"Unsupported format: {target}", 400)
 
-        # Get and validate file
-        file, error = get_file_and_validate('conversion')
-        if error:
-            return error
+        file, err = get_file_and_validate("conversion")
+        if err:
+            return err
 
-        # Get conversion options
-        options, error = _parse_options_from_request()
-        if error:
-            return error_response(message=error, status_code=400)
+        options, err = _load_json_options()
+        if err:
+            return error_response(err, 400)
 
-        job_id = request.form.get('job_id', create_job_id())
-        file_data = file.read()
+        job_id = _validate_job_id(request.form.get("job_id"))
+        file_bytes = file.read()  # single read
+        if len(file_bytes) > MAX_FILE_SIZE:
+            return error_response("File too large", 413)
 
-        # Create and enqueue job
-        result, error_msg = _create_and_enqueue_job(
+        data, err = _enqueue_job(
             job_id=job_id,
             task_type=TaskType.CONVERT,
             input_data={
-                'target_format': target_format,
-                'options': options,
-                'file_size': len(file_data),
-                'original_filename': file.filename
+                "target_format": target,
+                "options": options,
+                "file_size": len(file_bytes),
+                "original_filename": file.filename,
             },
-            task_function=convert_pdf_task,
-            task_args=(job_id, file_data, target_format, options, file.filename),
-            task_kwargs={}
+            task_func=convert_pdf_task,
+            task_args=(job_id, file_bytes, target, options, file.filename),
+            task_kwargs={},
         )
-
-        if error_msg:
-            return error_response(message=error_msg, status_code=500)
+        if err:
+            return error_response(err, 500)
 
         return success_response(
-            message="Conversion job queued successfully",
-            data={**result, 'format': target_format},
-            status_code=202
+            "Conversion job queued", {**data, "format": target}, 202
         )
+    except Exception as exc:
+        logger.exception("convert_pdf failed")
+        return error_response(f"Job creation failed: {exc}", 500)
 
-    except Exception as e:
-        logger.error(f"PDF conversion job creation failed: {str(e)}")
-        return error_response(message=f"Failed to create conversion job: {str(e)}", status_code=500)
-
-@pdf_suite_bp.route('/convert/preview', methods=['POST'])
+@pdf_suite_bp.route("/convert/preview", methods=["POST"])
 def get_conversion_preview():
-    """Get conversion preview and estimates - returns job ID"""
+    """Return conversion estimates."""
     try:
-        file, error = get_file_and_validate('conversion')
-        if error:
-            return error
+        file, err = get_file_and_validate("conversion")
+        if err:
+            return err
+        target = request.form.get("format", "docx")
+        options, err = _load_json_options()
+        if err:
+            return error_response(err, 400)
 
-        target_format = request.form.get('format', 'docx')
-        options, error = _parse_options_from_request()
-        if error:
-            return error_response(message=error, status_code=400)
+        job_id = _validate_job_id(request.form.get("job_id"))
+        file_bytes = file.read()
+        if len(file_bytes) > MAX_FILE_SIZE:
+            return error_response("File too large", 413)
 
-        job_id = request.form.get('job_id', create_job_id())
-        file_data = file.read()
-
-        # Create and enqueue job
-        result, error_msg = _create_and_enqueue_job(
+        data, err = _enqueue_job(
             job_id=job_id,
             task_type=TaskType.CONVERSION_PREVIEW,
             input_data={
-                'target_format': target_format,
-                'options': options,
-                'file_size': len(file_data),
-                'original_filename': file.filename
+                "target_format": target,
+                "options": options,
+                "file_size": len(file_bytes),
+                "original_filename": file.filename,
             },
-            task_function=conversion_preview_task,
-            task_args=(job_id, file_data, target_format, options),
-            task_kwargs={}
+            task_func=conversion_preview_task,
+            task_args=(job_id, file_bytes, target, options),
+            task_kwargs={},
         )
+        if err:
+            return error_response(err, 500)
+        return success_response("Preview job queued", data, 202)
+    except Exception as exc:
+        logger.exception("conversion preview failed")
+        return error_response(f"Preview job failed: {exc}", 500)
 
-        if error_msg:
-            return error_response(message=error_msg, status_code=500)
-
-        return success_response(
-            message="Conversion preview job queued successfully",
-            data=result,
-            status_code=202
-        )
-
-    except Exception as e:
-        logger.error(f"Conversion preview job creation failed: {str(e)}")
-        return error_response(message=f"Failed to create preview job: {str(e)}", status_code=500)
-
-# ============================================================================
-# OCR ROUTES
-# ============================================================================
-
-@pdf_suite_bp.route('/ocr', methods=['POST'])
+# --------------------------------------------------------------------------- #
+# OCR
+# --------------------------------------------------------------------------- #
+@pdf_suite_bp.route("/ocr", methods=["POST"])
 def process_ocr():
-    """Process OCR on uploaded file - returns job ID"""
+    """Run OCR on scanned file."""
     try:
-        file, error = get_file_and_validate('ocr')
-        if error:
-            return error
+        file, err = get_file_and_validate("ocr")
+        if err:
+            return err
+        options, err = _load_json_options()
+        if err:
+            return error_response(err, 400)
 
-        options, error = _parse_options_from_request()
-        if error:
-            return error_response(message=error, status_code=400)
+        job_id = _validate_job_id(request.form.get("job_id"))
+        file_bytes = file.read()
+        if len(file_bytes) > MAX_FILE_SIZE:
+            return error_response("File too large", 413)
 
-        job_id = request.form.get('job_id', create_job_id())
-        file_data = file.read()
-
-        # Create and enqueue job
-        result, error_msg = _create_and_enqueue_job(
+        data, err = _enqueue_job(
             job_id=job_id,
             task_type=TaskType.OCR,
             input_data={
-                'options': options,
-                'file_size': len(file_data),
-                'original_filename': file.filename
+                "options": options,
+                "file_size": len(file_bytes),
+                "original_filename": file.filename,
             },
-            task_function=ocr_process_task,
-            task_args=(job_id, file_data, options, file.filename),
-            task_kwargs={}
+            task_func=ocr_process_task,
+            task_args=(job_id, file_bytes, options, file.filename),
+            task_kwargs={},
         )
+        if err:
+            return error_response(err, 500)
+        return success_response("OCR job queued", data, 202)
+    except Exception as exc:
+        logger.exception("OCR job failed")
+        return error_response(f"OCR job failed: {exc}", 500)
 
-        if error_msg:
-            return error_response(message=error_msg, status_code=500)
-
-        return success_response(
-            message="OCR job queued successfully",
-            data=result,
-            status_code=202
-        )
-
-    except Exception as e:
-        logger.error(f"OCR job creation failed: {str(e)}")
-        return error_response(message=f"Failed to create OCR job: {str(e)}", status_code=500)
-
-@pdf_suite_bp.route('/ocr/preview', methods=['POST'])
+@pdf_suite_bp.route("/ocr/preview", methods=["POST"])
 def get_ocr_preview():
-    """Get OCR preview and estimates - returns job ID"""
+    """OCR preview/estimate."""
     try:
-        file, error = get_file_and_validate('ocr')
-        if error:
-            return error
+        file, err = get_file_and_validate("ocr")
+        if err:
+            return err
+        options, err = _load_json_options()
+        if err:
+            return error_response(err, 400)
 
-        options, error = _parse_options_from_request()
-        if error:
-            return error_response(message=error, status_code=400)
+        job_id = _validate_job_id(request.form.get("job_id"))
+        file_bytes = file.read()
+        if len(file_bytes) > MAX_FILE_SIZE:
+            return error_response("File too large", 413)
 
-        job_id = request.form.get('job_id', create_job_id())
-        file_data = file.read()
-
-        # Create and enqueue job
-        result, error_msg = _create_and_enqueue_job(
+        data, err = _enqueue_job(
             job_id=job_id,
             task_type=TaskType.OCR_PREVIEW,
             input_data={
-                'options': options,
-                'file_size': len(file_data),
-                'original_filename': file.filename
+                "options": options,
+                "file_size": len(file_bytes),
+                "original_filename": file.filename,
             },
-            task_function=ocr_preview_task,
-            task_args=(job_id, file_data, options),
-            task_kwargs={}
+            task_func=ocr_preview_task,
+            task_args=(job_id, file_bytes, options),
+            task_kwargs={},
         )
+        if err:
+            return error_response(err, 500)
+        return success_response("OCR preview queued", data, 202)
+    except Exception as exc:
+        logger.exception("OCR preview failed")
+        return error_response(f"OCR preview failed: {exc}", 500)
 
-        if error_msg:
-            return error_response(message=error_msg, status_code=500)
+# --------------------------------------------------------------------------- #
+# AI – SUMMARIZE / TRANSLATE
+# --------------------------------------------------------------------------- #
+def _get_json_from_request() -> Dict[str, Any]:
+    """Return parsed JSON or raise UnsupportedMediaType/400."""
+    if not request.is_json:
+        raise UnsupportedMediaType("Content-Type must be application/json")
+    data = request.get_json(silent=True)
+    if not data or not isinstance(data, dict):
+        raise ValueError("Invalid JSON payload")
+    return data
 
-        return success_response(
-            message="OCR preview job queued successfully",
-            data=result,
-            status_code=202
-        )
-
-    except Exception as e:
-        logger.error(f"OCR preview job creation failed: {str(e)}")
-        return error_response(message=f"Failed to create OCR preview job: {str(e)}", status_code=500)
-
-# ============================================================================
-# AI ROUTES
-# ============================================================================
-
-@pdf_suite_bp.route('/ai/summarize', methods=['POST'])
+@pdf_suite_bp.route("/ai/summarize", methods=["POST"])
 def summarize_pdf():
-    """Summarize PDF content using AI - returns job ID"""
+    """Summarize text via AI."""
     try:
-        data = request.get_json()
-        if not data or 'text' not in data:
-            return error_response(message="No text content provided", status_code=400)
+        data = _get_json_from_request()
+        text = data.get("text", "")
+        if not text:
+            return error_response("No text provided", 400)
+        if len(text.encode("utf-8")) > MAX_TEXT_PAYLOAD:
+            return error_response("Text too large (limit 100 kB)", 400)
 
-        text = data['text']
-        if len(text) > 100000:  # 100KB limit
-            return error_response(message="Text too long. Maximum length is 100KB.", status_code=400)
+        options = data.get("options", {})
+        job_id = _validate_job_id(data.get("job_id"))
 
-        options = data.get('options', {})
-        job_id = data.get('job_id', create_job_id())
-
-        # Create and enqueue job
-        result, error_msg = _create_and_enqueue_job(
+        payload, err = _enqueue_job(
             job_id=job_id,
             task_type=TaskType.AI_SUMMARIZE,
-            input_data={
-                'text_length': len(text),
-                'options': options
-            },
-            task_function=ai_summarize_task,
+            input_data={"text_length": len(text), "options": options},
+            task_func=ai_summarize_task,
             task_args=(job_id, text, options),
-            task_kwargs={}
+            task_kwargs={},
         )
+        if err:
+            return error_response(err, 500)
+        return success_response("Summarization queued", payload, 202)
+    except (UnsupportedMediaType, ValueError) as exc:
+        return error_response(str(exc), 400)
+    except Exception as exc:
+        logger.exception("summarize failed")
+        return error_response(f"Summarization failed: {exc}", 500)
 
-        if error_msg:
-            return error_response(message=error_msg, status_code=500)
-
-        return success_response(
-            message="Summarization job queued successfully",
-            data=result,
-            status_code=202
-        )
-
-    except Exception as e:
-        logger.error(f"AI summarization job creation failed: {str(e)}")
-        return error_response(message=f"Failed to create summarization job: {str(e)}", status_code=500)
-
-@pdf_suite_bp.route('/ai/translate', methods=['POST'])
+@pdf_suite_bp.route("/ai/translate", methods=["POST"])
 def translate_text():
-    """Translate text using AI - returns job ID"""
+    """Translate text via AI."""
     try:
-        data = request.get_json()
-        if not data or 'text' not in data:
-            return error_response(message="No text content provided", status_code=400)
+        data = _get_json_from_request()
+        text = data.get("text", "")
+        if not text:
+            return error_response("No text provided", 400)
+        if len(text.encode("utf-8")) > MAX_TEXT_PAYLOAD:
+            return error_response("Text too large (limit 100 kB)", 400)
 
-        text = data['text']
-        if len(text) > 100000:  # 100KB limit
-            return error_response(message="Text too long. Maximum length is 100KB.", status_code=400)
+        target = data.get("target_language", "en")
+        options = data.get("options", {})
+        job_id = _validate_job_id(data.get("job_id"))
 
-        target_language = data.get('target_language', 'en')
-        options = data.get('options', {})
-        job_id = data.get('job_id', create_job_id())
-
-        # Create and enqueue job
-        result, error_msg = _create_and_enqueue_job(
+        payload, err = _enqueue_job(
             job_id=job_id,
             task_type=TaskType.AI_TRANSLATE,
             input_data={
-                'target_language': target_language,
-                'text_length': len(text),
-                'options': options
+                "target_language": target,
+                "text_length": len(text),
+                "options": options,
             },
-            task_function=ai_translate_task,
-            task_args=(job_id, text, target_language, options),
-            task_kwargs={}
+            task_func=ai_translate_task,
+            task_args=(job_id, text, target, options),
+            task_kwargs={},
         )
+        if err:
+            return error_response(err, 500)
+        return success_response("Translation queued", payload, 202)
+    except (UnsupportedMediaType, ValueError) as exc:
+        return error_response(str(exc), 400)
+    except Exception as exc:
+        logger.exception("translation failed")
+        return error_response(f"Translation failed: {exc}", 500)
 
-        if error_msg:
-            return error_response(message=error_msg, status_code=500)
-
-        return success_response(
-            message="Translation job queued successfully",
-            data=result,
-            status_code=202
-        )
-
-    except Exception as e:
-        logger.error(f"AI translation job creation failed: {str(e)}")
-        return error_response(message=f"Failed to create translation job: {str(e)}", status_code=500)
-
-# ============================================================================
-# TEXT EXTRACTION ROUTES
-# ============================================================================
-
-@pdf_suite_bp.route('/ai/extract-text', methods=['POST'])
+# --------------------------------------------------------------------------- #
+# TEXT / INVOICE / BANK-STATEMENT EXTRACTION
+# --------------------------------------------------------------------------- #
+@pdf_suite_bp.route("/ai/extract-text", methods=["POST"])
 def extract_text():
-    """Extract text content from PDF - returns job ID"""
+    """Extract plain text from PDF."""
     try:
-        file, error = get_file_and_validate('ai')
-        if error:
-            return error
+        file, err = get_file_and_validate("ai")
+        if err:
+            return err
+        job_id = _validate_job_id(request.form.get("job_id"))
+        file_bytes = file.read()
+        if len(file_bytes) > MAX_FILE_SIZE:
+            return error_response("File too large", 413)
 
-        job_id = request.form.get('job_id', create_job_id())
-        file_data = file.read()
-
-        # Create and enqueue job
-        result, error_msg = _create_and_enqueue_job(
+        payload, err = _enqueue_job(
             job_id=job_id,
             task_type=TaskType.AI_EXTRACT_TEXT,
             input_data={
-                'file_size': len(file_data),
-                'original_filename': file.filename
+                "file_size": len(file_bytes),
+                "original_filename": file.filename,
             },
-            task_function=extract_text_task,
-            task_args=(job_id, file_data, file.filename),
-            task_kwargs={}
+            task_func=extract_text_task,
+            task_args=(job_id, file_bytes, file.filename),
+            task_kwargs={},
         )
+        if err:
+            return error_response(err, 500)
+        return success_response("Text extraction queued", payload, 202)
+    except Exception as exc:
+        logger.exception("text extraction failed")
+        return error_response(f"Text extraction failed: {exc}", 500)
 
-        if error_msg:
-            return error_response(message=error_msg, status_code=500)
-
-        return success_response(
-            message="Text extraction job queued successfully",
-            data=result,
-            status_code=202
-        )
-
-    except Exception as e:
-        logger.error(f"Text extraction job creation failed: {str(e)}")
-        return error_response(message=f"Failed to create text extraction job: {str(e)}", status_code=500)
-
-# ============================================================================
-# INVOICE EXTRACTION ROUTES
-# ============================================================================
-
-@pdf_suite_bp.route('/ai/extract-invoice', methods=['POST'])
+# --------------- invoice --------------- #
+@pdf_suite_bp.route("/ai/extract-invoice", methods=["POST"])
 def extract_invoice():
-    """Extract invoice data from PDF - returns job ID"""
+    """Extract structured invoice data."""
     try:
-        file, error = get_file_and_validate('extraction')
-        if error:
-            return error
+        file, err = get_file_and_validate("extraction")
+        if err:
+            return err
+        options, err = _load_json_options()
+        if err:
+            return error_response(err, 400)
 
-        options, error = _parse_options_from_request()
-        if error:
-            return error_response(message=error, status_code=400)
+        job_id = _validate_job_id(request.form.get("job_id"))
+        file_bytes = file.read()
+        if len(file_bytes) > MAX_FILE_SIZE:
+            return error_response("File too large", 413)
 
-        job_id = request.form.get('job_id', create_job_id())
-        file_data = file.read()
+        # persist file
+        file_svc = _get_safe_service("get_file_management_service")
+        file_path = file_svc.save_file(file, job_id)
 
-        # Create job first
-        job = JobStatusManager.get_or_create_job(
+        payload, err = _enqueue_job(
             job_id=job_id,
-            task_type=TaskType.AI_INVOICE_EXTRACTION.value,
+            task_type=TaskType.AI_INVOICE_EXTRACTION,
             input_data={
-                'file_size': len(file_data),
-                'original_filename': file.filename,
-                'options': options
-            }
-        )
-        
-        if not job:
-            return error_response(message='Failed to create invoice extraction job', status_code=500)
-
-        # Save file temporarily
-        file_service = ServiceRegistry.get_file_management_service()
-        file_path = file_service.save_file(file, job_id)
-
-        # Enqueue invoice extraction task
-        task = extract_invoice_task.delay(job_id, file_path, options)
-
-        logger.info(f"Invoice extraction job {job_id} enqueued (task_id: {task.id})")
-
-        return success_response(
-            message="Invoice extraction job queued successfully",
-            data={
-                'job_id': job_id,
-                'task_id': task.id,
-                'status': JobStatus.PENDING.value
+                "file_size": len(file_bytes),
+                "original_filename": file.filename,
+                "options": options,
             },
-            status_code=202
+            task_func=extract_invoice_task,
+            task_args=(job_id, file_path, options),
+            task_kwargs={},
         )
+        if err:
+            return error_response(err, 500)
+        return success_response("Invoice extraction queued", payload, 202)
+    except Exception as exc:
+        logger.exception("invoice extraction failed")
+        return error_response(f"Invoice extraction failed: {exc}", 500)
 
-    except Exception as e:
-        logger.error(f"Invoice extraction job creation failed: {str(e)}")
-        return error_response(message=f"Failed to create invoice extraction job: {str(e)}", status_code=500)
-
-@pdf_suite_bp.route('/ai/invoice-capabilities', methods=['GET'])
+@pdf_suite_bp.route("/ai/invoice-capabilities", methods=["GET"])
 def get_invoice_capabilities():
-    """Get invoice extraction capabilities"""
+    """Return invoice extractor capabilities."""
     try:
-        capabilities = ServiceRegistry.get_invoice_extraction_service().get_extraction_capabilities()
-        return success_response(
-            message="Invoice extraction capabilities retrieved successfully",
-            data=capabilities
-        )
-    except Exception as e:
-        logger.error(f"Invoice capabilities retrieval failed: {str(e)}")
-        return error_response(message=f"Invoice capabilities retrieval failed: {str(e)}", status_code=500)
+        svc = _get_safe_service("get_invoice_extraction_service")
+        caps = svc.get_extraction_capabilities()
+        return success_response("Capabilities retrieved", caps)
+    except Exception as exc:
+        logger.exception("invoice capabilities failed")
+        return error_response(f"Capabilities failed: {exc}", 500)
 
-# ============================================================================
-# BANK STATEMENT EXTRACTION ROUTES
-# ============================================================================
-
-@pdf_suite_bp.route('/ai/extract-bank-statement', methods=['POST'])
+# --------------- bank statement --------------- #
+@pdf_suite_bp.route("/ai/extract-bank-statement", methods=["POST"])
 def extract_bank_statement():
-    """Extract bank statement data from PDF - returns job ID"""
+    """Extract structured bank-statement data."""
     try:
-        file, error = get_file_and_validate('extraction')
-        if error:
-            return error
+        file, err = get_file_and_validate("extraction")
+        if err:
+            return err
+        options, err = _load_json_options()
+        if err:
+            return error_response(err, 400)
 
-        options, error = _parse_options_from_request()
-        if error:
-            return error_response(message=error, status_code=400)
+        job_id = _validate_job_id(request.form.get("job_id"))
+        file_bytes = file.read()
+        if len(file_bytes) > MAX_FILE_SIZE:
+            return error_response("File too large", 413)
 
-        job_id = request.form.get('job_id', create_job_id())
-        file_data = file.read()
+        file_svc = _get_safe_service("get_file_management_service")
+        file_path = file_svc.save_file(file, job_id)
 
-        # Create job first
-        job = JobStatusManager.get_or_create_job(
+        payload, err = _enqueue_job(
             job_id=job_id,
-            task_type=TaskType.AI_BANK_STATEMENT_EXTRACTION.value,
+            task_type=TaskType.AI_BANK_STATEMENT_EXTRACTION,
             input_data={
-                'file_size': len(file_data),
-                'original_filename': file.filename,
-                'options': options
-            }
-        )
-        
-        if not job:
-            return error_response(message='Failed to create bank statement extraction job', status_code=500)
-
-        # Save file temporarily
-        file_service = ServiceRegistry.get_file_management_service()
-        file_path = file_service.save_file(file, job_id)
-
-        # Enqueue bank statement extraction task
-        task = extract_bank_statement_task.delay(job_id, file_path, options)
-
-        logger.info(f"Bank statement extraction job {job_id} enqueued (task_id: {task.id})")
-
-        return success_response(
-            message="Bank statement extraction job queued successfully",
-            data={
-                'job_id': job_id,
-                'task_id': task.id,
-                'status': JobStatus.PENDING.value
+                "file_size": len(file_bytes),
+                "original_filename": file.filename,
+                "options": options,
             },
-            status_code=202
+            task_func=extract_bank_statement_task,
+            task_args=(job_id, file_path, options),
+            task_kwargs={},
         )
+        if err:
+            return error_response(err, 500)
+        return success_response("Bank-statement extraction queued", payload, 202)
+    except Exception as exc:
+        logger.exception("bank-statement extraction failed")
+        return error_response(f"Bank-statement extraction failed: {exc}", 500)
 
-    except Exception as e:
-        logger.error(f"Bank statement extraction job creation failed: {str(e)}")
-        return error_response(message=f"Failed to create bank statement extraction job: {str(e)}", status_code=500)
-
-@pdf_suite_bp.route('/ai/bank-statement-capabilities', methods=['GET'])
+@pdf_suite_bp.route("/ai/bank-statement-capabilities", methods=["GET"])
 def get_bank_statement_capabilities():
-    """Get bank statement extraction capabilities"""
+    """Return bank-statement extractor capabilities."""
     try:
-        capabilities = ServiceRegistry.get_bank_statement_extraction_service().get_extraction_capabilities()
-        return success_response(
-            message="Bank statement extraction capabilities retrieved successfully",
-            data=capabilities
-        )
-    except Exception as e:
-        logger.error(f"Bank statement capabilities retrieval failed: {str(e)}")
-        return error_response(message=f"Bank statement capabilities retrieval failed: {str(e)}", status_code=500)
+        svc = _get_safe_service("get_bank_statement_extraction_service")
+        caps = svc.get_extraction_capabilities()
+        return success_response("Capabilities retrieved", caps)
+    except Exception as exc:
+        logger.exception("bank-statement capabilities failed")
+        return error_response(f"Capabilities failed: {exc}", 500)
 
-# ============================================================================
-# HEALTH CHECK AND STATUS ROUTES
-# ============================================================================
-
-@pdf_suite_bp.route('/extended-features/status', methods=['GET'])
+# --------------------------------------------------------------------------- #
+# HEALTH / STATUS
+# --------------------------------------------------------------------------- #
+@pdf_suite_bp.route("/extended-features/status", methods=["GET"])
 def get_extended_features_status():
-    """Get status of all extended features"""
+    """Return overall subsystem health."""
     try:
-        # Check Redis availability
-        redis_available = False
+        # quick redis ping with 1 s timeout
+        redis_ok = False
         try:
             from src.celery_app import get_celery_app
-            celery_app = get_celery_app()
-            redis_available = celery_app.control.ping(timeout=1.0) is not None
-        except:
+            redis_ok = bool(get_celery_app().control.ping(timeout=1))
+        except Exception:  # noqa
             pass
 
+        conv_svc = _get_safe_service("get_conversion_service")
+        ocr_svc = _get_safe_service("get_ocr_service")
+
         status = {
-            'conversion': {
-                'available': True,
-                'supported_formats': ['docx', 'xlsx', 'txt', 'html'],
-                'max_file_size': '100MB',
-                'async_processing': True
+            "conversion": {
+                "available": True,
+                "supported_formats": list(conv_svc.supported_formats),
+                "max_file_size": "100MB",
+                "async_processing": True,
             },
-            'ocr': {
-                'available': True,
-                'supported_formats': ['pdf', 'png', 'jpg', 'jpeg', 'tiff', 'bmp'],
-                'max_file_size': '50MB',
-                'async_processing': True
+            "ocr": {
+                "available": True,
+                "supported_formats": list(ocr_svc.supported_input_formats),
+                "max_file_size": "50MB",
+                "async_processing": True,
             },
-            'ai': {
-                'available': True,
-                'supported_formats': ['pdf'],
-                'max_file_size': '25MB',
-                'async_processing': True
+            "ai": {
+                "available": True,
+                "supported_formats": ["pdf"],
+                "max_file_size": "25MB",
+                "async_processing": True,
             },
-            'extraction': {
-                'available': True,
-                'supported_formats': ['pdf'],
-                'max_file_size': '25MB',
-                'async_processing': True,
-                'features': ['invoice_extraction', 'bank_statement_extraction']
+            "extraction": {
+                "available": True,
+                "supported_formats": ["pdf"],
+                "max_file_size": "25MB",
+                "async_processing": True,
+                "features": ["invoice_extraction", "bank_statement_extraction"],
             },
-            'queue': {
-                'redis_available': redis_available,
-                'job_processing': True
-            },
-            'timestamp': datetime.utcnow().isoformat()
+            "queue": {"redis_available": redis_ok, "job_processing": True},
+            "timestamp": datetime.utcnow().isoformat(),
         }
+        return success_response("Status retrieved", status)
+    except Exception as exc:
+        logger.exception("status endpoint failed")
+        return error_response(f"Status failed: {exc}", 500)
 
-        return success_response(
-            message="Extended features status retrieved successfully",
-            data=status
-        )
-
-    except Exception as e:
-        logger.error(f"Status retrieval failed: {str(e)}")
-        return error_response(message=f"Status retrieval failed: {str(e)}", status_code=500)
-
-@pdf_suite_bp.route('/extended-features/capabilities', methods=['GET'])
+@pdf_suite_bp.route("/extended-features/capabilities", methods=["GET"])
 def get_extended_features_capabilities():
-    """Get detailed capabilities of all extended features"""
+    """Return detailed capabilities map."""
     try:
-        capabilities = {
-            'conversion': {
-                'name': 'PDF Conversion',
-                'description': 'Convert PDFs to Word, Excel, Text, and HTML formats',
-                'features': ['format_conversion', 'layout_preservation', 'table_extraction'],
-                'options': {
-                    'preserveLayout': 'boolean',
-                    'extractTables': 'boolean',
-                    'extractImages': 'boolean',
-                    'quality': 'string (low|medium|high)'
+        # Dynamic lists are fetched inside try/except; if service is missing
+        # we fall back to static list so the whole endpoint doesn't 500.
+        conv_formats = []
+        try:
+            conv_formats = list(
+                _get_safe_service("get_conversion_service").supported_formats
+            )
+        except Exception:
+            conv_formats = ["docx", "xlsx", "txt", "html"]
+
+        caps = {
+            "conversion": {
+                "name": "PDF Conversion",
+                "description": "Convert PDFs to Word, Excel, Text, and HTML formats",
+                "features": ["format_conversion", "layout_preservation", "table_extraction"],
+                "options": {
+                    "preserveLayout": "boolean",
+                    "extractTables": "boolean",
+                    "extractImages": "boolean",
+                    "quality": "string (low|medium|high)",
                 },
-                'processing_mode': 'async'
+                "processing_mode": "async",
+                "supported_formats": conv_formats,
             },
-            'ocr': {
-                'name': 'Optical Character Recognition',
-                'description': 'Extract text from scanned PDFs and images',
-                'features': ['text_extraction', 'searchable_pdf', 'language_support'],
-                'options': {
-                    'language': 'string',
-                    'quality': 'string (fast|balanced|accurate)',
-                    'outputFormat': 'string (searchable_pdf|text|json)'
+            "ocr": {
+                "name": "Optical Character Recognition",
+                "description": "Extract text from scanned PDFs and images",
+                "features": ["text_extraction", "searchable_pdf", "language_support"],
+                "options": {
+                    "language": "string",
+                    "quality": "string (fast|balanced|accurate)",
+                    "outputFormat": "string (searchable_pdf|text|json)",
                 },
-                'processing_mode': 'async'
+                "processing_mode": "async",
             },
-            'ai': {
-                'name': 'AI-Powered Features',
-                'description': 'Summarize and translate PDF content using AI',
-                'features': ['summarization', 'translation', 'multiple_languages'],
-                'options': {
-                    'style': 'string (concise|detailed|academic|casual|professional)',
-                    'maxLength': 'string (short|medium|long)',
-                    'targetLanguage': 'string (language code)'
+            "ai": {
+                "name": "AI-Powered Features",
+                "description": "Summarize and translate PDF content using AI",
+                "features": ["summarization", "translation", "multiple_languages"],
+                "options": {
+                    "style": "string (concise|detailed|academic|casual|professional)",
+                    "maxLength": "string (short|medium|long)",
+                    "targetLanguage": "string (language code)",
                 },
-                'processing_mode': 'async'
+                "processing_mode": "async",
             },
-            'extraction': {
-                'name': 'Document Data Extraction',
-                'description': 'Extract structured data from invoices and bank statements using AI',
-                'features': ['invoice_data_extraction', 'bank_statement_extraction', 'structured_output', 'export_formats'],
-                'options': {
-                    'export_format': 'string (json|csv|excel|none)',
-                    'export_filename': 'string (optional custom filename)',
-                    'include_confidence': 'boolean (include AI confidence scores)',
-                    'validate_data': 'boolean (perform data validation)'
+            "extraction": {
+                "name": "Document Data Extraction",
+                "description": "Extract structured data from invoices and bank statements",
+                "features": [
+                    "invoice_data_extraction",
+                    "bank_statement_extraction",
+                    "structured_output",
+                    "export_formats",
+                ],
+                "options": {
+                    "export_format": "string (json|csv|excel|none)",
+                    "export_filename": "string (optional custom filename)",
+                    "include_confidence": "boolean (include AI confidence scores)",
+                    "validate_data": "boolean (perform data validation)",
                 },
-                'processing_mode': 'async'
+                "processing_mode": "async",
             },
-            'cloud': {
-                'name': 'Cloud Integration',
-                'description': 'Save and load files from cloud storage providers',
-                'features': ['file_upload', 'file_download', 'folder_management', 'oauth_authentication'],
-                'providers': ['google_drive', 'dropbox', 'onedrive'],
-                'processing_mode': 'sync'
-            }
+            "cloud": {
+                "name": "Cloud Integration",
+                "description": "Save/load files from cloud storage providers",
+                "features": ["file_upload", "file_download", "folder_management", "oauth"],
+                "providers": ["google_drive", "dropbox", "onedrive"],
+                "processing_mode": "sync",
+            },
         }
-
-        return success_response(
-            message="Extended features capabilities retrieved successfully",
-            data=capabilities
-        )
-
-    except Exception as e:
-        logger.error(f"Capabilities retrieval failed: {str(e)}")
-        return error_response(message=f"Capabilities retrieval failed: {str(e)}", status_code=500)
+        return success_response("Capabilities retrieved", caps)
+    except Exception as exc:
+        logger.exception("capabilities endpoint failed")
+        return error_response(f"Capabilities failed: {exc}", 500)
