@@ -95,9 +95,10 @@ def _enqueue_job(
     try:
         # Create job record first
 
-        job = job_operations_controller.job_operations.get_job(job_id=job_id)
-        if not isinstance(job, Job):
-            job = job_operations_controller.create_job_safely(job_id=job_id, task_type=task_type.value, input_data=input_data)
+        job = job_operations_controller.job_status_manager.get_or_create_job(job_id=job_id,
+                                                                             task_type=task_type.value,
+                                                                             input_data=input_data,
+                                                                             )
         if not isinstance(job, Job):
             logger.error(f"Failed to create job record for {job_id}")
             return {}, "Failed to create job record"
