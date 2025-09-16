@@ -43,7 +43,7 @@ class JobOperationsWrapper:
             task_type = task_type.value if isinstance(task_type, TaskType) else task_type
             job = JobOperations.create_job(job_id=job_id, task_type=task_type, input_data=input_data)
 
-            if job:
+            if isinstance(job, Job):
                 logger.info(f"Successfully created job {job_id} with type {task_type}")
             else:
                 logger.error(f"Failed to create job {job_id} - possible duplicate")

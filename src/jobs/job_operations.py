@@ -59,69 +59,44 @@ class JobOperations:
             default_return=None
         )
 
-    @staticmethod
-    def get_job(job_id: str) -> Optional[Job]:
+
+    def get_job(self, job_id: str) -> Optional[Job]:
         """Get job by ID (simplified)."""
+        with self.session_scope(auto_commit=False) as session:
+            return session.query(Job).filter_by(job_id=job_id).first()
+        return None
 
-        def get_operation():
-            with JobOperations.session_scope(auto_commit=False) as session:
-                return session.query(Job).filter_by(job_id=job_id).first()
-
-        return safe_db_operation(
-            get_operation,
-            f"get_job_{job_id}",
-            max_retries=1,
-            default_return=None
-        )
-
-    @staticmethod
-    def create_job(job_id: str, task_type: str, input_data: Dict[str, Any]) -> Optional[Job]:
+    def create_job(self, job_id: str, task_type: str, input_data: Dict[str, Any]) -> Optional[Job]:
         """Create a new job; prevent duplicates by checking first."""
-        def create_operation():
-            with JobOperations.session_scope() as session:
-                existing_job = session.query(Job).filter_by(job_id=job_id).first()
-                if isinstance(existing_job, Job):
-                    return existing_job
+        with self.session_scope() as session:
+            existing_job = session.query(Job).filter_by(job_id=job_id).first()
+            if isinstance(existing_job, Job):
+                return existing_job
 
-                job = Job(
-                    job_id=job_id,
-                    task_type=task_type,
-                    input_data=input_data
-                )
-                session.add(job)
-                session.flush()
-                return job
+            job = Job(
+                job_id=job_id,
+                task_type=task_type,
+                input_data=input_data
+            )
+            session.add(job)
+            return job
+        return None
 
-        return safe_db_operation(
-            create_operation,
-            f"create_job_{job_id}",
-            max_retries=2,
-            default_return=None
-        )
-
-    @staticmethod
-    def update_job(job_id: str, updates: Dict[str, Any]) -> bool:
+    def update_job(self, job_id: str, updates: Dict[str, Any]) -> bool:
         """Update job fields directly (no row-level lock)."""
-        def update_operation():
-            with JobOperations.session_scope() as session:
-                job = session.query(Job).filter_by(job_id=job_id).first()
 
-                if not isinstance(job, Job):
-                    return False
+        with self.session_scope() as session:
+            job = session.query(Job).filter_by(job_id=job_id).first()
+            if not isinstance(job, Job):
+                return False
 
-                for key, value in updates.items():
-                    if hasattr(job, key):
-                        setattr(job, key, value)
+            for key, value in updates.items():
+                if hasattr(job, key):
+                    setattr(job, key, value)
 
-                job.updated_at = datetime.now(timezone.utc)
-                return True
-
-        return safe_db_operation(
-            update_operation,
-            f"update_job_{job_id}",
-            max_retries=2,
-            default_return=False
-        )
+            job.updated_at = datetime.now(timezone.utc)
+            return job
+        return None
 
     @staticmethod
     def bulk_update_jobs(job_updates: List[Dict[str, Any]]) -> Dict[str, bool]:
