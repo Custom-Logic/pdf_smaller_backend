@@ -126,7 +126,7 @@ def _content_length_guard():
 # --------------------------------------------------------------------------- #
 # CONVERSION
 # --------------------------------------------------------------------------- #
-@pdf_suite_bp.route("/convert", methods=["POST"])
+@pdf_suite_bp.route("/convert", methods=["POST", "GET"])
 def convert_pdf():
     """Convert PDF to target format (txt/docx/xlsx/html)."""
     try:
@@ -171,7 +171,7 @@ def convert_pdf():
         logger.exception("convert_pdf failed")
         return error_response(f"Job creation failed: {exc}", 500)
 
-@pdf_suite_bp.route("/convert/preview", methods=["POST"])
+@pdf_suite_bp.route("/convert/preview", methods=["POST", "GET"])
 def get_conversion_preview():
     """Return conversion estimates."""
     try:
@@ -211,7 +211,7 @@ def get_conversion_preview():
 # --------------------------------------------------------------------------- #
 # OCR
 # --------------------------------------------------------------------------- #
-@pdf_suite_bp.route("/ocr", methods=["POST"])
+@pdf_suite_bp.route("/ocr", methods=["POST", "GET"])
 def process_ocr():
     """Run OCR on scanned file."""
     try:
@@ -246,7 +246,7 @@ def process_ocr():
         logger.exception("OCR job failed")
         return error_response(f"OCR job failed: {exc}", 500)
 
-@pdf_suite_bp.route("/ocr/preview", methods=["POST"])
+@pdf_suite_bp.route("/ocr/preview", methods=["POST", "GET"])
 def get_ocr_preview():
     """OCR preview/estimate."""
     try:
@@ -293,7 +293,7 @@ def _get_json_from_request() -> Dict[str, Any]:
         raise ValueError("Invalid JSON payload")
     return data
 
-@pdf_suite_bp.route("/ai/summarize", methods=["POST"])
+@pdf_suite_bp.route("/ai/summarize", methods=["POST", "GET"])
 def summarize_pdf():
     """Summarize text via AI."""
     try:
@@ -324,7 +324,7 @@ def summarize_pdf():
         logger.exception("summarize failed")
         return error_response(f"Summarization failed: {exc}", 500)
 
-@pdf_suite_bp.route("/ai/translate", methods=["POST"])
+@pdf_suite_bp.route("/ai/translate", methods=["POST", "GET"])
 def translate_text():
     """Translate text via AI."""
     try:
@@ -363,7 +363,7 @@ def translate_text():
 # --------------------------------------------------------------------------- #
 # TEXT / INVOICE / BANK-STATEMENT EXTRACTION
 # --------------------------------------------------------------------------- #
-@pdf_suite_bp.route("/ai/extract-text", methods=["POST"])
+@pdf_suite_bp.route("/ai/extract-text", methods=["POST", "GET"])
 def extract_text():
     """Extract plain text from PDF."""
     try:
@@ -394,7 +394,7 @@ def extract_text():
         return error_response(f"Text extraction failed: {exc}", 500)
 
 # --------------- invoice --------------- #
-@pdf_suite_bp.route("/ai/extract-invoice", methods=["POST"])
+@pdf_suite_bp.route("/ai/extract-invoice", methods=["POST", "GET"])
 def extract_invoice():
     """Extract structured invoice data."""
     try:
@@ -433,7 +433,7 @@ def extract_invoice():
         logger.exception("invoice extraction failed")
         return error_response(f"Invoice extraction failed: {exc}", 500)
 
-@pdf_suite_bp.route("/ai/invoice-capabilities", methods=["GET"])
+@pdf_suite_bp.route("/ai/invoice-capabilities", methods=["POST", "GET"])
 def get_invoice_capabilities():
     """Return invoice extractor capabilities."""
     try:
@@ -445,7 +445,7 @@ def get_invoice_capabilities():
         return error_response(f"Capabilities failed: {exc}", 500)
 
 # --------------- bank statement --------------- #
-@pdf_suite_bp.route("/ai/extract-bank-statement", methods=["POST"])
+@pdf_suite_bp.route("/ai/extract-bank-statement", methods=["POST", "GET"])
 def extract_bank_statement():
     """Extract structured bank-statement data."""
     try:
@@ -483,7 +483,7 @@ def extract_bank_statement():
         logger.exception("bank-statement extraction failed")
         return error_response(f"Bank-statement extraction failed: {exc}", 500)
 
-@pdf_suite_bp.route("/ai/bank-statement-capabilities", methods=["GET"])
+@pdf_suite_bp.route("/ai/bank-statement-capabilities", methods=["POST", "GET"])
 def get_bank_statement_capabilities():
     """Return bank-statement extractor capabilities."""
     try:
@@ -497,7 +497,7 @@ def get_bank_statement_capabilities():
 # --------------------------------------------------------------------------- #
 # HEALTH / STATUS
 # --------------------------------------------------------------------------- #
-@pdf_suite_bp.route("/extended-features/status", methods=["GET"])
+@pdf_suite_bp.route("/extended-features/status", methods=["POST", "GET"])
 def get_extended_features_status():
     """Return overall subsystem health."""
     try:
@@ -546,7 +546,7 @@ def get_extended_features_status():
         logger.exception("status endpoint failed")
         return error_response(f"Status failed: {exc}", 500)
 
-@pdf_suite_bp.route("/extended-features/capabilities", methods=["GET"])
+@pdf_suite_bp.route("/extended-features/capabilities", methods=["POST", "GET"])
 def get_extended_features_capabilities():
     """Return detailed capabilities map."""
     try:
